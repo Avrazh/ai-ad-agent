@@ -50,6 +50,7 @@ function migrate(db: Database.Database) {
       id          TEXT PRIMARY KEY,
       ad_spec_id  TEXT NOT NULL,
       image_id    TEXT NOT NULL,
+      family_id   TEXT NOT NULL DEFAULT '',
       template_id TEXT NOT NULL,
       headline_id TEXT NOT NULL,
       png_url     TEXT NOT NULL,
@@ -60,6 +61,12 @@ function migrate(db: Database.Database) {
       FOREIGN KEY (image_id)   REFERENCES images(id)
     );
   `);
+
+  // Additive migration: add family_id to existing databases
+  const cols = db.prepare(`PRAGMA table_info(render_results)`).all() as { name: string }[];
+  if (!cols.find((c) => c.name === "family_id")) {
+    db.exec(`ALTER TABLE render_results ADD COLUMN family_id TEXT NOT NULL DEFAULT ''`);
+  }
 }
 
 // ── Image queries ───────────────────────────────────────────
@@ -148,15 +155,16 @@ export function insertRenderResult(row: {
   id: string;
   adSpecId: string;
   imageId: string;
+  familyId: string;
   templateId: string;
   headlineId: string;
   pngUrl: string;
 }) {
   const db = getDb();
   db.prepare(
-    `INSERT INTO render_results (id, ad_spec_id, image_id, template_id, headline_id, png_url)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(row.id, row.adSpecId, row.imageId, row.templateId, row.headlineId, row.pngUrl);
+    `INSERT INTO render_results (id, ad_spec_id, image_id, family_id, template_id, headline_id, png_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(row.id, row.adSpecId, row.imageId, row.familyId, row.templateId, row.headlineId, row.pngUrl);
 }
 
 export function getRenderResult(id: string) {
@@ -166,6 +174,7 @@ export function getRenderResult(id: string) {
         id: string;
         ad_spec_id: string;
         image_id: string;
+        family_id: string;
         template_id: string;
         headline_id: string;
         png_url: string;

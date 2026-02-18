@@ -12,18 +12,18 @@ import {
   insertRenderResult,
   markReplaced,
 } from "@/lib/db";
-import { getTemplate } from "@/lib/templates";
-import "@/lib/templates"; // ensure templates registered
+import "@/lib/templates"; // ensure templates + families registered
+import { getTemplate, pickDifferentStyle } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { AdSpec, SafeZones, CopyPool, TemplateId } from "@/lib/types";
+import type { AdSpec, SafeZones, CopyPool } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { resultId, mode } = body as {
       resultId: string;
-      mode: "headline" | "template" | "both";
+      mode: "headline" | "style";
     };
 
     if (!resultId || !mode) {
@@ -63,42 +63,39 @@ export async function POST(req: NextRequest) {
     let newHeadlineId = oldSpec.headlineId;
     let newHeadlineText = oldSpec.headlineText;
 
-    if (mode === "template" || mode === "both") {
-      // Swap to the other template
-      newTemplateId =
-        oldSpec.templateId === "boxed_text" ? "chat_bubble" : "boxed_text";
-
-      // Pick a different zone
-      const template = getTemplate(newTemplateId);
-      const otherZones = template.supportedZones.filter(
-        (z) => z !== oldSpec.zoneId
-      );
+    if (mode === "style") {
+      // Pick a different style within the same family, keep headline
+      const newStyle = pickDifferentStyle(oldSpec.familyId, oldSpec.templateId);
+      newTemplateId = newStyle.id;
+      // Pick a zone from the new style
+      const otherZones = newStyle.supportedZones.filter((z: string) => z !== oldSpec.zoneId);
       newZoneId =
-        otherZones[Math.floor(Math.random() * otherZones.length)] ??
-        oldSpec.zoneId;
+        otherZones.length > 0
+          ? otherZones[Math.floor(Math.random() * otherZones.length)]
+          : newStyle.supportedZones[0];
     }
 
-    if (mode === "headline" || mode === "both") {
-      // Pick a different headline, rotating across angles
-      const candidates = copyPool.headlines.filter(
-        (h) => h.id !== oldSpec.headlineId
+    if (mode === "headline") {
+      // Pick a different headline in the same language, prefer a different angle
+      const langHeadlines = copyPool.headlines.filter(
+        (h) => h.lang === (oldSpec.lang ?? "en")
       );
+      const candidates = langHeadlines.filter((h) => h.id !== oldSpec.headlineId);
       if (candidates.length > 0) {
-        // Try to pick a different angle first
-        const currentAngle = copyPool.headlines.find(
-          (h) => h.id === oldSpec.headlineId
-        )?.angle;
-        const differentAngle = candidates.filter(
-          (h) => h.angle !== currentAngle
-        );
+        const currentAngle = langHeadlines.find((h) => h.id === oldSpec.headlineId)?.angle;
+        const differentAngle = candidates.filter((h) => h.angle !== currentAngle);
         const pick =
           differentAngle.length > 0
-            ? differentAngle[
-                Math.floor(Math.random() * differentAngle.length)
-              ]
+            ? differentAngle[Math.floor(Math.random() * differentAngle.length)]
             : candidates[Math.floor(Math.random() * candidates.length)];
         newHeadlineId = pick.id;
         newHeadlineText = pick.text;
+      }
+      // Also randomize zone (keep same style)
+      const currentTemplate = getTemplate(oldSpec.templateId);
+      const otherZones = currentTemplate.supportedZones.filter((z) => z !== oldSpec.zoneId);
+      if (otherZones.length > 0) {
+        newZoneId = otherZones[Math.floor(Math.random() * otherZones.length)];
       }
     }
 
@@ -108,6 +105,8 @@ export async function POST(req: NextRequest) {
       id: newId("as"),
       imageId: oldSpec.imageId,
       format: oldSpec.format,
+      lang: oldSpec.lang ?? "en",
+      familyId: oldSpec.familyId,
       templateId: newTemplateId,
       zoneId: newZoneId,
       headlineId: newHeadlineId,
@@ -127,6 +126,7 @@ export async function POST(req: NextRequest) {
       id: renderResultId,
       adSpecId: newSpec.id,
       imageId: newSpec.imageId,
+      familyId: newSpec.familyId,
       templateId: newSpec.templateId,
       headlineId: newSpec.headlineId,
       pngUrl,
@@ -138,8 +138,10 @@ export async function POST(req: NextRequest) {
         id: renderResultId,
         adSpecId: newSpec.id,
         imageId: newSpec.imageId,
+        familyId: newSpec.familyId,
         templateId: newSpec.templateId,
         headlineId: newSpec.headlineId,
+        format: newSpec.format,
         pngUrl,
         approved: false,
         createdAt: new Date().toISOString(),

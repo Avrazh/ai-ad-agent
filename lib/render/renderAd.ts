@@ -18,16 +18,20 @@ async function loadFonts() {
 
   const fontsDir = path.join(process.cwd(), "fonts");
 
-  const [interRegular, interBold, bebas] = await Promise.all([
+  const [interRegular, interBold, bebas, playfairRegular, playfairBold] = await Promise.all([
     readFile(path.join(fontsDir, "Inter-Regular.ttf")),
     readFile(path.join(fontsDir, "Inter-Bold.ttf")),
     readFile(path.join(fontsDir, "BebasNeue-Regular.ttf")),
+    readFile(path.join(fontsDir, "PlayfairDisplay-Regular.woff")),
+    readFile(path.join(fontsDir, "PlayfairDisplay-Bold.woff")),
   ]);
 
   fontsLoaded = [
     { name: "Inter", data: interRegular, weight: 400 as FontWeight, style: "normal" as FontStyle },
     { name: "Inter", data: interBold, weight: 700 as FontWeight, style: "normal" as FontStyle },
     { name: "Bebas Neue", data: bebas, weight: 400 as FontWeight, style: "normal" as FontStyle },
+    { name: "Playfair Display", data: playfairRegular, weight: 400 as FontWeight, style: "normal" as FontStyle },
+    { name: "Playfair Display", data: playfairBold, weight: 700 as FontWeight, style: "normal" as FontStyle },
   ];
 
   return fontsLoaded;

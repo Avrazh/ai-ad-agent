@@ -10,22 +10,26 @@ import {
   insertAdSpec,
   insertRenderResult,
 } from "@/lib/db";
-import { getTemplate } from "@/lib/templates";
-import "@/lib/templates"; // ensure templates are registered
+import "@/lib/templates"; // ensure templates + families registered
+import { pickRandomStyle, getAllFamilies } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { SafeZones, CopyPool, AdSpec, TemplateId, Angle } from "@/lib/types";
-
-const FORMAT_W = 1080;
-const FORMAT_H = 1350;
-const ADS_PER_GENERATE = 4;
+import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline } from "@/lib/types";
+import { FORMAT_DIMS } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { imageId, templateIds } = body as {
+    const {
+      imageId,
+      familyIds,
+      lang = "en",
+      format = "4:5",
+    } = body as {
       imageId: string;
-      templateIds: TemplateId[];
+      familyIds: FamilyId[];
+      lang?: Language;
+      format?: Format;
     };
 
     if (!imageId) {
@@ -37,9 +41,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Image not found" }, { status: 404 });
     }
 
-    const templates = templateIds?.length
-      ? templateIds
-      : (["boxed_text", "chat_bubble"] as TemplateId[]);
+    // Default to all registered families if none specified
+    const families: FamilyId[] = familyIds?.length
+      ? familyIds
+      : getAllFamilies().map((f) => f.id);
 
     // 1. Get or create SafeZones (AI call — cached per imageId)
     let safeZones: SafeZones;
@@ -61,34 +66,40 @@ export async function POST(req: NextRequest) {
       upsertCopyPool(imageId, JSON.stringify(copyPool));
     }
 
-    // 3. Create AdSpecs — spread across templates and angles
+    // 3. Create AdSpecs — 1 per family (random style picked per family)
+    const dims = FORMAT_DIMS[format];
+    const langHeadlines = copyPool.headlines.filter((h) => h.lang === lang);
     const specs: AdSpec[] = [];
     const usedHeadlineIds = new Set<string>();
-    const angles: Angle[] = ["benefit", "curiosity", "urgency"];
+    const angles: Angle[] = ["benefit", "curiosity", "urgency", "emotional"];
 
-    for (let i = 0; i < ADS_PER_GENERATE; i++) {
-      const templateId = templates[i % templates.length];
-      const template = getTemplate(templateId);
+    for (let i = 0; i < families.length; i++) {
+      const familyId = families[i];
+      const style = pickRandomStyle(familyId);
 
       // Pick a compatible zone
       const zoneId =
-        template.supportedZones[i % template.supportedZones.length];
+        style.supportedZones[i % style.supportedZones.length];
 
-      // Pick a headline — spread across angles, never repeat
-      const targetAngle = i < angles.length ? angles[i] : undefined;
-      const headline = pickHeadline(copyPool, usedHeadlineIds, targetAngle);
+      // Pick a headline — luxury always gets aspirational; others spread across angles
+      const targetAngle: Angle | undefined = familyId === "luxury"
+        ? "aspirational"
+        : (i < angles.length ? angles[i] : undefined);
+      const headline = pickHeadline(langHeadlines, usedHeadlineIds, targetAngle);
       usedHeadlineIds.add(headline.id);
 
       const spec: AdSpec = {
         id: newId("as"),
         imageId,
-        format: "4:5",
-        templateId,
+        format,
+        lang,
+        familyId,
+        templateId: style.id,
         zoneId,
         headlineId: headline.id,
         headlineText: headline.text,
-        theme: template.themeDefaults,
-        renderMeta: { w: FORMAT_W, h: FORMAT_H },
+        theme: style.themeDefaults,
+        renderMeta: dims,
       };
 
       specs.push(spec);
@@ -97,17 +108,13 @@ export async function POST(req: NextRequest) {
     // 4. Render each AdSpec → PNG
     const results = [];
     for (const spec of specs) {
-      // Store AdSpec
       insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
-
-      // Render
       const { pngUrl, renderResultId } = await renderAd(spec, safeZones);
-
-      // Store RenderResult
       insertRenderResult({
         id: renderResultId,
         adSpecId: spec.id,
         imageId: spec.imageId,
+        familyId: spec.familyId,
         templateId: spec.templateId,
         headlineId: spec.headlineId,
         pngUrl,
@@ -117,8 +124,10 @@ export async function POST(req: NextRequest) {
         id: renderResultId,
         adSpecId: spec.id,
         imageId: spec.imageId,
+        familyId: spec.familyId,
         templateId: spec.templateId,
         headlineId: spec.headlineId,
+        format: spec.format,
         pngUrl,
         approved: false,
         createdAt: new Date().toISOString(),
@@ -136,22 +145,22 @@ export async function POST(req: NextRequest) {
 }
 
 function pickHeadline(
-  pool: CopyPool,
+  headlines: Headline[],
   usedIds: Set<string>,
   preferredAngle?: Angle
 ) {
   // Try to find an unused headline matching the preferred angle
   if (preferredAngle) {
-    const match = pool.headlines.find(
+    const match = headlines.find(
       (h) => h.angle === preferredAngle && !usedIds.has(h.id)
     );
     if (match) return match;
   }
 
   // Fall back to any unused headline
-  const unused = pool.headlines.find((h) => !usedIds.has(h.id));
+  const unused = headlines.find((h) => !usedIds.has(h.id));
   if (unused) return unused;
 
   // All used — pick random
-  return pool.headlines[Math.floor(Math.random() * pool.headlines.length)];
+  return headlines[Math.floor(Math.random() * headlines.length)];
 }

@@ -13,33 +13,63 @@ type RenderResultItem = {
   id: string;
   adSpecId: string;
   imageId: string;
+  familyId: string;
   templateId: string;
   headlineId: string;
+  format: string;
   pngUrl: string;
   approved: boolean;
   createdAt: string;
 };
 
-type TemplateId = "boxed_text" | "chat_bubble";
+type FamilyId = "promo" | "testimonial" | "minimal" | "luxury";
+type Language = "en" | "de" | "fr" | "es";
+type Format = "4:5" | "1:1" | "9:16";
+
+const FAMILY_LABELS: Record<FamilyId, string> = {
+  promo: "Promo",
+  testimonial: "Testimonial",
+  minimal: "Minimal",
+  luxury: "Luxury",
+};
+
+const STYLE_LABELS: Record<string, string> = {
+  boxed_text: "Boxed",
+  chat_bubble: "Bubble",
+  quote_card: "Quote",
+  star_review: "Stars",
+  message_bubble: "Message",
+  luxury_minimal_center: "Minimal",
+  luxury_editorial_left: "Editorial",
+  luxury_soft_frame: "Frame",
+  luxury_soft_frame_open: "Frame Open",
+};
 
 export default function Home() {
   const [image, setImage] = useState<UploadedImage | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedTemplates, setSelectedTemplates] = useState<TemplateId[]>([
-    "boxed_text",
-    "chat_bubble",
+  // Per-image state
+  const [selectedFamilies, setSelectedFamilies] = useState<FamilyId[]>([
+    "promo",
+    "testimonial",
   ]);
+  const [lastGeneratedFamilies, setLastGeneratedFamilies] = useState<FamilyId[]>([]);
+  const [selectedLang, setSelectedLang] = useState<Language>("en");
+  const [selectedFormat, setSelectedFormat] = useState<Format>("4:5");
   const [generating, setGenerating] = useState(false);
   const [genStep, setGenStep] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
   const [results, setResults] = useState<RenderResultItem[]>([]);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
 
   // ── Upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file: File) => {
     setUploading(true);
     setError(null);
     setResults([]);
+    setLastGeneratedFamilies([]);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -83,7 +113,6 @@ export default function Home() {
     setError(null);
     setResults([]);
 
-    // Simulate step progress
     const steps = [
       "Analyzing image...",
       "Finding safe zones...",
@@ -103,7 +132,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageId: image.imageId,
-          templateIds: selectedTemplates,
+          familyIds: selectedFamilies,
+          lang: selectedLang,
+          format: selectedFormat,
         }),
       });
 
@@ -114,6 +145,7 @@ export default function Home() {
 
       const data = await res.json();
       setResults(data.results);
+      setLastGeneratedFamilies([...selectedFamilies]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -121,7 +153,41 @@ export default function Home() {
       setGenStep(null);
       setGenerating(false);
     }
-  }, [image, generating, selectedTemplates]);
+  }, [image, generating, selectedFamilies, selectedLang, selectedFormat]);
+
+  // ── Switch (lang/format view filter) ─────────────────────
+  const handleSwitch = useCallback(
+    async (resultIds: string[], lang?: Language, format?: Format) => {
+      setSwitching(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/switch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultIds, lang, format }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Switch failed");
+        }
+        const data = await res.json();
+        setResults((prev) => {
+          let next = [...prev];
+          for (const item of data.results) {
+            next = next.map((r) =>
+              r.id === item.replacedId ? item.result : r
+            );
+          }
+          return next;
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Switch failed");
+      } finally {
+        setSwitching(false);
+      }
+    },
+    []
+  );
 
   // ── Approve ───────────────────────────────────────────────
   const handleApprove = useCallback(
@@ -145,10 +211,8 @@ export default function Home() {
   );
 
   // ── Regenerate ─────────────────────────────────────────────
-  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
-
   const handleRegenerate = useCallback(
-    async (resultId: string, mode: "headline" | "template" | "both") => {
+    async (resultId: string, mode: "headline" | "style") => {
       setRegeneratingId(resultId);
       try {
         const res = await fetch("/api/regenerate", {
@@ -173,7 +237,7 @@ export default function Home() {
     []
   );
 
-  // ── Download approved ─────────────────────────────────────
+  // ── Download ──────────────────────────────────────────────
   const handleDownload = useCallback(async (pngUrl: string, id: string) => {
     const res = await fetch(pngUrl);
     const blob = await res.blob();
@@ -185,132 +249,147 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, []);
 
-  // ── Template toggle ───────────────────────────────────────
-  const toggleTemplate = (id: TemplateId) => {
-    setSelectedTemplates((prev) =>
-      prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]
+  // ── Family toggle (multi-select) ─────────────────────────
+  const toggleFamily = (id: FamilyId) => {
+    setSelectedFamilies((prev: FamilyId[]) =>
+      prev.includes(id) ? prev.filter((f: FamilyId) => f !== id) : [...prev, id]
     );
   };
 
+  // ── Language select (single-select + auto-switch) ─────────
+  const selectLang = (lang: Language) => {
+    if (lang === selectedLang) return;
+    setSelectedLang(lang);
+    if (results.length > 0) {
+      handleSwitch(results.map((r) => r.id), lang, undefined);
+    }
+  };
+
+  // ── Format select (single-select + auto-switch) ──────────
+  const selectFormat = (format: Format) => {
+    if (format === selectedFormat) return;
+    setSelectedFormat(format);
+    if (results.length > 0) {
+      handleSwitch(results.map((r) => r.id), undefined, format);
+    }
+  };
+
   const approvedCount = results.filter((r) => r.approved).length;
+  const familiesChanged =
+    [...selectedFamilies].sort().join() !== [...lastGeneratedFamilies].sort().join();
+  const canGenerate =
+    !!image && !generating && selectedFamilies.length > 0 && (results.length === 0 || familiesChanged);
+
+  // ── Pill style helper ─────────────────────────────────────
+  const pillActive =
+    "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_12px_rgba(99,102,241,0.15)]";
+  const pillInactive =
+    "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-gray-300";
 
   return (
-    <div className="min-h-screen bg-[#0B0F14] p-6">
-      <div className="mx-auto max-w-5xl">
+    <div className="min-h-screen bg-[#0B0F14] flex">
+      {/* ── Left sidebar (working area) ─────────────────── */}
+      <aside className="w-[340px] shrink-0 border-r border-white/10 p-5 space-y-5 overflow-y-auto h-screen sticky top-0">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-bold text-white">AI Ad Agent</h1>
-            <p className="text-sm text-gray-500">
-              Upload a product photo, choose templates, generate ad creatives
-            </p>
-          </div>
-          {approvedCount > 0 && (
-            <span className="rounded-full bg-indigo-500/20 border border-indigo-500/30 px-3 py-1 text-xs font-medium text-indigo-300">
-              {approvedCount} approved
-            </span>
+        <div>
+          <h1 className="mb-1 text-xl font-bold text-white">AI Ad Agent</h1>
+          <p className="text-[11px] text-gray-500">
+            Upload a photo, choose options, generate ads
+          </p>
+        </div>
+
+        {/* Upload area */}
+        <div
+          onDrop={handleDrop}
+          onDragOver={(e) => e.preventDefault()}
+          className={
+            "flex flex-col items-center justify-center rounded-2xl border border-dashed p-6 transition backdrop-blur-md " +
+            (uploading
+              ? "border-indigo-500/40 bg-indigo-500/10"
+              : image
+                ? "border-white/10 bg-white/[0.06]"
+                : "border-white/20 bg-white/[0.04] hover:border-indigo-500/40 hover:bg-white/[0.08]")
+          }
+        >
+          {image ? (
+            <div className="flex w-full items-center gap-3">
+              <img
+                src={image.url}
+                alt="Product"
+                className="h-20 w-20 rounded-xl object-cover"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">Product image</p>
+                <p className="text-xs text-gray-500">
+                  {image.width} x {image.height}
+                </p>
+              </div>
+              <label className="cursor-pointer shrink-0 rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-xs text-gray-400 hover:bg-white/10 hover:text-gray-300 transition">
+                Replace
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleFileInput}
+                />
+              </label>
+            </div>
+          ) : uploading ? (
+            <div className="flex items-center gap-2">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+              <p className="text-sm text-indigo-300">Uploading...</p>
+            </div>
+          ) : (
+            <>
+              <svg
+                className="mb-3 h-8 w-8 text-gray-600"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.5}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 16v-8m0 0l-3 3m3-3l3 3M6.75 20.25h10.5A2.25 2.25 0 0019.5 18V8.25a2.25 2.25 0 00-2.25-2.25H15l-1.5-1.5h-3L9 6H6.75A2.25 2.25 0 004.5 8.25V18a2.25 2.25 0 002.25 2.25z"
+                />
+              </svg>
+              <p className="text-sm text-gray-400">
+                Drop image or{" "}
+                <label className="cursor-pointer font-medium text-indigo-400 hover:text-indigo-300">
+                  browse
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={handleFileInput}
+                  />
+                </label>
+              </p>
+              <p className="mt-1 text-[10px] text-gray-600">PNG, JPG, or WebP</p>
+            </>
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
-          {/* ── Left column: Controls ───────────────────── */}
+        {/* Controls (visible after upload) */}
+        {image && (
           <div className="space-y-4">
-            {/* Upload */}
-            <div
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-              className={
-                "flex flex-col items-center justify-center rounded-2xl border border-dashed p-8 transition backdrop-blur-md " +
-                (uploading
-                  ? "border-indigo-500/40 bg-indigo-500/10"
-                  : image
-                    ? "border-white/10 bg-white/[0.06]"
-                    : "border-white/20 bg-white/[0.04] hover:border-indigo-500/40 hover:bg-white/[0.08]")
-              }
-            >
-              {image ? (
-                <div className="w-full">
-                  <img
-                    src={image.url}
-                    alt="Product"
-                    className="w-full rounded-xl object-cover"
-                    style={{ maxHeight: 200 }}
-                  />
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-xs text-gray-500">
-                      {image.width} x {image.height}
-                    </span>
-                    <label className="cursor-pointer text-xs text-indigo-400 hover:text-indigo-300 transition">
-                      Replace
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        className="hidden"
-                        onChange={handleFileInput}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : uploading ? (
-                <div className="flex items-center gap-2">
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                  <p className="text-sm text-indigo-300">Uploading...</p>
-                </div>
-              ) : (
-                <>
-                  <svg
-                    className="mb-3 h-8 w-8 text-gray-600"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 16v-8m0 0l-3 3m3-3l3 3M6.75 20.25h10.5A2.25 2.25 0 0019.5 18V8.25a2.25 2.25 0 00-2.25-2.25H15l-1.5-1.5h-3L9 6H6.75A2.25 2.25 0 004.5 8.25V18a2.25 2.25 0 002.25 2.25z"
-                    />
-                  </svg>
-                  <p className="text-sm text-gray-400">
-                    Drop image or{" "}
-                    <label className="cursor-pointer font-medium text-indigo-400 hover:text-indigo-300">
-                      browse
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        className="hidden"
-                        onChange={handleFileInput}
-                      />
-                    </label>
-                  </p>
-                  <p className="mt-1 text-[10px] text-gray-600">PNG, JPG, or WebP</p>
-                </>
-              )}
-            </div>
-
-            {/* Template selection */}
-            <div className="rounded-2xl border border-white/10 bg-white/[0.06] backdrop-blur-md p-4">
-              <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-gray-500">
-                Templates
+            {/* Families (multi-select) */}
+            <div>
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
+                Families
               </h3>
-              <div className="flex gap-2">
-                {(
-                  [
-                    { id: "boxed_text" as TemplateId, label: "Boxed Text" },
-                    { id: "chat_bubble" as TemplateId, label: "Chat Bubble" },
-                  ] as const
-                ).map((t) => (
+              <div className="flex flex-wrap gap-2">
+                {(["promo", "testimonial", "luxury"] as FamilyId[]).map((id) => (
                   <button
-                    key={t.id}
-                    onClick={() => toggleTemplate(t.id)}
+                    key={id}
+                    onClick={() => toggleFamily(id)}
                     className={
                       "rounded-xl px-3 py-2 text-xs font-medium border transition " +
-                      (selectedTemplates.includes(t.id)
-                        ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_12px_rgba(99,102,241,0.15)]"
-                        : "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-gray-300")
+                      (selectedFamilies.includes(id) ? pillActive : pillInactive)
                     }
                   >
-                    {t.label}
+                    {FAMILY_LABELS[id]}
                   </button>
                 ))}
               </div>
@@ -319,10 +398,10 @@ export default function Home() {
             {/* Generate button */}
             <button
               onClick={handleGenerate}
-              disabled={!image || generating || selectedTemplates.length === 0}
+              disabled={!canGenerate}
               className={
-                "w-full rounded-2xl px-4 py-3 text-sm font-medium transition " +
-                (!image || generating || selectedTemplates.length === 0
+                "w-full rounded-2xl px-6 py-2.5 text-sm font-medium transition " +
+                (!canGenerate
                   ? "bg-indigo-500/20 text-indigo-300/50 cursor-not-allowed"
                   : "bg-gradient-to-r from-indigo-500 to-violet-500 text-white hover:from-indigo-400 hover:to-violet-400 shadow-[0_0_20px_rgba(99,102,241,0.25)]")
               }
@@ -330,38 +409,84 @@ export default function Home() {
               {generating ? "Generating..." : "Generate Ads"}
             </button>
 
+            {/* Error */}
             {error && (
               <p className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
                 {error}
               </p>
             )}
           </div>
+        )}
+      </aside>
 
-          {/* ── Right column: Gallery ───────────────────── */}
-          <div>
-            {results.length > 0 && (
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-medium text-gray-300">
-                  Generated Ads
-                </h2>
-                <span className="text-xs text-gray-500">
-                  {approvedCount} / {results.length} approved
-                </span>
-              </div>
-            )}
+      {/* ── Right side (results grid) ──────────────────── */}
+      <main className="flex-1 p-6 overflow-y-auto">
+        {/* Generation loading */}
+        {generating && results.length === 0 && (
+          <div className="flex h-64 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+            <div className="text-center">
+              <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+              <p className="text-sm text-gray-400">
+                {genStep || "Starting..."}
+              </p>
+            </div>
+          </div>
+        )}
 
-            {generating && results.length === 0 && (
-              <div className="flex h-64 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-md">
-                <div className="text-center">
-                  <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-                  <p className="text-sm text-gray-400">
-                    {genStep || "Starting..."}
-                  </p>
+        {/* Ad grid */}
+        {results.length > 0 && (
+          <div className="relative">
+            {/* Switching overlay */}
+            {switching && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-black/40">
+                <div className="flex items-center gap-2">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                  <span className="text-sm text-indigo-300">Switching...</span>
                 </div>
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Filter bar: Language (left) + Format (right) */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Lang</span>
+                <div className="flex gap-1">
+                  {(["en", "de", "fr", "es"] as Language[]).map((l) => (
+                    <button
+                      key={l}
+                      onClick={() => selectLang(l)}
+                      disabled={switching}
+                      className={
+                        "rounded-lg px-2.5 py-1 text-[11px] font-medium border transition disabled:opacity-50 " +
+                        (selectedLang === l ? pillActive : pillInactive)
+                      }
+                    >
+                      {l.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  {(["4:5", "1:1", "9:16"] as Format[]).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => selectFormat(f)}
+                      disabled={switching}
+                      className={
+                        "rounded-lg px-2.5 py-1 text-[11px] font-medium border transition disabled:opacity-50 " +
+                        (selectedFormat === f ? pillActive : pillInactive)
+                      }
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Format</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
               {results.map((result) => (
                 <div
                   key={result.id}
@@ -389,89 +514,81 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div className="px-3 py-2.5 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex gap-1.5">
-                        <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-                          {result.templateId === "boxed_text"
-                            ? "Boxed"
-                            : "Bubble"}
-                        </span>
-                        <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-                          4:5
-                        </span>
-                      </div>
-                      <div className="flex gap-1.5">
-                        {result.approved && (
-                          <button
-                            onClick={() => handleDownload(result.pngUrl, result.id)}
-                            className="rounded-lg px-2 py-1 text-[10px] font-medium bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white transition"
-                            title="Download"
-                          >
-                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
-                            </svg>
-                          </button>
-                        )}
-                        <button
-                          onClick={() =>
-                            handleApprove(result.id, !result.approved)
-                          }
-                          className={
-                            "rounded-lg px-3 py-1 text-xs font-medium border transition " +
-                            (result.approved
-                              ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
-                              : "bg-white/5 text-gray-400 border-white/10 hover:border-indigo-500/30 hover:text-indigo-300")
-                          }
-                        >
-                          {result.approved ? "Approved" : "Approve"}
-                        </button>
-                      </div>
+                  <div className="flex items-center justify-between px-3 py-2.5">
+                    {/* Info badges (left) */}
+                    <div className="flex gap-1.5 flex-wrap">
+                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        {FAMILY_LABELS[result.familyId as FamilyId] ?? result.familyId}
+                      </span>
+                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        {STYLE_LABELS[result.templateId] ?? result.templateId}
+                      </span>
+                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        {result.format || "4:5"}
+                      </span>
+                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+                        {selectedLang.toUpperCase()}
+                      </span>
                     </div>
-                    {/* Regenerate buttons */}
+                    {/* Action buttons (right) */}
                     <div className="flex gap-1.5">
-                      {(
-                        [
-                          { mode: "headline" as const, label: "New headline" },
-                          { mode: "template" as const, label: "Switch template" },
-                          { mode: "both" as const, label: "Both" },
-                        ] as const
-                      ).map((action) => (
+                      <button
+                        onClick={() => handleRegenerate(result.id, "headline")}
+                        disabled={regeneratingId === result.id}
+                        className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
+                      >
+                        New headline
+                      </button>
+                      <button
+                        onClick={() => handleRegenerate(result.id, "style")}
+                        disabled={regeneratingId === result.id}
+                        className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
+                      >
+                        New style
+                      </button>
+                      {result.approved && (
                         <button
-                          key={action.mode}
-                          onClick={() =>
-                            handleRegenerate(result.id, action.mode)
-                          }
-                          disabled={regeneratingId === result.id}
-                          className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
+                          onClick={() => handleDownload(result.pngUrl, result.id)}
+                          className="rounded-lg px-2 py-1 text-[10px] font-medium bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white transition"
+                          title="Download"
                         >
-                          {action.label}
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+                          </svg>
                         </button>
-                      ))}
+                      )}
+                      <button
+                        onClick={() =>
+                          handleApprove(result.id, !result.approved)
+                        }
+                        className={
+                          "rounded-lg px-3 py-1 text-xs font-medium border transition " +
+                          (result.approved
+                            ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                            : "bg-white/5 text-gray-400 border-white/10 hover:border-indigo-500/30 hover:text-indigo-300")
+                        }
+                      >
+                        {result.approved ? "Approved" : "Approve"}
+                      </button>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-
-            {!generating && results.length === 0 && image && (
-              <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
-                <p className="text-sm text-gray-600">
-                  Select templates and click Generate
-                </p>
-              </div>
-            )}
-
-            {!image && (
-              <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
-                <p className="text-sm text-gray-600">
-                  Upload a product photo to get started
-                </p>
-              </div>
-            )}
           </div>
-        </div>
-      </div>
+        )}
+
+        {/* Empty state */}
+        {!generating && results.length === 0 && (
+          <div className="flex h-full min-h-[400px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
+            <p className="text-sm text-gray-600">
+              {image
+                ? "Select families and click Generate"
+                : "Upload a product photo to get started"}
+            </p>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

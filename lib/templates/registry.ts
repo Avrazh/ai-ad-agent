@@ -1,4 +1,4 @@
-import type { TemplateDefinition, TemplateId, AdSpec, PixelRect } from "@/lib/types";
+import type { TemplateDefinition, TemplateId, FamilyId, AdSpec, PixelRect } from "@/lib/types";
 import type { ReactElement } from "react";
 
 export type TemplateBuildFn = (
@@ -7,7 +7,7 @@ export type TemplateBuildFn = (
   zonePx: PixelRect
 ) => ReactElement;
 
-type RegisteredTemplate = TemplateDefinition & {
+export type RegisteredTemplate = TemplateDefinition & {
   build: TemplateBuildFn;
 };
 
@@ -32,4 +32,8 @@ export function getAllTemplates(): RegisteredTemplate[] {
 
 export function getTemplateIds(): TemplateId[] {
   return Array.from(templates.keys());
+}
+
+export function getStylesForFamily(familyId: FamilyId): RegisteredTemplate[] {
+  return Array.from(templates.values()).filter((t) => t.familyId === familyId);
 }

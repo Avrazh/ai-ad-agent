@@ -1,26 +1,30 @@
 import type { AdSpec, PixelRect, TemplateDefinition } from "@/lib/types";
 import { registerTemplate } from "./registry";
 
+// Luxury / Minimal Center
+// White card, centered Playfair Display headline, thin champagne divider below.
+// Large padding — all about breathing room and restraint.
 const definition: TemplateDefinition = {
-  id: "boxed_text",
-  familyId: "promo",
-  name: "Boxed Text",
+  id: "luxury_minimal_center",
+  familyId: "luxury",
+  name: "Minimal Center",
   supportedZones: ["A", "B", "C"],
   themeDefaults: {
-    fontHeadline: "Bebas Neue",
+    fontHeadline: "Playfair Display",
     fontSize: 52,
-    color: "#292121",
-    bg: "rgba(255, 255, 255, 0.75)",
-    radius: 16,
-    shadow: true,
+    color: "#1A1A1A",
+    bg: "#FFFFFF",
+    radius: 0,
+    shadow: false,
   },
-  maxLines: 2,
+  maxLines: 3,
 };
 
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
   const { w, h } = spec.renderMeta;
   const theme = spec.theme;
-  const maxFontSize = Math.min(theme.fontSize, zonePx.h * 0.35);
+  const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.14));
+  const dividerColor = "#D4C5B0";
 
   return (
     <div style={{ width: w, height: h, position: "relative", display: "flex" }}>
@@ -30,43 +34,55 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
         style={{ width: w, height: h, objectFit: "cover", position: "absolute" }}
       />
 
-      {/* Text box at bottom of zone */}
+      {/* Centered white card — generous padding, no shadow */}
       <div
         style={{
           position: "absolute",
           left: zonePx.x,
           top: zonePx.y,
           width: zonePx.w,
-          height: zonePx.h,
           display: "flex",
-          alignItems: "flex-end",
-          justifyContent: "center",
+          flexDirection: "column",
+          alignItems: "center",
         }}
       >
         <div
           style={{
-            width: "100%",
             background: theme.bg,
             borderRadius: theme.radius,
-            padding: "28px 36px",
+            padding: "52px 56px",
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
-            justifyContent: "center",
+            width: "100%",
           }}
         >
+          {/* Headline — centered Playfair Display */}
           <p
             style={{
               fontFamily: theme.fontHeadline,
-              fontSize: maxFontSize,
+              fontSize: headlineFontSize,
+              fontWeight: 700,
               color: theme.color,
+              lineHeight: 1.3,
               textAlign: "center",
-              lineHeight: 1.2,
               margin: 0,
               overflow: "hidden",
             }}
           >
             {spec.headlineText}
           </p>
+
+          {/* Thin champagne divider below headline */}
+          <div
+            style={{
+              marginTop: 28,
+              width: "60%",
+              height: 1,
+              background: dividerColor,
+              display: "flex",
+            }}
+          />
         </div>
       </div>
     </div>
