@@ -132,6 +132,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageId: image.imageId,
+          imageUrl: image.url,
+          imageWidth: image.width,
+          imageHeight: image.height,
           familyIds: selectedFamilies,
           lang: selectedLang,
           format: selectedFormat,

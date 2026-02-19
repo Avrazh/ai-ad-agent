@@ -3,6 +3,7 @@ import { analyzeSafeZones } from "@/lib/ai/analyze";
 import { generateCopyPool } from "@/lib/ai/copy";
 import {
   getImage,
+  insertImage,
   getSafeZones,
   upsertSafeZones,
   getCopyPool,
@@ -22,12 +23,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       imageId,
+      imageUrl,
+      imageWidth,
+      imageHeight,
       familyIds,
       lang = "en",
       format = "4:5",
       showAllStyles = false,
     } = body as {
       imageId: string;
+      imageUrl?: string;
+      imageWidth?: number;
+      imageHeight?: number;
       familyIds: FamilyId[];
       lang?: Language;
       format?: Format;
@@ -38,9 +45,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "imageId required" }, { status: 400 });
     }
 
-    const image = getImage(imageId);
+    let image = getImage(imageId);
     if (!image) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      // SQLite was reset (cold start) — re-seed from client-provided values
+      if (!imageUrl) {
+        return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      }
+      insertImage({
+        id: imageId,
+        filename: imageId + ".png",
+        url: imageUrl,
+        width: imageWidth ?? 0,
+        height: imageHeight ?? 0,
+      });
+      image = getImage(imageId)!;
     }
 
     // Default to all registered families if none specified
