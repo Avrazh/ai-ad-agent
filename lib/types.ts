@@ -33,7 +33,7 @@ export type SafeZones = {
   zones: { id: ZoneId; rect: NormRect }[];
 };
 
-export type Angle = "benefit" | "curiosity" | "urgency" | "emotional" | "aspirational";
+export type Angle = "benefit" | "curiosity" | "urgency" | "emotional" | "aspirational" | "story" | "contrast";
 export type Language = "en" | "de" | "fr" | "es";
 
 export type Headline = {
