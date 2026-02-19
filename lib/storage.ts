@@ -38,6 +38,7 @@ export async function save(bucket: Bucket, id: string, buffer: Buffer): Promise<
 
 // Accepts either a bare filename (local mode) or a full https:// blob URL
 export async function read(bucket: Bucket, filenameOrUrl: string): Promise<Buffer> {
+  console.log(`[storage.read] bucket=${bucket} input=${String(filenameOrUrl).slice(0, 80)}`);
   if (filenameOrUrl.startsWith("https://")) {
     const res = await fetch(filenameOrUrl);
     if (!res.ok) throw new Error(`Blob fetch failed with status ${res.status}`);
