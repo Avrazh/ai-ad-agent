@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { put } from "@vercel/blob";
+import { put, del, list } from "@vercel/blob";
 
 type Bucket = "uploads" | "generated";
 
@@ -62,4 +62,17 @@ export async function exists(bucket: Bucket, id: string): Promise<boolean> {
 // Returns a local serve URL (only used in local/dev mode)
 export function getUrl(bucket: Bucket, id: string): string {
   return `/api/files/${bucket}/${id}`;
+}
+
+// Delete all generated PNGs from Blob (call when a new image is uploaded)
+export async function removeGenerated(): Promise<void> {
+  if (!USE_BLOB) return;
+  const { blobs } = await list({ prefix: "generated/" });
+  if (blobs.length > 0) await del(blobs.map((b) => b.url));
+}
+
+// Delete a single blob URL (e.g. old uploaded image)
+export async function removeBlobUrl(url: string): Promise<void> {
+  if (!USE_BLOB || !url.startsWith("https://")) return;
+  await del(url);
 }

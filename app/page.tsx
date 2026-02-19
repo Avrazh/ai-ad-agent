@@ -73,6 +73,7 @@ export default function Home() {
 
     const formData = new FormData();
     formData.append("file", file);
+    if (image?.url) formData.append("previousImageUrl", image.url);
 
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
