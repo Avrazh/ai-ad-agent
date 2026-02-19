@@ -4,9 +4,12 @@ import { put } from "@vercel/blob";
 
 type Bucket = "uploads" | "generated";
 
-const STORAGE_ROOT = path.join(process.cwd(), "storage");
+// /tmp is the only writable directory on Vercel; local dev uses project/storage
+const STORAGE_ROOT = process.env.NODE_ENV === "production"
+  ? "/tmp"
+  : path.join(process.cwd(), "storage");
 
-// Use Vercel Blob when the token is present (production), local filesystem otherwise
+// Use Vercel Blob when the token is present (upgrades /tmp to persistent CDN storage)
 const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
 
 function bucketPath(bucket: Bucket): string {
