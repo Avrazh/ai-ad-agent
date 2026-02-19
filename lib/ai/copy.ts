@@ -16,7 +16,7 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
   const { getImage } = await import("@/lib/db");
   const img = getImage(imageId);
   if (!img) throw new Error(`Image "${imageId}" not found`);
-  const imageBuffer = await readStorage("uploads", img.filename);
+  const imageBuffer = await readStorage("uploads", img.url);
   const ext = path.extname(img.filename).replace(".", "");
   const mimeType = ext === "jpg" ? "jpeg" : ext;
   const imageBase64 = `data:image/${mimeType};base64,${imageBuffer.toString("base64")}`;
