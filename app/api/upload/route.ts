@@ -27,7 +27,6 @@ export async function POST(req: NextRequest) {
     const filename = `${id}${ext}`;
 
     const url = await save("uploads", filename, buffer);
-    console.log("[upload] USE_BLOB:", !!process.env.BLOB_READ_WRITE_TOKEN, "→ url:", url.slice(0, 60));
 
     // Read image dimensions from the buffer
     const { width, height } = readDimensions(buffer, file.type);

@@ -46,10 +46,8 @@ export async function POST(req: NextRequest) {
     }
 
     let image = getImage(imageId);
-    console.log("[generate] imageId:", imageId, "clientUrl:", String(imageUrl).slice(0, 80));
     if (!image) {
       // SQLite was reset (cold start) — re-seed from client-provided values
-      console.log("[generate] cold-start: re-seeding SQLite with imageUrl:", String(imageUrl).slice(0, 80));
       if (!imageUrl) {
         return NextResponse.json({ error: "Image not found" }, { status: 404 });
       }
@@ -62,7 +60,6 @@ export async function POST(req: NextRequest) {
       });
       image = getImage(imageId)!;
     }
-    console.log("[generate] image.url in DB:", String(image.url).slice(0, 80));
 
     // Default to all registered families if none specified
     const families: FamilyId[] = familyIds?.length
