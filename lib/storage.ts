@@ -1,32 +1,53 @@
 import fs from "fs/promises";
 import path from "path";
+import { put } from "@vercel/blob";
 
 type Bucket = "uploads" | "generated";
 
 const STORAGE_ROOT = path.join(process.cwd(), "storage");
 
+// Use Vercel Blob when the token is present (production), local filesystem otherwise
+const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
+
 function bucketPath(bucket: Bucket): string {
   return path.join(STORAGE_ROOT, bucket);
 }
 
-function filePath(bucket: Bucket, id: string): string {
-  return path.join(bucketPath(bucket), id);
+function filePath(bucket: Bucket, filename: string): string {
+  return path.join(bucketPath(bucket), filename);
 }
 
 export async function save(bucket: Bucket, id: string, buffer: Buffer): Promise<string> {
+  if (USE_BLOB) {
+    const { url } = await put(`${bucket}/${id}`, buffer, {
+      access: "public",
+      addRandomSuffix: false,
+    });
+    return url; // returns the Vercel Blob CDN URL
+  }
+
+  // Local filesystem fallback
   const dir = bucketPath(bucket);
   await fs.mkdir(dir, { recursive: true });
-  const fp = filePath(bucket, id);
-  await fs.writeFile(fp, buffer);
+  await fs.writeFile(filePath(bucket, id), buffer);
   return getUrl(bucket, id);
 }
 
-export async function read(bucket: Bucket, id: string): Promise<Buffer> {
-  const fp = filePath(bucket, id);
-  return fs.readFile(fp);
+// Accepts either a bare filename (local mode) or a full https:// blob URL
+export async function read(bucket: Bucket, filenameOrUrl: string): Promise<Buffer> {
+  if (filenameOrUrl.startsWith("https://")) {
+    const res = await fetch(filenameOrUrl);
+    if (!res.ok) throw new Error(`Blob fetch failed with status ${res.status}`);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  // Local: strip the /api/files/… prefix if present, keep just the filename
+  const filename = filenameOrUrl.includes("/") ? path.basename(filenameOrUrl) : filenameOrUrl;
+  return fs.readFile(filePath(bucket, filename));
 }
 
 export async function exists(bucket: Bucket, id: string): Promise<boolean> {
+  if (id.startsWith("https://")) return true; // blob URLs always assumed to exist
   try {
     await fs.access(filePath(bucket, id));
     return true;
@@ -35,7 +56,7 @@ export async function exists(bucket: Bucket, id: string): Promise<boolean> {
   }
 }
 
-// MVP: serve through API route. Production: swap to CDN/presigned URL.
+// Returns a local serve URL (only used in local/dev mode)
 export function getUrl(bucket: Bucket, id: string): string {
   return `/api/files/${bucket}/${id}`;
 }

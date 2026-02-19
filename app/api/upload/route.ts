@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { save, getUrl } from "@/lib/storage";
+import { save } from "@/lib/storage";
 import { insertImage, getAllImages } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import path from "path";
@@ -26,8 +26,7 @@ export async function POST(req: NextRequest) {
     const id = newId("img");
     const filename = `${id}${ext}`;
 
-    await save("uploads", filename, buffer);
-    const url = getUrl("uploads", filename);
+    const url = await save("uploads", filename, buffer);
 
     // Read image dimensions from the buffer
     const { width, height } = readDimensions(buffer, file.type);

@@ -60,9 +60,9 @@ export async function renderAd(
   // Convert normalized zone to pixel coords
   const zonePx = toPixels(zone.rect, spec.renderMeta.w, spec.renderMeta.h);
 
-  // Load the source image as base64
-  const imageFilename = await getImageFilename(spec.imageId);
-  const imageBuffer = await readStorage("uploads", imageFilename);
+  // Load the source image as base64 — pass URL so read() works in blob mode too
+  const { filename: imageFilename, url: imageUrl } = await getImageInfo(spec.imageId);
+  const imageBuffer = await readStorage("uploads", imageUrl);
   const ext = path.extname(imageFilename).replace(".", "");
   const mimeType = ext === "jpg" ? "jpeg" : ext;
   const imageBase64 = `data:image/${mimeType};base64,${imageBuffer.toString("base64")}`;
@@ -93,11 +93,11 @@ export async function renderAd(
   return { pngUrl, renderResultId };
 }
 
-// Helper to find the stored filename for an image ID
-async function getImageFilename(imageId: string): Promise<string> {
+// Helper to find the stored image info for an image ID
+async function getImageInfo(imageId: string): Promise<{ filename: string; url: string }> {
   // Import db here to avoid circular deps
   const { getImage } = await import("@/lib/db");
   const img = getImage(imageId);
   if (!img) throw new Error(`Image "${imageId}" not found`);
-  return img.filename;
+  return { filename: img.filename, url: img.url };
 }
