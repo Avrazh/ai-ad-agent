@@ -18,12 +18,17 @@ async function loadFonts() {
 
   const fontsDir = path.join(process.cwd(), "fonts");
 
-  const [interRegular, interBold, bebas, playfairRegular, playfairBold] = await Promise.all([
+  const [interRegular, interBold, bebas, playfairRegular, playfairBold, tangerineRegular, tangerineBold, abrilFatface, bodoniModaRegular, bodoniModaBold] = await Promise.all([
     readFile(path.join(fontsDir, "Inter-Regular.ttf")),
     readFile(path.join(fontsDir, "Inter-Bold.ttf")),
     readFile(path.join(fontsDir, "BebasNeue-Regular.ttf")),
     readFile(path.join(fontsDir, "PlayfairDisplay-Regular.woff")),
     readFile(path.join(fontsDir, "PlayfairDisplay-Bold.woff")),
+    readFile(path.join(fontsDir, "Tangerine-Regular.woff")),
+    readFile(path.join(fontsDir, "Tangerine-Bold.woff")),
+    readFile(path.join(fontsDir, "AbrilFatface-Regular.woff")),
+    readFile(path.join(fontsDir, "BodoniModa-Regular.woff")),
+    readFile(path.join(fontsDir, "BodoniModa-Bold.woff")),
   ]);
 
   fontsLoaded = [
@@ -32,6 +37,11 @@ async function loadFonts() {
     { name: "Bebas Neue", data: bebas, weight: 400 as FontWeight, style: "normal" as FontStyle },
     { name: "Playfair Display", data: playfairRegular, weight: 400 as FontWeight, style: "normal" as FontStyle },
     { name: "Playfair Display", data: playfairBold, weight: 700 as FontWeight, style: "normal" as FontStyle },
+    { name: "Tangerine", data: tangerineRegular, weight: 400 as FontWeight, style: "normal" as FontStyle },
+    { name: "Tangerine", data: tangerineBold, weight: 700 as FontWeight, style: "normal" as FontStyle },
+    { name: "Abril Fatface", data: abrilFatface, weight: 400 as FontWeight, style: "normal" as FontStyle },
+    { name: "Bodoni Moda", data: bodoniModaRegular, weight: 400 as FontWeight, style: "normal" as FontStyle },
+    { name: "Bodoni Moda", data: bodoniModaBold, weight: 700 as FontWeight, style: "normal" as FontStyle },
   ];
 
   return fontsLoaded;

@@ -73,7 +73,7 @@ export type FamilyDefinition = {
 // A style is a visual/structural variant within a family.
 // Each style has its own build() function and themeDefaults.
 export type TemplateId =
-  | "boxed_text" | "chat_bubble" | "quote_card" | "star_review" | "message_bubble"
+  | "boxed_text" | "quote_card" | "star_review"
   | "luxury_minimal_center" | "luxury_editorial_left" | "luxury_soft_frame" | "luxury_soft_frame_open";
 
 export type TemplateTheme = {

@@ -11,7 +11,7 @@ import {
   insertRenderResult,
 } from "@/lib/db";
 import "@/lib/templates"; // ensure templates + families registered
-import { pickRandomStyle, getAllFamilies } from "@/lib/templates";
+import { pickRandomStyle, getAllFamilies, getStylesForFamily } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
 import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline } from "@/lib/types";
@@ -25,11 +25,13 @@ export async function POST(req: NextRequest) {
       familyIds,
       lang = "en",
       format = "4:5",
+      showAllStyles = false,
     } = body as {
       imageId: string;
       familyIds: FamilyId[];
       lang?: Language;
       format?: Format;
+      showAllStyles?: boolean;
     };
 
     if (!imageId) {
@@ -73,36 +75,40 @@ export async function POST(req: NextRequest) {
     const usedHeadlineIds = new Set<string>();
     const angles: Angle[] = ["benefit", "curiosity", "urgency", "emotional"];
 
-    for (let i = 0; i < families.length; i++) {
-      const familyId = families[i];
-      const style = pickRandomStyle(familyId);
+    let specIndex = 0;
+    for (const familyId of families) {
+      const stylesToUse = showAllStyles
+        ? getStylesForFamily(familyId)
+        : [pickRandomStyle(familyId)];
 
-      // Pick a compatible zone
-      const zoneId =
-        style.supportedZones[i % style.supportedZones.length];
+      for (const style of stylesToUse) {
+        // Pick a compatible zone
+        const zoneId = style.supportedZones[specIndex % style.supportedZones.length];
 
-      // Pick a headline — luxury always gets aspirational; others spread across angles
-      const targetAngle: Angle | undefined = familyId === "luxury"
-        ? "aspirational"
-        : (i < angles.length ? angles[i] : undefined);
-      const headline = pickHeadline(langHeadlines, usedHeadlineIds, targetAngle);
-      usedHeadlineIds.add(headline.id);
+        // Pick a headline — luxury always gets aspirational; others spread across angles
+        const targetAngle: Angle | undefined = familyId === "luxury"
+          ? "aspirational"
+          : (specIndex < angles.length ? angles[specIndex] : undefined);
+        const headline = pickHeadline(langHeadlines, usedHeadlineIds, targetAngle);
+        usedHeadlineIds.add(headline.id);
 
-      const spec: AdSpec = {
-        id: newId("as"),
-        imageId,
-        format,
-        lang,
-        familyId,
-        templateId: style.id,
-        zoneId,
-        headlineId: headline.id,
-        headlineText: headline.text,
-        theme: style.themeDefaults,
-        renderMeta: dims,
-      };
+        const spec: AdSpec = {
+          id: newId("as"),
+          imageId,
+          format,
+          lang,
+          familyId,
+          templateId: style.id,
+          zoneId,
+          headlineId: headline.id,
+          headlineText: headline.text,
+          theme: style.themeDefaults,
+          renderMeta: dims,
+        };
 
-      specs.push(spec);
+        specs.push(spec);
+        specIndex++;
+      }
     }
 
     // 4. Render each AdSpec → PNG

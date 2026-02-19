@@ -24,10 +24,8 @@ registerFamily({
 
 // Import all styles to trigger registration
 import "./boxedText";
-import "./chatBubble";
 import "./quoteCard";
 import "./starReview";
-import "./messageBubble";
 import "./luxuryMinimalCenter";
 import "./luxuryEditorialLeft";
 import "./luxurySoftFrame";

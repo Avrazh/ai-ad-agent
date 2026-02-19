@@ -35,10 +35,8 @@ const FAMILY_LABELS: Record<FamilyId, string> = {
 
 const STYLE_LABELS: Record<string, string> = {
   boxed_text: "Boxed",
-  chat_bubble: "Bubble",
   quote_card: "Quote",
   star_review: "Stars",
-  message_bubble: "Message",
   luxury_minimal_center: "Minimal",
   luxury_editorial_left: "Editorial",
   luxury_soft_frame: "Frame",
@@ -63,6 +61,8 @@ export default function Home() {
   const [switching, setSwitching] = useState(false);
   const [results, setResults] = useState<RenderResultItem[]>([]);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [allStylesMode, setAllStylesMode] = useState(false);
+  const [lastAllStylesMode, setLastAllStylesMode] = useState(false);
 
   // ── Upload ────────────────────────────────────────────────
   const handleUpload = useCallback(async (file: File) => {
@@ -135,6 +135,7 @@ export default function Home() {
           familyIds: selectedFamilies,
           lang: selectedLang,
           format: selectedFormat,
+          showAllStyles: allStylesMode,
         }),
       });
 
@@ -146,6 +147,7 @@ export default function Home() {
       const data = await res.json();
       setResults(data.results);
       setLastGeneratedFamilies([...selectedFamilies]);
+      setLastAllStylesMode(allStylesMode);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -277,14 +279,102 @@ export default function Home() {
   const approvedCount = results.filter((r) => r.approved).length;
   const familiesChanged =
     [...selectedFamilies].sort().join() !== [...lastGeneratedFamilies].sort().join();
+  const modeChanged = allStylesMode !== lastAllStylesMode;
   const canGenerate =
-    !!image && !generating && selectedFamilies.length > 0 && (results.length === 0 || familiesChanged);
+    !!image && !generating && selectedFamilies.length > 0 && (results.length === 0 || familiesChanged || modeChanged);
 
   // ── Pill style helper ─────────────────────────────────────
   const pillActive =
     "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_12px_rgba(99,102,241,0.15)]";
   const pillInactive =
     "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-gray-300";
+
+  // ── All-styles column grouping ────────────────────────────
+  const familiesInResults = [...new Set(results.map((r) => r.familyId))];
+  const resultsByFamily: Record<string, RenderResultItem[]> = {};
+  for (const f of familiesInResults) {
+    resultsByFamily[f] = results.filter((r) => r.familyId === f);
+  }
+
+  // ── Card renderer (shared between grid + column layouts) ──
+  const renderCard = (result: RenderResultItem) => (
+    <div
+      key={result.id}
+      className={
+        "overflow-hidden rounded-2xl transition backdrop-blur-md " +
+        (result.approved
+          ? "ring-2 ring-indigo-500/40 bg-white/[0.08] shadow-[0_0_20px_rgba(99,102,241,0.1)]"
+          : "border border-white/10 bg-white/[0.06]")
+      }
+    >
+      <div className="relative">
+        <img
+          src={result.pngUrl}
+          alt="Generated ad"
+          className={"w-full transition " + (regeneratingId === result.id ? "opacity-40" : "")}
+        />
+        {regeneratingId === result.id && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-between px-3 py-2.5">
+        <div className="flex gap-1.5 flex-wrap">
+          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+            {FAMILY_LABELS[result.familyId as FamilyId] ?? result.familyId}
+          </span>
+          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+            {STYLE_LABELS[result.templateId] ?? result.templateId}
+          </span>
+          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+            {result.format || "4:5"}
+          </span>
+          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
+            {selectedLang.toUpperCase()}
+          </span>
+        </div>
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => handleRegenerate(result.id, "headline")}
+            disabled={regeneratingId === result.id}
+            className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
+          >
+            New headline
+          </button>
+          <button
+            onClick={() => handleRegenerate(result.id, "style")}
+            disabled={regeneratingId === result.id}
+            className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
+          >
+            New style
+          </button>
+          {result.approved && (
+            <button
+              onClick={() => handleDownload(result.pngUrl, result.id)}
+              className="rounded-lg px-2 py-1 text-[10px] font-medium bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white transition"
+              title="Download"
+            >
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={() => handleApprove(result.id, !result.approved)}
+            className={
+              "rounded-lg px-3 py-1 text-xs font-medium border transition " +
+              (result.approved
+                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                : "bg-white/5 text-gray-400 border-white/10 hover:border-indigo-500/30 hover:text-indigo-300")
+            }
+          >
+            {result.approved ? "Approved" : "Approve"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#0B0F14] flex">
@@ -395,6 +485,33 @@ export default function Home() {
               </div>
             </div>
 
+            {/* View mode */}
+            <div>
+              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
+                Style view
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setAllStylesMode(false)}
+                  className={
+                    "rounded-xl px-3 py-2 text-xs font-medium border transition " +
+                    (!allStylesMode ? pillActive : pillInactive)
+                  }
+                >
+                  1 per family
+                </button>
+                <button
+                  onClick={() => setAllStylesMode(true)}
+                  className={
+                    "rounded-xl px-3 py-2 text-xs font-medium border transition " +
+                    (allStylesMode ? pillActive : pillInactive)
+                  }
+                >
+                  All styles
+                </button>
+              </div>
+            </div>
+
             {/* Generate button */}
             <button
               onClick={handleGenerate}
@@ -486,95 +603,29 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
-              {results.map((result) => (
-                <div
-                  key={result.id}
-                  className={
-                    "overflow-hidden rounded-2xl transition backdrop-blur-md " +
-                    (result.approved
-                      ? "ring-2 ring-indigo-500/40 bg-white/[0.08] shadow-[0_0_20px_rgba(99,102,241,0.1)]"
-                      : "border border-white/10 bg-white/[0.06]")
-                  }
-                >
-                  {/* Image with loading overlay during regen */}
-                  <div className="relative">
-                    <img
-                      src={result.pngUrl}
-                      alt="Generated ad"
-                      className={
-                        "w-full transition " +
-                        (regeneratingId === result.id ? "opacity-40" : "")
-                      }
-                    />
-                    {regeneratingId === result.id && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between px-3 py-2.5">
-                    {/* Info badges (left) */}
-                    <div className="flex gap-1.5 flex-wrap">
-                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-                        {FAMILY_LABELS[result.familyId as FamilyId] ?? result.familyId}
+            {allStylesMode ? (
+              /* Column layout: 1 column per family, all styles stacked */
+              <div className="flex gap-4 items-start overflow-x-auto pb-2">
+                {familiesInResults.map((familyId) => (
+                  <div key={familyId} className="flex-1 min-w-[260px] space-y-3">
+                    <div className="flex items-center gap-2 pb-2 border-b border-white/10">
+                      <span className="text-sm font-semibold text-white">
+                        {FAMILY_LABELS[familyId as FamilyId] ?? familyId}
                       </span>
-                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-                        {STYLE_LABELS[result.templateId] ?? result.templateId}
-                      </span>
-                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-                        {result.format || "4:5"}
-                      </span>
-                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-                        {selectedLang.toUpperCase()}
+                      <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-500">
+                        {resultsByFamily[familyId].length} styles
                       </span>
                     </div>
-                    {/* Action buttons (right) */}
-                    <div className="flex gap-1.5">
-                      <button
-                        onClick={() => handleRegenerate(result.id, "headline")}
-                        disabled={regeneratingId === result.id}
-                        className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
-                      >
-                        New headline
-                      </button>
-                      <button
-                        onClick={() => handleRegenerate(result.id, "style")}
-                        disabled={regeneratingId === result.id}
-                        className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
-                      >
-                        New style
-                      </button>
-                      {result.approved && (
-                        <button
-                          onClick={() => handleDownload(result.pngUrl, result.id)}
-                          className="rounded-lg px-2 py-1 text-[10px] font-medium bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white transition"
-                          title="Download"
-                        >
-                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
-                          </svg>
-                        </button>
-                      )}
-                      <button
-                        onClick={() =>
-                          handleApprove(result.id, !result.approved)
-                        }
-                        className={
-                          "rounded-lg px-3 py-1 text-xs font-medium border transition " +
-                          (result.approved
-                            ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
-                            : "bg-white/5 text-gray-400 border-white/10 hover:border-indigo-500/30 hover:text-indigo-300")
-                        }
-                      >
-                        {result.approved ? "Approved" : "Approve"}
-                      </button>
-                    </div>
+                    {resultsByFamily[familyId].map((result) => renderCard(result))}
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              /* Default grid layout */
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {results.map((result) => renderCard(result))}
+              </div>
+            )}
           </div>
         )}
 
