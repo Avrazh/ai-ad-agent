@@ -52,6 +52,7 @@ export default function Home() {
   const [selectedFamilies, setSelectedFamilies] = useState<FamilyId[]>([
     "promo",
     "testimonial",
+    "luxury",
   ]);
   const [lastGeneratedFamilies, setLastGeneratedFamilies] = useState<FamilyId[]>([]);
   const [selectedLang, setSelectedLang] = useState<Language>("en");
