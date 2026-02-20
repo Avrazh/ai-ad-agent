@@ -12,7 +12,7 @@ import {
   insertRenderResult,
 } from "@/lib/db";
 import "@/lib/templates"; // ensure templates + families registered
-import { pickRandomStyle, getAllFamilies, getStylesForFamily } from "@/lib/templates";
+import { getAllFamilies, getStylesForFamily } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
 import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline } from "@/lib/types";
@@ -29,7 +29,6 @@ export async function POST(req: NextRequest) {
       familyIds,
       lang = "en",
       format = "4:5",
-      showAllStyles = false,
     } = body as {
       imageId: string;
       imageUrl?: string;
@@ -38,7 +37,6 @@ export async function POST(req: NextRequest) {
       familyIds: FamilyId[];
       lang?: Language;
       format?: Format;
-      showAllStyles?: boolean;
     };
 
     if (!imageId) {
@@ -95,9 +93,7 @@ export async function POST(req: NextRequest) {
 
     let specIndex = 0;
     for (const familyId of families) {
-      const stylesToUse = showAllStyles
-        ? getStylesForFamily(familyId)
-        : [pickRandomStyle(familyId)];
+      const stylesToUse = getStylesForFamily(familyId);
 
       for (const style of stylesToUse) {
         // Pick a compatible zone

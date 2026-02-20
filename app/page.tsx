@@ -61,8 +61,6 @@ export default function Home() {
   const [switching, setSwitching] = useState(false);
   const [results, setResults] = useState<RenderResultItem[]>([]);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
-  const [allStylesMode, setAllStylesMode] = useState(false);
-  const [lastAllStylesMode, setLastAllStylesMode] = useState(false);
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
 
   // ── Upload ────────────────────────────────────────────────
@@ -141,7 +139,6 @@ export default function Home() {
           familyIds: selectedFamilies,
           lang: selectedLang,
           format: selectedFormat,
-          showAllStyles: allStylesMode,
         }),
       });
 
@@ -153,7 +150,6 @@ export default function Home() {
       const data = await res.json();
       setResults(data.results);
       setLastGeneratedFamilies([...selectedFamilies]);
-      setLastAllStylesMode(allStylesMode);
       setExpandedFamily(data.results[0]?.familyId ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -285,9 +281,8 @@ export default function Home() {
 
   const familiesChanged =
     [...selectedFamilies].sort().join() !== [...lastGeneratedFamilies].sort().join();
-  const modeChanged = allStylesMode !== lastAllStylesMode;
   const canGenerate =
-    !!image && !generating && selectedFamilies.length > 0 && (results.length === 0 || familiesChanged || modeChanged);
+    !!image && !generating && selectedFamilies.length > 0 && (results.length === 0 || familiesChanged);
 
   // ── Pill style helper ─────────────────────────────────────
   const pillActive =
@@ -570,33 +565,6 @@ export default function Home() {
                     {FAMILY_LABELS[id]}
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* View mode */}
-            <div>
-              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
-                Style view
-              </h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setAllStylesMode(false)}
-                  className={
-                    "rounded-xl px-3 py-2 text-xs font-medium border transition " +
-                    (!allStylesMode ? pillActive : pillInactive)
-                  }
-                >
-                  1 per family
-                </button>
-                <button
-                  onClick={() => setAllStylesMode(true)}
-                  className={
-                    "rounded-xl px-3 py-2 text-xs font-medium border transition " +
-                    (allStylesMode ? pillActive : pillInactive)
-                  }
-                >
-                  All styles
-                </button>
               </div>
             </div>
 
