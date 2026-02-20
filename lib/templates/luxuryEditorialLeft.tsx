@@ -48,13 +48,15 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
         style={{ width: w, height: h, objectFit: "cover", position: "absolute" }}
       />
 
-      {/* Card container */}
+      {/* Card container — clamped so it never overflows the canvas bottom */}
       <div
         style={{
           position: "absolute",
           left: zonePx.x,
           top: zonePx.y,
           width: zonePx.w,
+          maxHeight: h - zonePx.y - 24,
+          overflow: "hidden",
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-start",
