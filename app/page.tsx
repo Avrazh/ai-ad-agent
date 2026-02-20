@@ -425,13 +425,6 @@ export default function Home() {
           >
             New headline
           </button>
-          <button
-            onClick={() => handleRegenerate(result.id, "style")}
-            disabled={regeneratingId === result.id}
-            className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
-          >
-            New style
-          </button>
           {result.approved && (
             <button
               onClick={() => handleDownload(result.pngUrl, result.id)}
