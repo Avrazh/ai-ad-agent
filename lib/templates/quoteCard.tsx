@@ -35,6 +35,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
       {/* Background image */}
       <img
         src={imageBase64}
+        width={w}
+        height={h}
         style={{ width: w, height: h, objectFit: "cover", position: "absolute" }}
       />
 
