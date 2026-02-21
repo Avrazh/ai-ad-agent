@@ -1,4 +1,4 @@
-import type { SafeZones } from "@/lib/types";
+import type { SafeZones, FamilyId } from "@/lib/types";
 import { read as readStorage } from "@/lib/storage";
 import path from "path";
 
@@ -28,8 +28,15 @@ export async function analyzeSafeZones(imageId: string): Promise<SafeZones> {
   // Simulate processing delay
   await new Promise((r) => setTimeout(r, 200));
 
+  // Mock family recommendation — cycles across families based on imageId hash.
+  // REAL AI: replace with a vision-based classification call using imageBase64.
+  const allFamilies: FamilyId[] = ["promo", "testimonial", "luxury"];
+  const familyIndex = imageId.split("").reduce((s, c) => s + c.charCodeAt(0), 0) % allFamilies.length;
+  const recommendedFamily = allFamilies[familyIndex];
+
   return {
     imageId,
+    recommendedFamily,
     avoidRegions: [
       // Product center area — don't place text here
       { x: 0.2, y: 0.25, w: 0.6, h: 0.5 },

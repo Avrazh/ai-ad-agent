@@ -12,10 +12,10 @@ import {
   insertRenderResult,
 } from "@/lib/db";
 import "@/lib/templates"; // ensure templates + families registered
-import { getAllFamilies, getStylesForFamily } from "@/lib/templates";
+import { getAllFamilies, getStylesForFamily, getTemplate } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline } from "@/lib/types";
+import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline, TemplateId } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
       imageWidth,
       imageHeight,
       familyIds,
+      autoFamily = false,
+      excludeStyleIds = [],
+      forceTemplateId,
       lang = "en",
       format = "4:5",
     } = body as {
@@ -34,7 +37,10 @@ export async function POST(req: NextRequest) {
       imageUrl?: string;
       imageWidth?: number;
       imageHeight?: number;
-      familyIds: FamilyId[];
+      familyIds?: FamilyId[];
+      autoFamily?: boolean;
+      excludeStyleIds?: string[];
+      forceTemplateId?: string;
       lang?: Language;
       format?: Format;
     };
@@ -59,11 +65,6 @@ export async function POST(req: NextRequest) {
       image = getImage(imageId)!;
     }
 
-    // Default to all registered families if none specified
-    const families: FamilyId[] = familyIds?.length
-      ? familyIds
-      : getAllFamilies().map((f) => f.id);
-
     // 1. Get or create SafeZones (AI call — cached per imageId)
     let safeZones: SafeZones;
     const cachedZones = getSafeZones(imageId);
@@ -73,6 +74,19 @@ export async function POST(req: NextRequest) {
       safeZones = await analyzeSafeZones(imageId);
       upsertSafeZones(imageId, JSON.stringify(safeZones));
     }
+
+    // forceTemplateId: exact template overrides all family/diversity logic
+    const forcedTemplate = forceTemplateId
+      ? getTemplate(forceTemplateId as TemplateId)
+      : null;
+
+    // autoFamily: AI picks 1 family from safeZones.recommendedFamily → 1 result
+    // manual: use provided familyIds (or all registered families as fallback)
+    const families: FamilyId[] = forcedTemplate
+      ? [forcedTemplate.familyId]
+      : autoFamily
+        ? [safeZones.recommendedFamily ?? "promo"]
+        : (familyIds?.length ? familyIds : getAllFamilies().map((f) => f.id));
 
     // 2. Get or create CopyPool (AI call — cached per imageId)
     let copyPool: CopyPool;
@@ -93,7 +107,16 @@ export async function POST(req: NextRequest) {
 
     let specIndex = 0;
     for (const familyId of families) {
-      const stylesToUse = getStylesForFamily(familyId);
+      // forcedTemplate: exact template override (detail panel style picker)
+      // autoFamily: pick 1 style per family, preferring unused ones (diversity)
+      // manual: render all styles for the family
+      let stylesToUse = getStylesForFamily(familyId);
+      if (forcedTemplate) {
+        stylesToUse = [forcedTemplate];
+      } else if (autoFamily) {
+        const available = stylesToUse.filter((s) => !excludeStyleIds.includes(s.id));
+        stylesToUse = available.length > 0 ? [available[0]] : [stylesToUse[Math.floor(Math.random() * stylesToUse.length)]];
+      }
 
       for (const style of stylesToUse) {
         // Pick a compatible zone

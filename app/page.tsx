@@ -1,13 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
-
-type UploadedImage = {
-  imageId: string;
-  url: string;
-  width: number;
-  height: number;
-};
+import { useState, useRef, useCallback, useEffect } from "react";
 
 type RenderResultItem = {
   id: string;
@@ -26,6 +19,21 @@ type FamilyId = "promo" | "testimonial" | "minimal" | "luxury";
 type Language = "en" | "de" | "fr" | "es";
 type Format = "4:5" | "1:1" | "9:16";
 
+type QueueItem = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  imageId?: string;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  status: "idle" | "uploading" | "generating" | "done" | "error";
+  result?: RenderResultItem;
+  usedFamilyId?: FamilyId;
+  approved: boolean;
+  error?: string;
+};
+
 const FAMILY_LABELS: Record<FamilyId, string> = {
   promo: "Promo",
   testimonial: "Testimonial",
@@ -33,483 +41,425 @@ const FAMILY_LABELS: Record<FamilyId, string> = {
   luxury: "Luxury",
 };
 
-const STYLE_LABELS: Record<string, string> = {
-  boxed_text: "Boxed",
-  quote_card: "Quote",
-  star_review: "Stars",
-  luxury_minimal_center: "Minimal",
-  luxury_editorial_left: "Editorial",
-  luxury_soft_frame: "Frame",
-  luxury_soft_frame_open: "Frame Open",
-};
+const ALL_TEMPLATES: { familyId: FamilyId; templateId: string; label: string }[] = [
+  { familyId: "promo",       templateId: "boxed_text",             label: "Boxed" },
+  { familyId: "testimonial", templateId: "quote_card",             label: "Quote" },
+  { familyId: "testimonial", templateId: "star_review",            label: "Stars" },
+  { familyId: "luxury",      templateId: "luxury_minimal_center",  label: "Minimal" },
+  { familyId: "luxury",      templateId: "luxury_editorial_left",  label: "Editorial" },
+  { familyId: "luxury",      templateId: "luxury_soft_frame",      label: "Frame" },
+  { familyId: "luxury",      templateId: "luxury_soft_frame_open", label: "Frame Open" },
+];
+
+const FAMILIES_IN_ORDER: FamilyId[] = ["promo", "testimonial", "luxury"];
+
+let _itemCounter = 0;
+function newItemId() {
+  return `qi-${++_itemCounter}`;
+}
+
+function StatusIcon({ status }: { status: QueueItem["status"] }) {
+  if (status === "done")
+    return (
+      <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+      </svg>
+    );
+  if (status === "error")
+    return (
+      <svg className="h-3.5 w-3.5 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    );
+  if (status === "uploading" || status === "generating")
+    return <div className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />;
+  return <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/20" />;
+}
 
 export default function Home() {
-  const [image, setImage] = useState<UploadedImage | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Per-image state
-  const [selectedFamilies, setSelectedFamilies] = useState<FamilyId[]>([
-    "promo",
-    "testimonial",
-    "luxury",
-  ]);
-  const [lastGeneratedFamilies, setLastGeneratedFamilies] = useState<FamilyId[]>([]);
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [processing, setProcessing] = useState(false);
   const [selectedLang, setSelectedLang] = useState<Language>("en");
   const [selectedFormat, setSelectedFormat] = useState<Format>("4:5");
-  const [generating, setGenerating] = useState(false);
-  const [genStep, setGenStep] = useState<string | null>(null);
-  const [switching, setSwitching] = useState(false);
-  const [results, setResults] = useState<RenderResultItem[]>([]);
-  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
-  const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  // ── Upload ────────────────────────────────────────────────
-  const handleUpload = useCallback(async (file: File) => {
-    setUploading(true);
-    setError(null);
-    setResults([]);
-    setLastGeneratedFamilies([]);
-    setExpandedFamily(null);
+  const usedStyleIdsRef = useRef<string[]>([]);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Mirror queue + selectedItemId in refs so callbacks can read latest values
+  // without being declared after derived variables that depend on state.
+  const queueRef = useRef<QueueItem[]>([]);
+  queueRef.current = queue;
+  const selectedItemIdRef = useRef<string | null>(null);
+  selectedItemIdRef.current = selectedItemId;
 
-    const formData = new FormData();
-    formData.append("file", file);
-    if (image?.url) formData.append("previousImageUrl", image.url);
+  const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
+    setQueue((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }, []);
 
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Upload failed");
+  // Auto-select first done item when nothing is selected
+  const statusKey = queue.map((i) => i.status).join(",");
+  useEffect(() => {
+    setQueue((prev) => {
+      const hasSelection = prev.some((i) => i.id === selectedItemId);
+      if (!hasSelection) {
+        const first = prev.find((i) => i.status === "done");
+        if (first) setSelectedItemId(first.id);
       }
-      const data: UploadedImage = await res.json();
-      setImage(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
+      return prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusKey]);
+
+  // ── File handling ───────────────────────────────────────
+  const handleFiles = useCallback((files: FileList) => {
+    const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    if (imageFiles.length === 0) return;
+
+    setQueue((prev) => {
+      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+    usedStyleIdsRef.current = [];
+    setSelectedItemId(null);
+
+    setQueue(
+      imageFiles.map((file) => ({
+        id: newItemId(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        status: "idle",
+        approved: false,
+      }))
+    );
   }, []);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const file = e.dataTransfer.files[0];
-      if (file) handleUpload(file);
+      handleFiles(e.dataTransfer.files);
     },
-    [handleUpload]
+    [handleFiles]
   );
 
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) handleUpload(file);
-    },
-    [handleUpload]
-  );
+  // ── Generate All ────────────────────────────────────────
+  const handleGenerateAll = useCallback(async () => {
+    if (processing) return;
+    const itemsToProcess = queue.filter((item) => item.status === "idle");
+    if (itemsToProcess.length === 0) return;
 
-  // ── Generate ──────────────────────────────────────────────
-  const handleGenerate = useCallback(async () => {
-    if (!image || generating) return;
-    setGenerating(true);
-    setError(null);
-    setResults([]);
+    setProcessing(true);
+    const lang = selectedLang;
+    const format = selectedFormat;
 
-    const steps = [
-      "Analyzing image...",
-      "Finding safe zones...",
-      "Generating headlines...",
-      "Rendering creatives...",
-    ];
-    let stepIdx = 0;
-    setGenStep(steps[0]);
-    const stepInterval = setInterval(() => {
-      stepIdx++;
-      if (stepIdx < steps.length) setGenStep(steps[stepIdx]);
-    }, 800);
-
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageId: image.imageId,
-          imageUrl: image.url,
-          imageWidth: image.width,
-          imageHeight: image.height,
-          familyIds: selectedFamilies,
-          lang: selectedLang,
-          format: selectedFormat,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Generation failed");
-      }
-
-      const data = await res.json();
-      setResults(data.results);
-      setLastGeneratedFamilies([...selectedFamilies]);
-      setExpandedFamily(data.results[0]?.familyId ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed");
-    } finally {
-      clearInterval(stepInterval);
-      setGenStep(null);
-      setGenerating(false);
-    }
-  }, [image, generating, selectedFamilies, selectedLang, selectedFormat]);
-
-  // ── Switch (lang/format view filter) ─────────────────────
-  const handleSwitch = useCallback(
-    async (resultIds: string[], lang?: Language, format?: Format) => {
-      setSwitching(true);
-      setError(null);
+    for (const item of itemsToProcess) {
       try {
-        const res = await fetch("/api/switch", {
+        updateItem(item.id, { status: "uploading" });
+        const form = new FormData();
+        form.append("file", item.file);
+        const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
+        if (!uploadRes.ok) {
+          const d = await uploadRes.json();
+          throw new Error(d.error || "Upload failed");
+        }
+        const uploaded = await uploadRes.json();
+
+        updateItem(item.id, {
+          status: "generating",
+          imageId: uploaded.imageId,
+          imageUrl: uploaded.url,
+          imageWidth: uploaded.width,
+          imageHeight: uploaded.height,
+        });
+        const genRes = await fetch("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultIds, lang, format }),
+          body: JSON.stringify({
+            imageId: uploaded.imageId,
+            imageUrl: uploaded.url,
+            imageWidth: uploaded.width,
+            imageHeight: uploaded.height,
+            autoFamily: true,
+            excludeStyleIds: usedStyleIdsRef.current,
+            lang,
+            format,
+          }),
         });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Switch failed");
+        if (!genRes.ok) {
+          const d = await genRes.json();
+          throw new Error(d.error || "Generation failed");
         }
-        const data = await res.json();
-        setResults((prev) => {
-          let next = [...prev];
-          for (const item of data.results) {
-            next = next.map((r) =>
-              r.id === item.replacedId ? item.result : r
-            );
-          }
-          return next;
+        const genData = await genRes.json();
+        const result: RenderResultItem = genData.results[0];
+
+        usedStyleIdsRef.current = [...usedStyleIdsRef.current, result.templateId];
+        updateItem(item.id, {
+          status: "done",
+          result,
+          usedFamilyId: result.familyId as FamilyId,
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Switch failed");
-      } finally {
-        setSwitching(false);
-      }
-    },
-    []
-  );
-
-  // ── Approve ───────────────────────────────────────────────
-  const handleApprove = useCallback(
-    async (resultId: string, approved: boolean) => {
-      try {
-        const res = await fetch("/api/approve", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId, approved }),
+        updateItem(item.id, {
+          status: "error",
+          error: err instanceof Error ? err.message : "Failed",
         });
-        if (!res.ok) return;
+      }
+    }
 
-        setResults((prev) =>
-          prev.map((r) => (r.id === resultId ? { ...r, approved } : r))
-        );
-      } catch {
-        // silent fail for approval toggle
+    setProcessing(false);
+  }, [processing, queue, selectedLang, selectedFormat, updateItem]);
+
+  // ── Re-render: shared by style/lang/format changes ──────
+  // Always pass explicit lang+format so React state timing is never an issue.
+  const handleRerender = useCallback(
+    async (
+      item: QueueItem,
+      templateId: string,
+      lang: Language,
+      format: Format
+    ) => {
+      if (!item.imageId || detailLoading) return;
+      setDetailLoading(true);
+      try {
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageId: item.imageId,
+            imageUrl: item.imageUrl,
+            imageWidth: item.imageWidth,
+            imageHeight: item.imageHeight,
+            forceTemplateId: templateId,
+            autoFamily: false,
+            lang,
+            format,
+          }),
+        });
+        if (!res.ok) {
+          const d = await res.json();
+          throw new Error(d.error || "Re-render failed");
+        }
+        const data = await res.json();
+        const result: RenderResultItem = data.results[0];
+
+        usedStyleIdsRef.current = [
+          ...usedStyleIdsRef.current.filter((s) => s !== item.result?.templateId),
+          result.templateId,
+        ];
+        updateItem(item.id, {
+          result,
+          approved: false,
+          usedFamilyId: result.familyId as FamilyId,
+        });
+      } catch (err) {
+        console.error("Re-render error:", err);
+      } finally {
+        setDetailLoading(false);
       }
     },
-    []
+    [detailLoading, updateItem]
   );
 
-  // ── Regenerate ─────────────────────────────────────────────
-  const handleRegenerate = useCallback(
-    async (resultId: string, mode: "headline" | "style") => {
-      setRegeneratingId(resultId);
+  // Convenience wrappers used by the three control types in the detail panel
+  const handleStyleChange = useCallback(
+    (item: QueueItem, templateId: string) =>
+      handleRerender(item, templateId, selectedLang, selectedFormat),
+    [handleRerender, selectedLang, selectedFormat]
+  );
+
+  const handleLangChange = useCallback(
+    (lang: Language) => {
+      setSelectedLang(lang);
+      const item = queueRef.current.find((i) => i.id === selectedItemIdRef.current);
+      if (item?.result) {
+        handleRerender(item, item.result.templateId, lang, selectedFormat);
+      }
+    },
+    [handleRerender, selectedFormat]
+  );
+
+  const handleFormatChange = useCallback(
+    (format: Format) => {
+      setSelectedFormat(format);
+      const item = queueRef.current.find((i) => i.id === selectedItemIdRef.current);
+      if (item?.result) {
+        handleRerender(item, item.result.templateId, selectedLang, format);
+      }
+    },
+    [handleRerender, selectedLang]
+  );
+
+  // ── New headline ────────────────────────────────────────
+  const handleNewHeadline = useCallback(
+    async (item: QueueItem) => {
+      if (!item.result || detailLoading) return;
+      setDetailLoading(true);
       try {
         const res = await fetch("/api/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId, mode }),
+          body: JSON.stringify({ resultId: item.result.id, mode: "headline" }),
         });
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Regeneration failed");
+          const d = await res.json();
+          throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        setResults((prev) =>
-          prev.map((r) => (r.id === data.replacedId ? data.result : r))
-        );
+        updateItem(item.id, { result: data.result, approved: false });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Regeneration failed");
+        console.error("New headline error:", err);
       } finally {
-        setRegeneratingId(null);
+        setDetailLoading(false);
       }
     },
-    []
+    [detailLoading, updateItem]
   );
 
-  // ── Download ──────────────────────────────────────────────
+  // ── Approve ─────────────────────────────────────────────
+  const handleApprove = useCallback(
+    async (itemId: string, resultId: string, approved: boolean) => {
+      try {
+        await fetch("/api/approve", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultId, approved }),
+        });
+        updateItem(itemId, { approved });
+      } catch {
+        // silent
+      }
+    },
+    [updateItem]
+  );
+
+  // ── Download ────────────────────────────────────────────
   const handleDownload = useCallback(async (pngUrl: string, id: string) => {
-    const res = await fetch(pngUrl);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ad-${id}.png`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const res = await fetch(pngUrl);
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ad-${id}.png`;
+      // Must be in the DOM for Firefox/Safari to trigger the download
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Delay revocation so the browser has time to start the download
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Download failed:", err);
+    }
   }, []);
 
-  // ── Family toggle (multi-select) ─────────────────────────
-  const toggleFamily = (id: FamilyId) => {
-    setSelectedFamilies((prev: FamilyId[]) =>
-      prev.includes(id) ? prev.filter((f: FamilyId) => f !== id) : [...prev, id]
-    );
-  };
-
-  // ── Language select (single-select + auto-switch) ─────────
-  const selectLang = (lang: Language) => {
-    if (lang === selectedLang) return;
-    setSelectedLang(lang);
-    if (results.length > 0) {
-      handleSwitch(results.map((r) => r.id), lang, undefined);
+  const handleDownloadAll = useCallback(async () => {
+    const approved = queue.filter((item) => item.approved && item.result);
+    for (let i = 0; i < approved.length; i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 200));
+      const item = approved[i];
+      if (item.result) handleDownload(item.result.pngUrl, item.result.id);
     }
-  };
+  }, [queue, handleDownload]);
 
-  // ── Format select (single-select + auto-switch) ──────────
-  const selectFormat = (format: Format) => {
-    if (format === selectedFormat) return;
-    setSelectedFormat(format);
-    if (results.length > 0) {
-      handleSwitch(results.map((r) => r.id), undefined, format);
-    }
-  };
+  // ── Derived ─────────────────────────────────────────────
+  const approvedCount = queue.filter((item) => item.approved).length;
+  const idleCount = queue.filter((item) => item.status === "idle").length;
+  const activeIndex = queue.findIndex(
+    (item) => item.status === "uploading" || item.status === "generating"
+  );
+  // Only show rows that have started processing (hide idle ones)
+  const visibleQueueItems = queue.filter((item) => item.status !== "idle");
 
-  const familiesChanged =
-    [...selectedFamilies].sort().join() !== [...lastGeneratedFamilies].sort().join();
-  const canGenerate =
-    !!image && !generating && selectedFamilies.length > 0 && (results.length === 0 || familiesChanged);
+  const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
+  const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
+  const prevItem = selectedIdx > 0 ? queue[selectedIdx - 1] : null;
+  const nextItem =
+    selectedIdx >= 0 && selectedIdx < queue.length - 1
+      ? queue[selectedIdx + 1]
+      : null;
 
-  // ── Pill style helper ─────────────────────────────────────
   const pillActive =
-    "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_12px_rgba(99,102,241,0.15)]";
+    "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.12)]";
   const pillInactive =
     "bg-white/5 text-gray-400 border-white/10 hover:border-white/20 hover:text-gray-300";
 
-  // ── Family grouping ───────────────────────────────────────
-  const familiesInResults = [...new Set(results.map((r) => r.familyId))];
-  const resultsByFamily: Record<string, RenderResultItem[]> = {};
-  for (const f of familiesInResults) {
-    resultsByFamily[f] = results.filter((r) => r.familyId === f);
-  }
-
-  // ── Pile renderer ─────────────────────────────────────────
-  const pileStyles = [
-    { rotate: 0,  tx: 0,  ty: 0,  z: 3 },
-    { rotate: -4, tx: -5, ty: 5,  z: 2 },
-    { rotate: -8, tx: -10, ty: 10, z: 1 },
-  ];
-
-  const renderPile = (familyId: string) => {
-    const cards = resultsByFamily[familyId] ?? [];
-    const isExpanded = expandedFamily === familyId;
-    const preview = cards.slice(0, 3);
-
-    return (
-      <button
-        key={familyId}
-        onClick={() => setExpandedFamily(isExpanded ? null : familyId)}
-        className="flex flex-col items-center gap-3 group focus:outline-none"
-      >
-        {/* Stacked card deck */}
-        <div className="relative" style={{ width: 148, height: 196 }}>
-          {preview.map((card, idx) => {
-            const s = pileStyles[idx] ?? pileStyles[pileStyles.length - 1];
-            return (
-              <div
-                key={card.id}
-                className={
-                  "absolute rounded-xl border shadow-lg transition-all duration-200 " +
-                  (isExpanded ? "border-indigo-500/40" : "border-white/15 group-hover:border-white/30")
-                }
-                style={{
-                  top: 0,
-                  left: 0,
-                  width: 148,
-                  height: 196,
-                  transform: `rotate(${s.rotate}deg) translate(${s.tx}px, ${s.ty}px)`,
-                  zIndex: s.z,
-                  backgroundImage: `url(${card.pngUrl})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                  backgroundColor: "#1a1f28",
-                }}
-              />
-            );
-          })}
-          {/* Glow ring when expanded */}
-          {isExpanded && (
-            <div
-              className="absolute inset-0 rounded-xl pointer-events-none"
-              style={{
-                zIndex: 4,
-                boxShadow: "0 0 0 2px rgba(99,102,241,0.6), 0 0 24px rgba(99,102,241,0.2)",
-              }}
-            />
-          )}
-        </div>
-
-        {/* Label */}
-        <div className="text-center space-y-0.5">
-          <p className={
-            "text-sm font-semibold transition " +
-            (isExpanded
-              ? "text-indigo-300"
-              : "text-white group-hover:text-indigo-300")
-          }>
-            {FAMILY_LABELS[familyId as FamilyId] ?? familyId}
-          </p>
-          <p className="text-xs text-gray-600">
-            {cards.length} style{cards.length !== 1 ? "s" : ""}
-          </p>
-        </div>
-
-        {/* Chevron indicator */}
-        <svg
-          className={"h-4 w-4 transition-transform " + (isExpanded ? "rotate-180 text-indigo-400" : "text-gray-600 group-hover:text-gray-400")}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-    );
-  };
-
-  // ── Card renderer ─────────────────────────────────────────
-  const renderCard = (result: RenderResultItem) => (
-    <div
-      key={result.id}
-      className={
-        "overflow-hidden rounded-2xl transition backdrop-blur-md " +
-        (result.approved
-          ? "ring-2 ring-indigo-500/40 bg-white/[0.08] shadow-[0_0_20px_rgba(99,102,241,0.1)]"
-          : "border border-white/10 bg-white/[0.06]")
-      }
-    >
-      <div className="relative">
-        <img
-          src={result.pngUrl}
-          alt="Generated ad"
-          className={"w-full transition " + (regeneratingId === result.id ? "opacity-40" : "")}
-        />
-        {regeneratingId === result.id && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-          </div>
-        )}
-      </div>
-      <div className="flex items-center justify-between px-3 py-2.5">
-        <div className="flex gap-1.5 flex-wrap">
-          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-            {FAMILY_LABELS[result.familyId as FamilyId] ?? result.familyId}
-          </span>
-          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-            {STYLE_LABELS[result.templateId] ?? result.templateId}
-          </span>
-          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-            {result.format || "4:5"}
-          </span>
-          <span className="rounded-md bg-white/10 px-1.5 py-0.5 text-[10px] text-gray-400">
-            {selectedLang.toUpperCase()}
-          </span>
-        </div>
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => handleRegenerate(result.id, "headline")}
-            disabled={regeneratingId === result.id}
-            className="rounded-lg bg-white/5 border border-white/5 px-2 py-1 text-[10px] text-gray-500 hover:bg-white/10 hover:text-gray-300 hover:border-white/10 transition disabled:opacity-30"
-          >
-            New headline
-          </button>
-          {result.approved && (
-            <button
-              onClick={() => handleDownload(result.pngUrl, result.id)}
-              className="rounded-lg px-2 py-1 text-[10px] font-medium bg-white/10 text-gray-400 hover:bg-white/20 hover:text-white transition"
-              title="Download"
-            >
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
-              </svg>
-            </button>
-          )}
-          <button
-            onClick={() => handleApprove(result.id, !result.approved)}
-            className={
-              "rounded-lg px-3 py-1 text-xs font-medium border transition " +
-              (result.approved
-                ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
-                : "bg-white/5 text-gray-400 border-white/10 hover:border-indigo-500/30 hover:text-indigo-300")
-            }
-          >
-            {result.approved ? "Approved" : "Approve"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-[#0B0F14] flex">
-      {/* ── Left sidebar (working area) ─────────────────── */}
-      <aside className="w-[340px] shrink-0 border-r border-white/10 p-5 space-y-5 overflow-y-auto h-screen sticky top-0">
-        {/* Header */}
-        <div>
-          <h1 className="mb-1 text-xl font-bold text-white">AI Ad Agent</h1>
-          <p className="text-[11px] text-gray-500">
-            Upload a photo, choose options, generate ads
+    <div className="flex h-screen overflow-hidden bg-[#0B0F14] text-white">
+
+      {/* ════ LEFT PANEL ════════════════════════════════ */}
+      <div className="w-[300px] shrink-0 flex flex-col border-r border-white/[0.06] overflow-hidden">
+
+        {/* Title */}
+        <div className="shrink-0 px-4 pt-5 pb-4 border-b border-white/[0.06]">
+          <h1 className="text-sm font-bold text-white tracking-tight">AI Ad Agent</h1>
+          <p className="text-[10px] text-gray-600 mt-0.5">
+            AI picks best template · visual diversity guaranteed
           </p>
         </div>
 
-        {/* Upload area */}
+        {/* Drop zone — always visible, Choose Folder inside */}
         <div
           onDrop={handleDrop}
           onDragOver={(e) => e.preventDefault()}
           className={
-            "flex flex-col items-center justify-center rounded-2xl border border-dashed p-6 transition backdrop-blur-md " +
-            (uploading
-              ? "border-indigo-500/40 bg-indigo-500/10"
-              : image
-                ? "border-white/10 bg-white/[0.06]"
-                : "border-white/20 bg-white/[0.04] hover:border-indigo-500/40 hover:bg-white/[0.08]")
+            "shrink-0 mx-3 mt-3 rounded-xl border border-dashed transition " +
+            (queue.length > 0
+              ? "border-white/10 bg-white/[0.02] px-3 py-3"
+              : "border-white/15 bg-white/[0.02] hover:border-indigo-500/30 hover:bg-white/[0.04] px-3 py-5 cursor-pointer")
           }
+          onClick={() => queue.length === 0 && folderInputRef.current?.click()}
         >
-          {image ? (
-            <div className="flex w-full items-center gap-3">
-              <img
-                src={image.url}
-                alt="Product"
-                className="h-20 w-20 rounded-xl object-cover"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">Product image</p>
-                <p className="text-xs text-gray-500">
-                  {image.width} x {image.height}
-                </p>
+          {queue.length > 0 ? (
+            <div className="flex items-center gap-2.5">
+              <div className="flex -space-x-1.5 shrink-0">
+                {queue.slice(0, 5).map((item) => (
+                  <img
+                    key={item.id}
+                    src={item.previewUrl}
+                    alt=""
+                    className="h-6 w-6 rounded object-cover border border-[#0B0F14]"
+                  />
+                ))}
+                {queue.length > 5 && (
+                  <div className="flex h-6 w-6 items-center justify-center rounded border border-[#0B0F14] bg-white/10 text-[9px] text-gray-400">
+                    +{queue.length - 5}
+                  </div>
+                )}
               </div>
-              <label className="cursor-pointer shrink-0 rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-xs text-gray-400 hover:bg-white/10 hover:text-gray-300 transition">
-                Replace
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={handleFileInput}
-                />
-              </label>
-            </div>
-          ) : uploading ? (
-            <div className="flex items-center gap-2">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-              <p className="text-sm text-indigo-300">Uploading...</p>
+              <span className="text-[11px] text-gray-400 flex-1">
+                {queue.length} image{queue.length !== 1 ? "s" : ""}
+              </span>
+              {!processing && (
+                <>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
+                    className="text-[10px] text-gray-600 hover:text-indigo-400 transition"
+                  >
+                    Change
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQueue((prev) => {
+                        prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+                        return [];
+                      });
+                      usedStyleIdsRef.current = [];
+                      setSelectedItemId(null);
+                    }}
+                    className="text-[10px] text-gray-600 hover:text-red-400 transition"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
             </div>
           ) : (
-            <>
+            <div className="flex flex-col items-center gap-2 text-center pointer-events-none">
               <svg
-                className="mb-3 h-8 w-8 text-gray-600"
+                className="h-7 w-7 text-gray-600"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -518,187 +468,388 @@ export default function Home() {
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  d="M12 16v-8m0 0l-3 3m3-3l3 3M6.75 20.25h10.5A2.25 2.25 0 0019.5 18V8.25a2.25 2.25 0 00-2.25-2.25H15l-1.5-1.5h-3L9 6H6.75A2.25 2.25 0 004.5 8.25V18a2.25 2.25 0 002.25 2.25z"
+                  d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
                 />
               </svg>
-              <p className="text-sm text-gray-400">
-                Drop image or{" "}
-                <label className="cursor-pointer font-medium text-indigo-400 hover:text-indigo-300">
-                  browse
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="hidden"
-                    onChange={handleFileInput}
-                  />
-                </label>
+              <p className="text-[11px] text-gray-500">
+                Drop images or click to choose a folder
               </p>
-              <p className="mt-1 text-[10px] text-gray-600">PNG, JPG, or WebP</p>
-            </>
+            </div>
+          )}
+
+          {/* Hidden inputs */}
+          <input
+            ref={folderInputRef}
+            type="file"
+            // @ts-expect-error webkitdirectory is non-standard
+            webkitdirectory=""
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => e.target.files && handleFiles(e.target.files)}
+          />
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => e.target.files && handleFiles(e.target.files)}
+          />
+        </div>
+
+        {/* Generate button */}
+        <div className="shrink-0 px-3 py-2">
+          <button
+            onClick={handleGenerateAll}
+            disabled={processing || idleCount === 0}
+            className={
+              "w-full rounded-xl py-2 text-[12px] font-semibold transition " +
+              (processing || idleCount === 0
+                ? "bg-indigo-500/15 text-indigo-400/50 cursor-not-allowed"
+                : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_0_16px_rgba(99,102,241,0.25)]")
+            }
+          >
+            {processing
+              ? `Processing ${activeIndex + 1} of ${queue.length}...`
+              : idleCount > 0
+                ? `Generate All (${idleCount})`
+                : "Generate All"}
+          </button>
+        </div>
+
+        {/* Queue list — only shows items that have started processing */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {visibleQueueItems.length > 0 && (
+            <div>
+              {visibleQueueItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedItemId(item.id)}
+                  className={
+                    "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition border-l-2 " +
+                    (selectedItemId === item.id
+                      ? "bg-indigo-500/[0.08] border-indigo-500/60"
+                      : "hover:bg-white/[0.03] border-transparent")
+                  }
+                >
+                  <StatusIcon status={item.status} />
+                  <img
+                    src={item.previewUrl}
+                    alt=""
+                    className="h-8 w-8 rounded object-cover shrink-0 border border-white/10"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate text-[12px] text-gray-300 leading-tight">
+                      {item.file.name}
+                    </p>
+                    <p className="text-[10px] mt-0.5">
+                      {item.status === "uploading" && (
+                        <span className="text-indigo-400">Uploading...</span>
+                      )}
+                      {item.status === "generating" && (
+                        <span className="text-indigo-400">Generating...</span>
+                      )}
+                      {item.status === "error" && (
+                        <span className="text-red-400 truncate block">
+                          {item.error ?? "Error"}
+                        </span>
+                      )}
+                      {item.status === "done" && item.result && (
+                        <span className="text-gray-600">
+                          {FAMILY_LABELS[
+                            item.usedFamilyId ??
+                              (item.result.familyId as FamilyId)
+                          ] ?? item.result.familyId}{" "}
+                          · {item.result.format}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  {item.approved && (
+                    <svg
+                      className="h-3.5 w-3.5 shrink-0 text-emerald-400"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
-        {/* Controls (visible after upload) */}
-        {image && (
-          <div className="space-y-4">
-            {/* Families (multi-select) */}
-            <div>
-              <h3 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-gray-500">
-                Families
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {(["promo", "testimonial", "luxury"] as FamilyId[]).map((id) => (
-                  <button
-                    key={id}
-                    onClick={() => toggleFamily(id)}
-                    className={
-                      "rounded-xl px-3 py-2 text-xs font-medium border transition " +
-                      (selectedFamilies.includes(id) ? pillActive : pillInactive)
-                    }
-                  >
-                    {FAMILY_LABELS[id]}
-                  </button>
-                ))}
-              </div>
-            </div>
+      </div>
 
-            {/* Generate button */}
-            <button
-              onClick={handleGenerate}
-              disabled={!canGenerate}
-              className={
-                "w-full rounded-2xl px-6 py-2.5 text-sm font-medium transition " +
-                (!canGenerate
-                  ? "bg-indigo-500/20 text-indigo-300/50 cursor-not-allowed"
-                  : "bg-gradient-to-r from-indigo-500 to-violet-500 text-white hover:from-indigo-400 hover:to-violet-400 shadow-[0_0_20px_rgba(99,102,241,0.25)]")
-              }
-            >
-              {generating ? "Generating..." : "Generate Ads"}
-            </button>
+      {/* ── Download All Approved — fixed top-right ─────── */}
+      {approvedCount > 0 && !processing && (
+        <button
+          onClick={handleDownloadAll}
+          className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-4 py-2 text-[11px] font-semibold text-white shadow-[0_0_20px_rgba(99,102,241,0.35)] hover:from-indigo-400 hover:to-violet-400 transition"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+          </svg>
+          Download All Approved ({approvedCount})
+        </button>
+      )}
 
-            {/* Error */}
-            {error && (
-              <p className="rounded-xl bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
-                {error}
-              </p>
-            )}
-          </div>
-        )}
-      </aside>
-
-      {/* ── Right side (results grid) ──────────────────── */}
-      <main className="flex-1 p-6 overflow-y-auto">
-        {/* Generation loading */}
-        {generating && results.length === 0 && (
-          <div className="flex h-64 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+      {/* ════ RIGHT PANEL — Detail View ═════════════════ */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {!selectedItem ? (
+          <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
-              <p className="text-sm text-gray-400">
-                {genStep || "Starting..."}
+              <div className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center">
+                <svg
+                  className="h-7 w-7 text-gray-700"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 18h16.5M3.75 12V6.75A2.25 2.25 0 016 4.5h12A2.25 2.25 0 0120.25 6.75V12"
+                  />
+                </svg>
+              </div>
+              <p className="text-sm text-gray-600">Select an image from the queue to preview</p>
+              <p className="text-[11px] text-gray-700 mt-1">Generate ads first, then click any row</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col overflow-hidden">
+
+            {/* Filename bar */}
+            <div className="shrink-0 px-6 py-3 border-b border-white/[0.06] text-center">
+              <p className="text-[13px] font-medium text-gray-200 truncate">
+                {selectedItem.file.name}
+              </p>
+              <p className="text-[10px] text-gray-600 mt-0.5">
+                {selectedIdx + 1} of {queue.length}
               </p>
             </div>
-          </div>
-        )}
 
-        {/* Album piles + expanded view */}
-        {results.length > 0 && (
-          <div className="relative">
-            {/* Switching overlay */}
-            {switching && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-black/40">
-                <div className="flex items-center gap-2">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                  <span className="text-sm text-indigo-300">Switching...</span>
-                </div>
-              </div>
-            )}
+            {/* Main content */}
+            {selectedItem.status === "done" && selectedItem.result ? (
+              <div className="flex-1 flex overflow-hidden">
 
-            {/* Filter bar: Language (left) + Format (right) */}
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Lang</span>
-                <div className="flex gap-1">
-                  {(["en", "de", "fr", "es"] as Language[]).map((l) => (
+                {/* Ad image — takes up most of the space */}
+                <div className="flex-1 flex items-center justify-center p-6 overflow-hidden relative">
+                  <img
+                    src={selectedItem.result.pngUrl}
+                    alt="Generated ad"
+                    className={
+                      "max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl transition-opacity duration-200 " +
+                      (detailLoading ? "opacity-30" : "opacity-100")
+                    }
+                  />
+                  {detailLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="h-9 w-9 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                    </div>
+                  )}
+
+                  {/* Prev arrow — left edge */}
+                  {prevItem && (
                     <button
-                      key={l}
-                      onClick={() => selectLang(l)}
-                      disabled={switching}
-                      className={
-                        "rounded-lg px-2.5 py-1 text-[11px] font-medium border transition disabled:opacity-50 " +
-                        (selectedLang === l ? pillActive : pillInactive)
-                      }
+                      onClick={() => setSelectedItemId(prevItem.id)}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-gray-300 backdrop-blur-sm hover:bg-black/70 hover:text-white transition"
+                      title="Previous image"
                     >
-                      {l.toUpperCase()}
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                      </svg>
                     </button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1">
-                  {(["4:5", "1:1", "9:16"] as Format[]).map((f) => (
+                  )}
+
+                  {/* Next arrow — right edge */}
+                  {nextItem && (
                     <button
-                      key={f}
-                      onClick={() => selectFormat(f)}
-                      disabled={switching}
-                      className={
-                        "rounded-lg px-2.5 py-1 text-[11px] font-medium border transition disabled:opacity-50 " +
-                        (selectedFormat === f ? pillActive : pillInactive)
-                      }
+                      onClick={() => setSelectedItemId(nextItem.id)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-gray-300 backdrop-blur-sm hover:bg-black/70 hover:text-white transition"
+                      title="Next image"
                     >
-                      {f}
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
                     </button>
-                  ))}
+                  )}
                 </div>
-                <span className="text-[10px] font-medium uppercase tracking-wider text-gray-500">Format</span>
-              </div>
-            </div>
 
-            {/* Pile row — always visible */}
-            <div className="flex gap-12 justify-center pb-4 mb-2">
-              {familiesInResults.map((familyId) => renderPile(familyId))}
-            </div>
+                {/* Controls sidebar — right side of right panel */}
+                <div className="w-[220px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-y-auto">
+                  <div className="p-4 space-y-5">
 
-            {/* Expanded section — slides in below piles */}
-            {expandedFamily && resultsByFamily[expandedFamily] && (
-              <div className="mt-6 border-t border-white/10 pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold text-white">
-                      {FAMILY_LABELS[expandedFamily as FamilyId] ?? expandedFamily}
-                    </h2>
-                    <span className="rounded-md bg-indigo-500/15 border border-indigo-500/20 px-1.5 py-0.5 text-[10px] text-indigo-400">
-                      {resultsByFamily[expandedFamily].length} style{resultsByFamily[expandedFamily].length !== 1 ? "s" : ""}
-                    </span>
+                    {/* Lang */}
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-600">
+                        Language
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {(["en", "de", "fr", "es"] as Language[]).map((l) => (
+                          <button
+                            key={l}
+                            onClick={() => handleLangChange(l)}
+                            disabled={detailLoading}
+                            className={
+                              "rounded px-2 py-1 text-[10px] font-medium border transition disabled:opacity-40 " +
+                              (selectedLang === l ? pillActive : pillInactive)
+                            }
+                          >
+                            {l.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Format */}
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-600">
+                        Format
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {(["4:5", "1:1", "9:16"] as Format[]).map((f) => (
+                          <button
+                            key={f}
+                            onClick={() => handleFormatChange(f)}
+                            disabled={detailLoading}
+                            className={
+                              "rounded px-2 py-1 text-[10px] font-medium border transition disabled:opacity-40 " +
+                              (selectedFormat === f ? pillActive : pillInactive)
+                            }
+                          >
+                            {f}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-white/[0.06]" />
+
+                    {/* Style picker */}
+                    <div className="space-y-2.5">
+                      <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-600">
+                        Style
+                      </p>
+                      {FAMILIES_IN_ORDER.map((familyId) => {
+                        const familyTemplates = ALL_TEMPLATES.filter(
+                          (t) => t.familyId === familyId
+                        );
+                        return (
+                          <div key={familyId} className="space-y-1">
+                            <p className="text-[9px] text-gray-700">
+                              {FAMILY_LABELS[familyId]}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {familyTemplates.map((t) => (
+                                <button
+                                  key={t.templateId}
+                                  onClick={() =>
+                                    handleStyleChange(selectedItem, t.templateId)
+                                  }
+                                  disabled={detailLoading}
+                                  className={
+                                    "rounded-lg border px-2 py-1 text-[10px] font-medium transition disabled:opacity-40 " +
+                                    (selectedItem.result?.templateId === t.templateId
+                                      ? pillActive
+                                      : pillInactive)
+                                  }
+                                >
+                                  {t.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="border-t border-white/[0.06]" />
+
+                    {/* Actions */}
+                    <div className="space-y-2">
+                      <button
+                        onClick={() => handleNewHeadline(selectedItem)}
+                        disabled={detailLoading}
+                        className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-[11px] text-gray-300 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
+                      >
+                        New Headline
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleApprove(
+                            selectedItem.id,
+                            selectedItem.result!.id,
+                            !selectedItem.approved
+                          )
+                        }
+                        disabled={detailLoading}
+                        className={
+                          "w-full rounded-xl border py-2 text-[11px] font-medium transition disabled:opacity-40 " +
+                          (selectedItem.approved
+                            ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
+                            : "border-white/10 bg-white/5 text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")
+                        }
+                      >
+                        {selectedItem.approved ? "✓ Approved" : "Approve"}
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleDownload(
+                            selectedItem.result!.pngUrl,
+                            selectedItem.result!.id
+                          )
+                        }
+                        className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-[11px] text-gray-400 hover:bg-white/10 hover:text-white transition flex items-center justify-center gap-1.5"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+                        </svg>
+                        Download PNG
+                      </button>
+                    </div>
+
+                    {/* Original photo */}
+                    <div className="border-t border-white/[0.06] pt-3">
+                      <p className="text-[9px] text-gray-700 mb-1.5">Original</p>
+                      <img
+                        src={selectedItem.previewUrl}
+                        alt="Original"
+                        className="w-full rounded-lg object-cover border border-white/10 opacity-60"
+                      />
+                    </div>
                   </div>
-                  <button
-                    onClick={() => setExpandedFamily(null)}
-                    className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/10 hover:text-gray-300 transition"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-                    </svg>
-                    Collapse
-                  </button>
                 </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {resultsByFamily[expandedFamily].map((result) => renderCard(result))}
-                </div>
+              </div>
+            ) : selectedItem.status === "error" ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
+                <svg className="h-10 w-10 text-red-400/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                </svg>
+                <p className="text-sm text-red-400">{selectedItem.error ?? "Generation failed"}</p>
+              </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                <p className="text-sm text-gray-600">
+                  {selectedItem.status === "uploading"
+                    ? "Uploading..."
+                    : selectedItem.status === "generating"
+                      ? "Generating..."
+                      : "Waiting to start..."}
+                </p>
               </div>
             )}
           </div>
         )}
-
-        {/* Empty state */}
-        {!generating && results.length === 0 && (
-          <div className="flex h-full min-h-[400px] items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
-            <p className="text-sm text-gray-600">
-              {image
-                ? "Select families and click Generate"
-                : "Upload a product photo to get started"}
-            </p>
-          </div>
-        )}
-      </main>
+      </div>
     </div>
   );
 }

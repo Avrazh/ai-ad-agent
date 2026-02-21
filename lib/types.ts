@@ -29,6 +29,7 @@ export type ZoneId = "A" | "B" | "C";
 
 export type SafeZones = {
   imageId: string;
+  recommendedFamily?: FamilyId;  // AI-recommended family for this image
   avoidRegions: NormRect[];
   zones: { id: ZoneId; rect: NormRect }[];
 };
