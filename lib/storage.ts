@@ -75,6 +75,34 @@ export async function removeGenerated(): Promise<void> {
   if (blobs.length > 0) await del(blobs.map((b) => b.url));
 }
 
+// Wipe everything from both uploads/ and generated/ — handles Blob and local.
+// Safe to call even when the DB has been reset (cold start); lists files directly.
+export async function clearAllStorage(): Promise<void> {
+  if (USE_BLOB) {
+    const [uploadsRes, generatedRes] = await Promise.all([
+      list({ prefix: "uploads/" }),
+      list({ prefix: "generated/" }),
+    ]);
+    const allUrls = [
+      ...uploadsRes.blobs.map((b) => b.url),
+      ...generatedRes.blobs.map((b) => b.url),
+    ];
+    if (allUrls.length > 0) await del(allUrls);
+    return;
+  }
+
+  // Local filesystem: delete all files in both bucket directories
+  for (const bucket of ["uploads", "generated"] as Bucket[]) {
+    const dir = bucketPath(bucket);
+    try {
+      const files = await fs.readdir(dir);
+      await Promise.all(files.map((f) => fs.unlink(path.join(dir, f)).catch(() => {})));
+    } catch {
+      // Directory may not exist yet — ignore
+    }
+  }
+}
+
 // Delete a single blob URL (e.g. old uploaded image)
 export async function removeBlobUrl(url: string): Promise<void> {
   if (!USE_BLOB || !url.startsWith("https://")) return;
