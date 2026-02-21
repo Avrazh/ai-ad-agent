@@ -58,6 +58,37 @@ function newItemId() {
   return `qi-${++_itemCounter}`;
 }
 
+// Resize + re-encode image to JPEG before upload to stay under the
+// Vercel 4.5 MB serverless function payload limit.
+const MAX_UPLOAD_PX = 1920; // longest side in pixels
+const JPEG_QUALITY = 0.85;
+
+function compressImage(file: File): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { naturalWidth: w, naturalHeight: h } = img;
+      if (w > MAX_UPLOAD_PX || h > MAX_UPLOAD_PX) {
+        if (w >= h) { h = Math.round((h * MAX_UPLOAD_PX) / w); w = MAX_UPLOAD_PX; }
+        else        { w = Math.round((w * MAX_UPLOAD_PX) / h); h = MAX_UPLOAD_PX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("Canvas toBlob failed"))),
+        "image/jpeg",
+        JPEG_QUALITY
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Image load failed")); };
+    img.src = objectUrl;
+  });
+}
+
 function StatusIcon({ status }: { status: QueueItem["status"] }) {
   if (status === "done")
     return (
@@ -156,8 +187,10 @@ export default function Home() {
     for (const item of itemsToProcess) {
       try {
         updateItem(item.id, { status: "uploading" });
+        const compressed = await compressImage(item.file);
         const form = new FormData();
-        form.append("file", item.file);
+        // Use .jpg extension so the server infers the correct MIME type
+        form.append("file", compressed, item.file.name.replace(/\.[^.]+$/, ".jpg"));
         const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
         if (!uploadRes.ok) {
           const d = await uploadRes.json();
