@@ -80,3 +80,22 @@ export async function removeBlobUrl(url: string): Promise<void> {
   if (!USE_BLOB || !url.startsWith("https://")) return;
   await del(url);
 }
+
+// Delete a file by its stored URL — works for both Blob CDN and local filesystem.
+// Local URLs have the form /api/files/<bucket>/<filename>.
+export async function removeByUrl(url: string): Promise<void> {
+  if (!url) return;
+  if (USE_BLOB) {
+    if (url.startsWith("https://")) await del(url);
+    return;
+  }
+  // Local fallback: extract bucket + filename from /api/files/<bucket>/<filename>
+  const match = url.match(/^\/api\/files\/(uploads|generated)\/(.+)$/);
+  if (!match) return;
+  const [, bucket, filename] = match;
+  try {
+    await fs.unlink(filePath(bucket as Bucket, filename));
+  } catch {
+    // File may already be gone — ignore
+  }
+}

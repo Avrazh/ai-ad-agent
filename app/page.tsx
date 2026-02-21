@@ -143,12 +143,26 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusKey]);
 
+  // ── Server-side cleanup ─────────────────────────────────
+  // Deletes uploaded images + generated PNGs from storage, and clears DB records.
+  // Runs fire-and-forget; UI reset happens immediately regardless of outcome.
+  const clearServerData = useCallback((items: QueueItem[]) => {
+    const imageIds = items.map((i) => i.imageId).filter(Boolean) as string[];
+    if (imageIds.length === 0) return;
+    fetch("/api/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageIds }),
+    }).catch(() => { /* silent — best-effort cleanup */ });
+  }, []);
+
   // ── File handling ───────────────────────────────────────
   const handleFiles = useCallback((files: FileList) => {
     const imageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
     if (imageFiles.length === 0) return;
 
     setQueue((prev) => {
+      clearServerData(prev);
       prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
       return [];
     });
@@ -164,7 +178,7 @@ export default function Home() {
         approved: false,
       }))
     );
-  }, []);
+  }, [clearServerData]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -476,6 +490,7 @@ export default function Home() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setQueue((prev) => {
+                        clearServerData(prev);
                         prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
                         return [];
                       });
