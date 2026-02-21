@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { save, removeGenerated, removeBlobUrl } from "@/lib/storage";
+import { save, removeBlobUrl } from "@/lib/storage";
 import { insertImage, getAllImages } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import path from "path";
@@ -23,8 +23,7 @@ export async function POST(req: NextRequest) {
 
     const previousImageUrl = formData.get("previousImageUrl") as string | null;
 
-    // Clean up old session blobs before saving the new image
-    await removeGenerated();
+    // Delete the old upload blob if the client explicitly passes it
     if (previousImageUrl) await removeBlobUrl(previousImageUrl);
 
     const buffer = Buffer.from(await file.arrayBuffer());
