@@ -11,11 +11,11 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check auth cookie against the token set in Vercel env vars
+  // Check auth cookie against the token (env var takes priority, falls back to default)
   const token = req.cookies.get("preview_auth")?.value;
-  const expected = process.env.PREVIEW_TOKEN;
+  const expected = process.env.PREVIEW_TOKEN ?? "demo2026";
 
-  if (!expected || token !== expected) {
+  if (token !== expected) {
     const loginUrl = req.nextUrl.clone();
     loginUrl.pathname = "/login";
     return NextResponse.redirect(loginUrl);
