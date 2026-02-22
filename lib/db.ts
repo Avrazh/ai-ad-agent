@@ -160,14 +160,14 @@ export function insertRenderResult(row: {
   imageId: string;
   familyId: string;
   templateId: string;
-  headlineId: string;
+  primarySlotId: string;
   pngUrl: string;
 }) {
   const db = getDb();
   db.prepare(
     `INSERT INTO render_results (id, ad_spec_id, image_id, family_id, template_id, headline_id, png_url)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(row.id, row.adSpecId, row.imageId, row.familyId, row.templateId, row.headlineId, row.pngUrl);
+  ).run(row.id, row.adSpecId, row.imageId, row.familyId, row.templateId, row.primarySlotId, row.pngUrl);
 }
 
 export function getRenderResult(id: string) {

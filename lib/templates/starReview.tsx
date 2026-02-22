@@ -15,6 +15,7 @@ const definition: TemplateDefinition = {
     shadow: true,
   },
   maxLines: 3,
+  copySlots: ["quote"],
 };
 
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
@@ -85,7 +86,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
               overflow: "hidden",
             }}
           >
-            {spec.headlineText}
+            {spec.copy.quote ?? ""}
           </p>
         </div>
       </div>

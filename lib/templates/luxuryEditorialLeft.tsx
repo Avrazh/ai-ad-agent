@@ -19,14 +19,7 @@ const definition: TemplateDefinition = {
     shadow: false,
   },
   maxLines: 4,
-};
-
-// Static subtext per language
-const SUBTEXT: Record<string, string> = {
-  en: "Luxury Collection",
-  de: "Luxuskollektion",
-  fr: "Collection Luxe",
-  es: "Colección de Lujo",
+  copySlots: ["headline", "subtext"],
 };
 
 const GOLD = "#C8A96E";
@@ -36,7 +29,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
   const theme = spec.theme;
   const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.12));
   const subtextFontSize = Math.round(headlineFontSize * 0.52);
-  const subtext = SUBTEXT[spec.lang] ?? SUBTEXT.en;
+  const subtext = spec.copy.subtext ?? "Luxury Collection";
   const barWidth = 3;
   const barGap = 22; // space between bar and text
 
@@ -109,7 +102,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
                 overflow: "hidden",
               }}
             >
-              {spec.headlineText}
+              {spec.copy.headline ?? ""}
             </p>
 
             {/* Subtext — Inter Regular, letter-spaced, muted */}

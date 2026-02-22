@@ -18,6 +18,7 @@ const definition: TemplateDefinition = {
     shadow: false,
   },
   maxLines: 3,
+  copySlots: ["headline"],
 };
 
 // Frame inset from canvas edges (px)
@@ -102,7 +103,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
             overflow: "hidden",
           }}
         >
-          {spec.headlineText}
+          {spec.copy.headline ?? ""}
         </p>
       </div>
     </div>

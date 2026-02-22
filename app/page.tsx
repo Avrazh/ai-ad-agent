@@ -8,7 +8,7 @@ type RenderResultItem = {
   imageId: string;
   familyId: string;
   templateId: string;
-  headlineId: string;
+  primarySlotId: string;
   format: string;
   pngUrl: string;
   approved: boolean;
@@ -431,12 +431,12 @@ export default function Home() {
     <div className="flex h-screen overflow-hidden bg-[#0B0F14] text-white">
 
       {/* ════ LEFT PANEL ════════════════════════════════ */}
-      <div className="w-[300px] shrink-0 flex flex-col border-r border-white/[0.06] overflow-hidden">
+      <div className="w-[340px] shrink-0 flex flex-col border-r border-white/[0.06] overflow-hidden">
 
         {/* Title */}
-        <div className="shrink-0 px-4 pt-5 pb-4 border-b border-white/[0.06]">
-          <h1 className="text-sm font-bold text-white tracking-tight">AI Ad Agent</h1>
-          <p className="text-[10px] text-gray-600 mt-0.5">
+        <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06]">
+          <h1 className="text-base font-bold text-white tracking-tight">AI Ad Agent</h1>
+          <p className="text-[11px] text-gray-600 mt-0.5">
             AI picks best template · visual diversity guaranteed
           </p>
         </div>
@@ -446,10 +446,10 @@ export default function Home() {
           onDrop={handleDrop}
           onDragOver={(e) => e.preventDefault()}
           className={
-            "shrink-0 mx-3 mt-3 rounded-xl border border-dashed transition " +
+            "shrink-0 mx-4 mt-3 rounded-xl border border-dashed transition " +
             (queue.length > 0
-              ? "border-white/10 bg-white/[0.02] px-3 py-3"
-              : "border-white/15 bg-white/[0.02] hover:border-indigo-500/30 hover:bg-white/[0.04] px-3 py-5 cursor-pointer")
+              ? "border-white/10 bg-white/[0.02] px-4 py-3"
+              : "border-white/15 bg-white/[0.02] hover:border-indigo-500/30 hover:bg-white/[0.04] px-4 py-6 cursor-pointer")
           }
           onClick={() => queue.length === 0 && folderInputRef.current?.click()}
         >
@@ -470,14 +470,14 @@ export default function Home() {
                   </div>
                 )}
               </div>
-              <span className="text-[11px] text-gray-400 flex-1">
+              <span className="text-xs text-gray-400 flex-1">
                 {queue.length} image{queue.length !== 1 ? "s" : ""}
               </span>
               {!processing && (
                 <>
                   <button
                     onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
-                    className="text-[10px] text-gray-600 hover:text-indigo-400 transition"
+                    className="text-[11px] text-gray-600 hover:text-indigo-400 transition"
                   >
                     Change
                   </button>
@@ -492,7 +492,7 @@ export default function Home() {
                       usedStyleIdsRef.current = [];
                       setSelectedItemId(null);
                     }}
-                    className="text-[10px] text-gray-600 hover:text-red-400 transition"
+                    className="text-[11px] text-gray-600 hover:text-red-400 transition"
                   >
                     Clear
                   </button>
@@ -514,7 +514,7 @@ export default function Home() {
                   d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776"
                 />
               </svg>
-              <p className="text-[11px] text-gray-500">
+              <p className="text-xs text-gray-500">
                 Drop images or click to choose a folder
               </p>
             </div>
@@ -541,12 +541,12 @@ export default function Home() {
         </div>
 
         {/* Generate button */}
-        <div className="shrink-0 px-3 py-2">
+        <div className="shrink-0 px-4 py-2.5">
           <button
             onClick={handleGenerateAll}
             disabled={processing || idleCount === 0}
             className={
-              "w-full rounded-xl py-2 text-[12px] font-semibold transition " +
+              "w-full rounded-xl py-2.5 text-sm font-semibold transition " +
               (processing || idleCount === 0
                 ? "bg-indigo-500/15 text-indigo-400/50 cursor-not-allowed"
                 : "bg-indigo-600 text-white hover:bg-indigo-500 shadow-[0_0_16px_rgba(99,102,241,0.25)]")
@@ -569,7 +569,7 @@ export default function Home() {
                   key={item.id}
                   onClick={() => setSelectedItemId(item.id)}
                   className={
-                    "w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition border-l-2 " +
+                    "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
                     (selectedItemId === item.id
                       ? "bg-indigo-500/[0.08] border-indigo-500/60"
                       : "hover:bg-white/[0.03] border-transparent")
@@ -579,13 +579,13 @@ export default function Home() {
                   <img
                     src={item.previewUrl}
                     alt=""
-                    className="h-8 w-8 rounded object-cover shrink-0 border border-white/10"
+                    className="h-9 w-9 rounded object-cover shrink-0 border border-white/10"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-[12px] text-gray-300 leading-tight">
+                    <p className="truncate text-[13px] text-gray-300 leading-tight">
                       {item.file.name}
                     </p>
-                    <p className="text-[10px] mt-0.5">
+                    <p className="text-[11px] mt-0.5">
                       {item.status === "uploading" && (
                         <span className="text-indigo-400">Uploading...</span>
                       )}
@@ -633,7 +633,7 @@ export default function Home() {
       {approvedCount > 0 && !processing && (
         <button
           onClick={handleDownloadAll}
-          className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-4 py-2 text-[11px] font-semibold text-white shadow-[0_0_20px_rgba(99,102,241,0.35)] hover:from-indigo-400 hover:to-violet-400 transition"
+          className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(99,102,241,0.35)] hover:from-indigo-400 hover:to-violet-400 transition"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
@@ -670,11 +670,11 @@ export default function Home() {
           <div className="flex-1 flex flex-col overflow-hidden">
 
             {/* Filename bar */}
-            <div className="shrink-0 px-6 py-3 border-b border-white/[0.06] text-center">
-              <p className="text-[13px] font-medium text-gray-200 truncate">
+            <div className="shrink-0 px-6 py-3.5 border-b border-white/[0.06] text-center">
+              <p className="text-sm font-medium text-gray-200 truncate">
                 {selectedItem.file.name}
               </p>
-              <p className="text-[10px] text-gray-600 mt-0.5">
+              <p className="text-[11px] text-gray-600 mt-0.5">
                 {selectedIdx + 1} of {queue.length}
               </p>
             </div>
@@ -727,22 +727,22 @@ export default function Home() {
                 </div>
 
                 {/* Controls sidebar — right side of right panel */}
-                <div className="w-[220px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-y-auto">
-                  <div className="p-4 space-y-5">
+                <div className="w-[280px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-y-auto">
+                  <div className="p-5 space-y-5">
 
                     {/* Lang */}
-                    <div className="space-y-1.5">
-                      <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-600">
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
                         Language
                       </p>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {(["en", "de", "fr", "es"] as Language[]).map((l) => (
                           <button
                             key={l}
                             onClick={() => handleLangChange(l)}
                             disabled={detailLoading}
                             className={
-                              "rounded px-2 py-1 text-[10px] font-medium border transition disabled:opacity-40 " +
+                              "rounded px-3 py-1.5 text-xs font-medium border transition disabled:opacity-40 " +
                               (selectedLang === l ? pillActive : pillInactive)
                             }
                           >
@@ -753,18 +753,18 @@ export default function Home() {
                     </div>
 
                     {/* Format */}
-                    <div className="space-y-1.5">
-                      <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-600">
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
                         Format
                       </p>
-                      <div className="flex flex-wrap gap-1">
+                      <div className="flex flex-wrap gap-1.5">
                         {(["4:5", "1:1", "9:16"] as Format[]).map((f) => (
                           <button
                             key={f}
                             onClick={() => handleFormatChange(f)}
                             disabled={detailLoading}
                             className={
-                              "rounded px-2 py-1 text-[10px] font-medium border transition disabled:opacity-40 " +
+                              "rounded px-3 py-1.5 text-xs font-medium border transition disabled:opacity-40 " +
                               (selectedFormat === f ? pillActive : pillInactive)
                             }
                           >
@@ -777,8 +777,8 @@ export default function Home() {
                     <div className="border-t border-white/[0.06]" />
 
                     {/* Style picker */}
-                    <div className="space-y-2.5">
-                      <p className="text-[9px] font-semibold uppercase tracking-widest text-gray-600">
+                    <div className="space-y-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
                         Style
                       </p>
                       {FAMILIES_IN_ORDER.map((familyId) => {
@@ -786,11 +786,11 @@ export default function Home() {
                           (t) => t.familyId === familyId
                         );
                         return (
-                          <div key={familyId} className="space-y-1">
-                            <p className="text-[9px] text-gray-700">
+                          <div key={familyId} className="space-y-1.5">
+                            <p className="text-[11px] text-gray-600">
                               {FAMILY_LABELS[familyId]}
                             </p>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap gap-1.5">
                               {familyTemplates.map((t) => (
                                 <button
                                   key={t.templateId}
@@ -799,7 +799,7 @@ export default function Home() {
                                   }
                                   disabled={detailLoading}
                                   className={
-                                    "rounded-lg border px-2 py-1 text-[10px] font-medium transition disabled:opacity-40 " +
+                                    "rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-40 " +
                                     (selectedItem.result?.templateId === t.templateId
                                       ? pillActive
                                       : pillInactive)
@@ -817,11 +817,11 @@ export default function Home() {
                     <div className="border-t border-white/[0.06]" />
 
                     {/* Actions */}
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <button
                         onClick={() => handleNewHeadline(selectedItem)}
                         disabled={detailLoading}
-                        className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-[11px] text-gray-300 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
+                        className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-gray-300 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
                       >
                         New Headline
                       </button>
@@ -835,7 +835,7 @@ export default function Home() {
                         }
                         disabled={detailLoading}
                         className={
-                          "w-full rounded-xl border py-2 text-[11px] font-medium transition disabled:opacity-40 " +
+                          "w-full rounded-xl border py-2.5 text-sm font-medium transition disabled:opacity-40 " +
                           (selectedItem.approved
                             ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400"
                             : "border-white/10 bg-white/5 text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")
@@ -850,9 +850,9 @@ export default function Home() {
                             selectedItem.result!.id
                           )
                         }
-                        className="w-full rounded-xl border border-white/10 bg-white/5 py-2 text-[11px] text-gray-400 hover:bg-white/10 hover:text-white transition flex items-center justify-center gap-1.5"
+                        className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-sm text-gray-400 hover:bg-white/10 hover:text-white transition flex items-center justify-center gap-2"
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
                         </svg>
                         Download PNG
@@ -861,7 +861,7 @@ export default function Home() {
 
                     {/* Original photo */}
                     <div className="border-t border-white/[0.06] pt-3">
-                      <p className="text-[9px] text-gray-700 mb-1.5">Original</p>
+                      <p className="text-[11px] text-gray-600 mb-2">Original</p>
                       <img
                         src={selectedItem.previewUrl}
                         alt="Original"

@@ -15,6 +15,7 @@ const definition: TemplateDefinition = {
     shadow: true,
   },
   maxLines: 5,
+  copySlots: ["quote"],
 };
 
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
@@ -93,7 +94,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
               overflow: "hidden",
             }}
           >
-            {spec.headlineText}
+            {spec.copy.quote ?? ""}
           </p>
 
           {/* Full-width separator line */}
@@ -118,7 +119,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
               display: "flex",
             }}
           >
-            {"\u2014 Verified Review"}
+            {spec.copy.attribution ?? "\u2014 Verified Review"}
           </div>
         </div>
       </div>

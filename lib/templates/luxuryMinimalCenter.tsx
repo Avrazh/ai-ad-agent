@@ -15,6 +15,7 @@ const definition: TemplateDefinition = {
     shadow: false,
   },
   maxLines: 3,
+  copySlots: ["headline"],
 };
 
 function clamp(n: number, min: number, max: number) {
@@ -112,7 +113,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
               textAlign: "center",
             }}
           >
-            {spec.headlineText}
+            {spec.copy.headline ?? ""}
           </p>
         </div>
       </div>

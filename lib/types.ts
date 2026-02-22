@@ -37,17 +37,26 @@ export type SafeZones = {
 export type Angle = "benefit" | "curiosity" | "urgency" | "emotional" | "aspirational" | "story" | "contrast";
 export type Language = "en" | "de" | "fr" | "es";
 
-export type Headline = {
+// ── Copy slots ───────────────────────────────────────────────
+// headline  — short punchy (1-8 words), promo / luxury templates
+// quote     — customer review voice (10-25 words), testimonial templates
+// subtext   — secondary descriptor (3-8 words), supporting line
+export type CopySlotType = "headline" | "quote" | "subtext";
+
+export type CopySlot = {
   id: string;
-  angle: Angle;
   lang: Language;
+  slotType: CopySlotType;
   text: string;
+  angle?: Angle;        // headline slots only
+  attribution?: string; // quote slots only — "— Jane D., Verified Buyer"
 };
 
 export type CopyPool = {
   imageId: string;
-  headlines: Headline[];  // 24 total: 6 per language (2 benefit, 1 curiosity, 1 urgency, 1 emotional, 2 aspirational each)
-  ctas: string[];
+  // All copy for this image, all languages, all slot types.
+  // Typical count: 8 headline + 2 quote + 2 subtext per language = 48 slots total.
+  slots: CopySlot[];
 };
 
 // ── Format ─────────────────────────────────────────────────
@@ -93,6 +102,9 @@ export type TemplateDefinition = {
   supportedZones: ZoneId[];
   themeDefaults: TemplateTheme;
   maxLines: number;
+  // Ordered list of slot types this template renders.
+  // First entry = "primary" slot (cycled by New Headline button).
+  copySlots: CopySlotType[];
 };
 
 // ── AdSpec (contract between AI + renderer) ─────────────────
@@ -104,8 +116,13 @@ export type AdSpec = {
   familyId: FamilyId;      // which family was selected
   templateId: TemplateId;  // which style was picked within the family
   zoneId: ZoneId;
-  headlineId: string;      // ref into CopyPool
-  headlineText: string;    // resolved text (stored for fast access)
+  primarySlotId: string;   // ID of the primary CopySlot (for regenerate cycling)
+  copy: {
+    headline?: string;
+    quote?: string;
+    subtext?: string;
+    attribution?: string;  // only when a quote slot is used
+  };
   theme: TemplateTheme;
   renderMeta: { w: number; h: number };
 };
@@ -117,7 +134,7 @@ export type RenderResult = {
   imageId: string;         // denormalized for quick lookup
   familyId: string;        // denormalized — for badge display
   templateId: string;      // denormalized — regen can rotate without parsing
-  headlineId: string;      // denormalized — regen can pick next headline
+  primarySlotId: string;   // denormalized — regen can pick next slot
   pngUrl: string;
   approved: boolean;
   replacedBy: string | null;

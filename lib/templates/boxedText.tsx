@@ -15,6 +15,7 @@ const definition: TemplateDefinition = {
     shadow: true,
   },
   maxLines: 2,
+  copySlots: ["headline"],
 };
 
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
@@ -67,7 +68,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
               overflow: "hidden",
             }}
           >
-            {spec.headlineText}
+            {spec.copy.headline ?? ""}
           </p>
         </div>
       </div>

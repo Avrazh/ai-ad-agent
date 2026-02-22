@@ -15,7 +15,7 @@ import "@/lib/templates"; // ensure templates + families registered
 import { getAllFamilies, getStylesForFamily, getTemplate } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline, TemplateId } from "@/lib/types";
+import type { SafeZones, CopyPool, CopySlot, AdSpec, FamilyId, Angle, Language, Format, TemplateId } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -100,16 +100,13 @@ export async function POST(req: NextRequest) {
 
     // 3. Create AdSpecs — 1 per family (random style picked per family)
     const dims = FORMAT_DIMS[format];
-    const langHeadlines = copyPool.headlines.filter((h) => h.lang === lang);
+    const langSlots = copyPool.slots.filter((s) => s.lang === lang);
     const specs: AdSpec[] = [];
-    const usedHeadlineIds = new Set<string>();
-    const angles: Angle[] = ["benefit", "curiosity", "urgency", "emotional"];
+    const usedSlotIds = new Set<string>();
+    const headlineAngles: Angle[] = ["benefit", "curiosity", "urgency", "emotional"];
 
     let specIndex = 0;
     for (const familyId of families) {
-      // forcedTemplate: exact template override (detail panel style picker)
-      // autoFamily: pick 1 style per family, preferring unused ones (diversity)
-      // manual: render all styles for the family
       let stylesToUse = getStylesForFamily(familyId);
       if (forcedTemplate) {
         stylesToUse = [forcedTemplate];
@@ -119,15 +116,42 @@ export async function POST(req: NextRequest) {
       }
 
       for (const style of stylesToUse) {
-        // Pick a compatible zone
         const zoneId = style.supportedZones[specIndex % style.supportedZones.length];
 
-        // Pick a headline — luxury always gets aspirational; others spread across angles
-        const targetAngle: Angle | undefined = familyId === "luxury"
-          ? "aspirational"
-          : (specIndex < angles.length ? angles[specIndex] : undefined);
-        const headline = pickHeadline(langHeadlines, usedHeadlineIds, targetAngle);
-        usedHeadlineIds.add(headline.id);
+        const copy: AdSpec["copy"] = {};
+        let primarySlotId = "";
+        let primarySlot: CopySlot | undefined;
+
+        for (let i = 0; i < style.copySlots.length; i++) {
+          const slotType = style.copySlots[i];
+          const typeSlots = langSlots.filter((s) => s.slotType === slotType);
+
+          if (i === 0) {
+            // Primary slot — angle-aware pick
+            const targetAngle: Angle | undefined =
+              familyId === "luxury"
+                ? "aspirational"
+                : slotType === "headline"
+                  ? (specIndex < headlineAngles.length ? headlineAngles[specIndex] : undefined)
+                  : undefined;
+            const slot = pickSlot(typeSlots, usedSlotIds, targetAngle);
+            if (slot) {
+              primarySlotId = slot.id;
+              primarySlot = slot;
+              usedSlotIds.add(slot.id);
+              copy[slotType] = slot.text;
+              if (slot.attribution) copy.attribution = slot.attribution;
+            }
+          } else {
+            // Secondary slots — match the primary slot's angle for tonal consistency
+            const targetAngle = primarySlot?.angle;
+            const slot = pickSlot(typeSlots, usedSlotIds, targetAngle);
+            if (slot) {
+              copy[slotType] = slot.text;
+              if (slot.attribution) copy.attribution = slot.attribution;
+            }
+          }
+        }
 
         const spec: AdSpec = {
           id: newId("as"),
@@ -137,8 +161,8 @@ export async function POST(req: NextRequest) {
           familyId,
           templateId: style.id,
           zoneId,
-          headlineId: headline.id,
-          headlineText: headline.text,
+          primarySlotId,
+          copy,
           theme: style.themeDefaults,
           renderMeta: dims,
         };
@@ -159,7 +183,7 @@ export async function POST(req: NextRequest) {
         imageId: spec.imageId,
         familyId: spec.familyId,
         templateId: spec.templateId,
-        headlineId: spec.headlineId,
+        primarySlotId: spec.primarySlotId,
         pngUrl,
       });
 
@@ -169,7 +193,7 @@ export async function POST(req: NextRequest) {
         imageId: spec.imageId,
         familyId: spec.familyId,
         templateId: spec.templateId,
-        headlineId: spec.headlineId,
+        primarySlotId: spec.primarySlotId,
         format: spec.format,
         pngUrl,
         approved: false,
@@ -187,23 +211,29 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function pickHeadline(
-  headlines: Headline[],
+function pickSlot(
+  slots: CopySlot[],
   usedIds: Set<string>,
   preferredAngle?: Angle
-) {
-  // Try to find an unused headline matching the preferred angle
+): CopySlot | undefined {
+  if (!slots.length) return undefined;
+
+  // 1. Unused slot matching preferred angle
   if (preferredAngle) {
-    const match = headlines.find(
-      (h) => h.angle === preferredAngle && !usedIds.has(h.id)
+    const match = slots.find(
+      (s) => s.angle === preferredAngle && !usedIds.has(s.id)
     );
     if (match) return match;
   }
 
-  // Fall back to any unused headline
-  const unused = headlines.find((h) => !usedIds.has(h.id));
+  // 2. Any unused slot
+  const unused = slots.find((s) => !usedIds.has(s.id));
   if (unused) return unused;
 
-  // All used — pick random
-  return headlines[Math.floor(Math.random() * headlines.length)];
+  // 3. All used — prefer angle match, then random
+  if (preferredAngle) {
+    const angleMatch = slots.find((s) => s.angle === preferredAngle);
+    if (angleMatch) return angleMatch;
+  }
+  return slots[Math.floor(Math.random() * slots.length)];
 }

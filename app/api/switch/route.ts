@@ -16,7 +16,7 @@ import { getTemplate } from "@/lib/templates";
 import "@/lib/templates"; // ensure templates registered
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { AdSpec, SafeZones, CopyPool, Language, Format, Headline } from "@/lib/types";
+import type { AdSpec, SafeZones, CopyPool, CopySlot, Language, Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -61,30 +61,47 @@ export async function POST(req: NextRequest) {
       const newFormat = format ?? oldSpec.format;
       const newDims = FORMAT_DIMS[newFormat];
 
-      // 4. Find headline for new language (try matching same angle)
-      let newHeadlineId = oldSpec.headlineId;
-      let newHeadlineText = oldSpec.headlineText;
+      // 4. Rebuild copy for new language (angle-matched)
+      let newPrimarySlotId = oldSpec.primarySlotId;
+      let newCopy = { ...oldSpec.copy };
 
       if (lang && lang !== oldSpec.lang) {
-        const currentHeadline = copyPool.headlines.find(
-          (h: Headline) => h.id === oldSpec.headlineId
-        );
-        const targetAngle = currentHeadline?.angle;
+        const template = getTemplate(oldSpec.templateId);
+        const langSlots = copyPool.slots.filter((s: CopySlot) => s.lang === newLang);
+        const oldPrimary = copyPool.slots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
+        const targetAngle = oldPrimary?.angle;
 
-        const newLangHeadlines = copyPool.headlines.filter(
-          (h: Headline) => h.lang === newLang
-        );
+        newCopy = {};
+        let primarySlot: CopySlot | undefined;
 
-        let pick: Headline | undefined;
-        if (targetAngle) {
-          pick = newLangHeadlines.find((h: Headline) => h.angle === targetAngle);
-        }
-        if (!pick && newLangHeadlines.length > 0) {
-          pick = newLangHeadlines[0];
-        }
-        if (pick) {
-          newHeadlineId = pick.id;
-          newHeadlineText = pick.text;
+        for (let i = 0; i < template.copySlots.length; i++) {
+          const slotType = template.copySlots[i];
+          const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
+
+          if (i === 0) {
+            // Primary slot — try to match same angle in new language
+            let pick: CopySlot | undefined;
+            if (targetAngle) {
+              pick = typeSlots.find((s: CopySlot) => s.angle === targetAngle);
+            }
+            pick = pick ?? typeSlots[0];
+            if (pick) {
+              newPrimarySlotId = pick.id;
+              primarySlot = pick;
+              newCopy[slotType] = pick.text;
+              if (pick.attribution) newCopy.attribution = pick.attribution;
+            }
+          } else {
+            // Secondary slots — match the new primary's angle for tonal consistency
+            const matchAngle = primarySlot?.angle;
+            const slot = (matchAngle
+              ? typeSlots.find((s: CopySlot) => s.angle === matchAngle)
+              : null) ?? typeSlots[0];
+            if (slot) {
+              newCopy[slotType] = slot.text;
+              if (slot.attribution) newCopy.attribution = slot.attribution;
+            }
+          }
         }
       }
 
@@ -98,8 +115,8 @@ export async function POST(req: NextRequest) {
         familyId: oldSpec.familyId,
         templateId: oldSpec.templateId,
         zoneId: oldSpec.zoneId,
-        headlineId: newHeadlineId,
-        headlineText: newHeadlineText,
+        primarySlotId: newPrimarySlotId,
+        copy: newCopy,
         theme: template.themeDefaults,
         renderMeta: newDims,
       };
@@ -113,7 +130,7 @@ export async function POST(req: NextRequest) {
         imageId: newSpec.imageId,
         familyId: newSpec.familyId,
         templateId: newSpec.templateId,
-        headlineId: newSpec.headlineId,
+        primarySlotId: newSpec.primarySlotId,
         pngUrl,
       });
       markReplaced(resultId, renderResultId);
@@ -126,7 +143,7 @@ export async function POST(req: NextRequest) {
           imageId: newSpec.imageId,
           familyId: newSpec.familyId,
           templateId: newSpec.templateId,
-          headlineId: newSpec.headlineId,
+          primarySlotId: newSpec.primarySlotId,
           format: newSpec.format,
           pngUrl,
           approved: false,

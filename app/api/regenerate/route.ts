@@ -16,7 +16,7 @@ import "@/lib/templates"; // ensure templates + families registered
 import { getTemplate, pickDifferentStyle } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { AdSpec, SafeZones, CopyPool } from "@/lib/types";
+import type { AdSpec, SafeZones, CopyPool, CopySlot } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,42 +57,100 @@ export async function POST(req: NextRequest) {
     const safeZones: SafeZones = JSON.parse(safeZonesJson);
     const copyPool: CopyPool = JSON.parse(copyPoolJson);
 
+    const lang = oldSpec.lang ?? "en";
+    const langSlots = copyPool.slots.filter((s: CopySlot) => s.lang === lang);
+
     // 3. Build new spec based on mode
     let newTemplateId = oldSpec.templateId;
     let newZoneId = oldSpec.zoneId;
-    let newHeadlineId = oldSpec.headlineId;
-    let newHeadlineText = oldSpec.headlineText;
+    let newPrimarySlotId = oldSpec.primarySlotId;
+    let newCopy = { ...oldSpec.copy };
 
     if (mode === "style") {
-      // Pick a different style within the same family, keep headline
+      // Pick a different style within the same family, keep copy if slot types match
       const newStyle = pickDifferentStyle(oldSpec.familyId, oldSpec.templateId);
       newTemplateId = newStyle.id;
-      // Pick a zone from the new style
       const otherZones = newStyle.supportedZones.filter((z: string) => z !== oldSpec.zoneId);
       newZoneId =
         otherZones.length > 0
           ? otherZones[Math.floor(Math.random() * otherZones.length)]
           : newStyle.supportedZones[0];
+
+      // Rebuild copy for the new template's slot types
+      newCopy = {};
+      newPrimarySlotId = oldSpec.primarySlotId;
+      let primarySlot: CopySlot | undefined;
+
+      for (let i = 0; i < newStyle.copySlots.length; i++) {
+        const slotType = newStyle.copySlots[i];
+        const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
+
+        if (i === 0) {
+          // Keep same primary slot if its type matches; otherwise pick new one
+          const existing = typeSlots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
+          const slot = existing ?? typeSlots[0];
+          if (slot) {
+            newPrimarySlotId = slot.id;
+            primarySlot = slot;
+            newCopy[slotType] = slot.text;
+            if (slot.attribution) newCopy.attribution = slot.attribution;
+          }
+        } else {
+          // Secondary slots — match primary slot's angle for tonal consistency
+          const targetAngle = primarySlot?.angle;
+          const slot = (targetAngle
+            ? typeSlots.find((s: CopySlot) => s.angle === targetAngle)
+            : null) ?? typeSlots[0];
+          if (slot) {
+            newCopy[slotType] = slot.text;
+            if (slot.attribution) newCopy.attribution = slot.attribution;
+          }
+        }
+      }
     }
 
     if (mode === "headline") {
-      // Pick a different headline in the same language, prefer a different angle
-      const langHeadlines = copyPool.headlines.filter(
-        (h) => h.lang === (oldSpec.lang ?? "en")
+      // Pick a different primary slot in the same language, prefer a different angle
+      const currentTemplate = getTemplate(oldSpec.templateId);
+      const primarySlotType = currentTemplate.copySlots[0] ?? "headline";
+      const langPrimarySlots = langSlots.filter(
+        (s: CopySlot) => s.slotType === primarySlotType
       );
-      const candidates = langHeadlines.filter((h) => h.id !== oldSpec.headlineId);
+      const candidates = langPrimarySlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
+
+      let newPrimary: CopySlot | undefined;
       if (candidates.length > 0) {
-        const currentAngle = langHeadlines.find((h) => h.id === oldSpec.headlineId)?.angle;
-        const differentAngle = candidates.filter((h) => h.angle !== currentAngle);
-        const pick =
+        const currentSlot = langPrimarySlots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
+        const currentAngle = currentSlot?.angle;
+        const differentAngle = candidates.filter((s: CopySlot) => s.angle !== currentAngle);
+        newPrimary =
           differentAngle.length > 0
             ? differentAngle[Math.floor(Math.random() * differentAngle.length)]
             : candidates[Math.floor(Math.random() * candidates.length)];
-        newHeadlineId = pick.id;
-        newHeadlineText = pick.text;
       }
+
+      if (newPrimary) {
+        newPrimarySlotId = newPrimary.id;
+        newCopy = { ...oldSpec.copy, [primarySlotType]: newPrimary.text };
+        if (newPrimary.attribution) newCopy.attribution = newPrimary.attribution;
+        else delete newCopy.attribution;
+
+        // Re-pick secondary slots to match the new primary's angle
+        for (let i = 1; i < currentTemplate.copySlots.length; i++) {
+          const slotType = currentTemplate.copySlots[i];
+          const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
+          const targetAngle = newPrimary.angle;
+          const slot = (targetAngle
+            ? typeSlots.find((s: CopySlot) => s.angle === targetAngle)
+            : null) ?? typeSlots[0];
+          if (slot) {
+            newCopy[slotType] = slot.text;
+            if (slot.attribution) newCopy.attribution = slot.attribution;
+          }
+        }
+      }
+
       // Also randomize zone (keep same style)
-      const currentTemplate = getTemplate(oldSpec.templateId);
       const otherZones = currentTemplate.supportedZones.filter((z) => z !== oldSpec.zoneId);
       if (otherZones.length > 0) {
         newZoneId = otherZones[Math.floor(Math.random() * otherZones.length)];
@@ -105,12 +163,12 @@ export async function POST(req: NextRequest) {
       id: newId("as"),
       imageId: oldSpec.imageId,
       format: oldSpec.format,
-      lang: oldSpec.lang ?? "en",
+      lang,
       familyId: oldSpec.familyId,
       templateId: newTemplateId,
       zoneId: newZoneId,
-      headlineId: newHeadlineId,
-      headlineText: newHeadlineText,
+      primarySlotId: newPrimarySlotId,
+      copy: newCopy,
       theme: newTemplate.themeDefaults,
       renderMeta: oldSpec.renderMeta,
     };
@@ -128,7 +186,7 @@ export async function POST(req: NextRequest) {
       imageId: newSpec.imageId,
       familyId: newSpec.familyId,
       templateId: newSpec.templateId,
-      headlineId: newSpec.headlineId,
+      primarySlotId: newSpec.primarySlotId,
       pngUrl,
     });
     markReplaced(resultId, renderResultId);
@@ -140,7 +198,7 @@ export async function POST(req: NextRequest) {
         imageId: newSpec.imageId,
         familyId: newSpec.familyId,
         templateId: newSpec.templateId,
-        headlineId: newSpec.headlineId,
+        primarySlotId: newSpec.primarySlotId,
         format: newSpec.format,
         pngUrl,
         approved: false,
