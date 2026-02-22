@@ -13,6 +13,7 @@
     "@fontsource/bodoni-moda": "^5.2.7",
     "@fontsource/playfair-display": "^5.2.8",
     "@fontsource/tangerine": "^5.2.8",
+    "@libsql/client": "^0.17.0",
     "@resvg/resvg-js": "^2.6.2",
     "@vercel/blob": "^2.3.0",
     "better-sqlite3": "^12.6.2",

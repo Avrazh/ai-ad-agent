@@ -13,7 +13,7 @@ import path from "path";
 export async function analyzeSafeZones(imageId: string): Promise<SafeZones> {
   // Load image from storage — ready for real AI vision call
   const { getImage } = await import("@/lib/db");
-  const img = getImage(imageId);
+  const img = await getImage(imageId);
   if (!img) throw new Error(`Image "${imageId}" not found`);
   const imageBuffer = await readStorage("uploads", img.url);
   const ext = path.extname(img.filename).replace(".", "");

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     // Read image dimensions from the buffer
     const { width, height } = readDimensions(buffer, file.type);
 
-    insertImage({ id, filename, url, width, height });
+    await insertImage({ id, filename, url, width, height });
 
     return NextResponse.json({ imageId: id, url, width, height });
   } catch (err) {
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const images = getAllImages();
+  const images = await getAllImages();
   return NextResponse.json({ images });
 }
 

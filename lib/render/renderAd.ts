@@ -97,7 +97,7 @@ export async function renderAd(
 async function getImageInfo(imageId: string): Promise<{ filename: string; url: string }> {
   // Import db here to avoid circular deps
   const { getImage } = await import("@/lib/db");
-  const img = getImage(imageId);
+  const img = await getImage(imageId);
   if (!img) throw new Error(`Image "${imageId}" not found`);
   return { filename: img.filename, url: img.url };
 }

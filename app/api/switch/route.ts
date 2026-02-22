@@ -42,16 +42,16 @@ export async function POST(req: NextRequest) {
 
     for (const resultId of resultIds) {
       // 1. Load old result + spec
-      const oldResult = getRenderResult(resultId);
+      const oldResult = await getRenderResult(resultId);
       if (!oldResult) continue;
 
-      const oldSpecRow = getAdSpec(oldResult.ad_spec_id);
+      const oldSpecRow = await getAdSpec(oldResult.ad_spec_id);
       if (!oldSpecRow) continue;
       const oldSpec: AdSpec = JSON.parse(oldSpecRow.data);
 
       // 2. Load stored data (never generate new ones)
-      const safeZonesJson = getSafeZones(oldSpec.imageId);
-      const copyPoolJson = getCopyPool(oldSpec.imageId);
+      const safeZonesJson = await getSafeZones(oldSpec.imageId);
+      const copyPoolJson = await getCopyPool(oldSpec.imageId);
       if (!safeZonesJson || !copyPoolJson) continue;
       const safeZones: SafeZones = JSON.parse(safeZonesJson);
       const copyPool: CopyPool = JSON.parse(copyPoolJson);
@@ -122,9 +122,9 @@ export async function POST(req: NextRequest) {
       };
 
       // 6. Store + render + link
-      insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
+      await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
       const { pngUrl, renderResultId } = await renderAd(newSpec, safeZones);
-      insertRenderResult({
+      await insertRenderResult({
         id: renderResultId,
         adSpecId: newSpec.id,
         imageId: newSpec.imageId,
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
         primarySlotId: newSpec.primarySlotId,
         pngUrl,
       });
-      markReplaced(resultId, renderResultId);
+      await markReplaced(resultId, renderResultId);
 
       results.push({
         replacedId: resultId,

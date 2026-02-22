@@ -1,160 +1,207 @@
-import Database from "better-sqlite3";
-import path from "path";
+import { createClient, type Client } from "@libsql/client";
 
-// /tmp is the only writable directory on Vercel; local dev uses the storage folder
-const DB_PATH = process.env.NODE_ENV === "production"
-  ? "/tmp/app.db"
-  : path.join(process.cwd(), "storage", "app.db");
+let _client: Client | null = null;
 
-let _db: Database.Database | null = null;
-
-export function getDb(): Database.Database {
-  if (!_db) {
-    _db = new Database(DB_PATH);
-    _db.pragma("journal_mode = WAL");
-    _db.pragma("foreign_keys = ON");
-    migrate(_db);
+function getClient(): Client {
+  if (!_client) {
+    const url = process.env.TURSO_DATABASE_URL;
+    if (!url) throw new Error("TURSO_DATABASE_URL env var is required");
+    _client = createClient({
+      url,
+      authToken: process.env.TURSO_AUTH_TOKEN,
+    });
   }
-  return _db;
+  return _client;
 }
 
-function migrate(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS images (
-      id         TEXT PRIMARY KEY,
-      filename   TEXT NOT NULL,
-      url        TEXT NOT NULL,
-      width      INTEGER NOT NULL,
-      height     INTEGER NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+let _migrationDone: Promise<void> | null = null;
 
-    CREATE TABLE IF NOT EXISTS safe_zones (
-      image_id TEXT PRIMARY KEY,
-      data     TEXT NOT NULL,
-      FOREIGN KEY (image_id) REFERENCES images(id)
-    );
+function ensureMigrated(): Promise<void> {
+  if (!_migrationDone) {
+    _migrationDone = migrate();
+  }
+  return _migrationDone;
+}
 
-    CREATE TABLE IF NOT EXISTS copy_pools (
-      image_id TEXT PRIMARY KEY,
-      data     TEXT NOT NULL,
-      FOREIGN KEY (image_id) REFERENCES images(id)
-    );
+async function migrate(): Promise<void> {
+  const client = getClient();
+  await client.batch(
+    [
+      `CREATE TABLE IF NOT EXISTS images (
+        id         TEXT PRIMARY KEY,
+        filename   TEXT NOT NULL,
+        url        TEXT NOT NULL,
+        width      INTEGER NOT NULL,
+        height     INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS safe_zones (
+        image_id TEXT PRIMARY KEY,
+        data     TEXT NOT NULL,
+        FOREIGN KEY (image_id) REFERENCES images(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS copy_pools (
+        image_id TEXT PRIMARY KEY,
+        data     TEXT NOT NULL,
+        FOREIGN KEY (image_id) REFERENCES images(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS ad_specs (
+        id         TEXT PRIMARY KEY,
+        image_id   TEXT NOT NULL,
+        data       TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (image_id) REFERENCES images(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS render_results (
+        id          TEXT PRIMARY KEY,
+        ad_spec_id  TEXT NOT NULL,
+        image_id    TEXT NOT NULL,
+        family_id   TEXT NOT NULL DEFAULT '',
+        template_id TEXT NOT NULL,
+        headline_id TEXT NOT NULL,
+        png_url     TEXT NOT NULL,
+        approved    INTEGER NOT NULL DEFAULT 0,
+        replaced_by TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (ad_spec_id) REFERENCES ad_specs(id),
+        FOREIGN KEY (image_id)   REFERENCES images(id)
+      )`,
+    ],
+    "write"
+  );
 
-    CREATE TABLE IF NOT EXISTS ad_specs (
-      id         TEXT PRIMARY KEY,
-      image_id   TEXT NOT NULL,
-      data       TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (image_id) REFERENCES images(id)
+  // Additive migration: add family_id if it doesn't exist yet
+  try {
+    await client.execute(
+      `ALTER TABLE render_results ADD COLUMN family_id TEXT NOT NULL DEFAULT ''`
     );
-
-    CREATE TABLE IF NOT EXISTS render_results (
-      id          TEXT PRIMARY KEY,
-      ad_spec_id  TEXT NOT NULL,
-      image_id    TEXT NOT NULL,
-      family_id   TEXT NOT NULL DEFAULT '',
-      template_id TEXT NOT NULL,
-      headline_id TEXT NOT NULL,
-      png_url     TEXT NOT NULL,
-      approved    INTEGER NOT NULL DEFAULT 0,
-      replaced_by TEXT,
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (ad_spec_id) REFERENCES ad_specs(id),
-      FOREIGN KEY (image_id)   REFERENCES images(id)
-    );
-  `);
-
-  // Additive migration: add family_id to existing databases
-  const cols = db.prepare(`PRAGMA table_info(render_results)`).all() as { name: string }[];
-  if (!cols.find((c) => c.name === "family_id")) {
-    db.exec(`ALTER TABLE render_results ADD COLUMN family_id TEXT NOT NULL DEFAULT ''`);
+  } catch {
+    // Column already exists — ignore
   }
 }
 
 // ── Image queries ───────────────────────────────────────────
-export function insertImage(row: {
+export async function insertImage(row: {
   id: string;
   filename: string;
   url: string;
   width: number;
   height: number;
 }) {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO images (id, filename, url, width, height) VALUES (?, ?, ?, ?, ?)`
-  ).run(row.id, row.filename, row.url, row.width, row.height);
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT INTO images (id, filename, url, width, height) VALUES (?, ?, ?, ?, ?)`,
+    args: [row.id, row.filename, row.url, row.width, row.height],
+  });
 }
 
-export function getImage(id: string) {
-  const db = getDb();
-  return db.prepare(`SELECT * FROM images WHERE id = ?`).get(id) as
-    | { id: string; filename: string; url: string; width: number; height: number; created_at: string }
-    | undefined;
+export async function getImage(id: string) {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT * FROM images WHERE id = ?`,
+    args: [id],
+  });
+  const row = result.rows[0];
+  if (!row) return undefined;
+  return {
+    id: row.id as string,
+    filename: row.filename as string,
+    url: row.url as string,
+    width: row.width as number,
+    height: row.height as number,
+    created_at: row.created_at as string,
+  };
 }
 
-export function getAllImages() {
-  const db = getDb();
-  return db.prepare(`SELECT * FROM images ORDER BY created_at DESC`).all() as {
-    id: string;
-    filename: string;
-    url: string;
-    width: number;
-    height: number;
-    created_at: string;
-  }[];
+export async function getAllImages() {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute(
+    `SELECT * FROM images ORDER BY created_at DESC`
+  );
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    filename: row.filename as string,
+    url: row.url as string,
+    width: row.width as number,
+    height: row.height as number,
+    created_at: row.created_at as string,
+  }));
 }
 
 // ── SafeZones queries ───────────────────────────────────────
-export function upsertSafeZones(imageId: string, data: string) {
-  const db = getDb();
-  db.prepare(
-    `INSERT OR REPLACE INTO safe_zones (image_id, data) VALUES (?, ?)`
-  ).run(imageId, data);
+export async function upsertSafeZones(imageId: string, data: string) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT OR REPLACE INTO safe_zones (image_id, data) VALUES (?, ?)`,
+    args: [imageId, data],
+  });
 }
 
-export function getSafeZones(imageId: string): string | undefined {
-  const db = getDb();
-  const row = db.prepare(`SELECT data FROM safe_zones WHERE image_id = ?`).get(imageId) as
-    | { data: string }
-    | undefined;
-  return row?.data;
+export async function getSafeZones(imageId: string): Promise<string | undefined> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT data FROM safe_zones WHERE image_id = ?`,
+    args: [imageId],
+  });
+  const row = result.rows[0];
+  return row ? (row.data as string) : undefined;
 }
 
 // ── CopyPool queries ────────────────────────────────────────
-export function upsertCopyPool(imageId: string, data: string) {
-  const db = getDb();
-  db.prepare(
-    `INSERT OR REPLACE INTO copy_pools (image_id, data) VALUES (?, ?)`
-  ).run(imageId, data);
+export async function upsertCopyPool(imageId: string, data: string) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT OR REPLACE INTO copy_pools (image_id, data) VALUES (?, ?)`,
+    args: [imageId, data],
+  });
 }
 
-export function getCopyPool(imageId: string): string | undefined {
-  const db = getDb();
-  const row = db.prepare(`SELECT data FROM copy_pools WHERE image_id = ?`).get(imageId) as
-    | { data: string }
-    | undefined;
-  return row?.data;
+export async function getCopyPool(imageId: string): Promise<string | undefined> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT data FROM copy_pools WHERE image_id = ?`,
+    args: [imageId],
+  });
+  const row = result.rows[0];
+  return row ? (row.data as string) : undefined;
 }
 
 // ── AdSpec queries ──────────────────────────────────────────
-export function insertAdSpec(id: string, imageId: string, data: string) {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO ad_specs (id, image_id, data) VALUES (?, ?, ?)`
-  ).run(id, imageId, data);
+export async function insertAdSpec(id: string, imageId: string, data: string) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT INTO ad_specs (id, image_id, data) VALUES (?, ?, ?)`,
+    args: [id, imageId, data],
+  });
 }
 
-export function getAdSpec(id: string) {
-  const db = getDb();
-  const row = db.prepare(`SELECT * FROM ad_specs WHERE id = ?`).get(id) as
-    | { id: string; image_id: string; data: string; created_at: string }
-    | undefined;
-  return row;
+export async function getAdSpec(id: string) {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT * FROM ad_specs WHERE id = ?`,
+    args: [id],
+  });
+  const row = result.rows[0];
+  if (!row) return undefined;
+  return {
+    id: row.id as string,
+    image_id: row.image_id as string,
+    data: row.data as string,
+    created_at: row.created_at as string,
+  };
 }
 
 // ── RenderResult queries ────────────────────────────────────
-export function insertRenderResult(row: {
+export async function insertRenderResult(row: {
   id: string;
   adSpecId: string;
   imageId: string;
@@ -163,62 +210,95 @@ export function insertRenderResult(row: {
   primarySlotId: string;
   pngUrl: string;
 }) {
-  const db = getDb();
-  db.prepare(
-    `INSERT INTO render_results (id, ad_spec_id, image_id, family_id, template_id, headline_id, png_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(row.id, row.adSpecId, row.imageId, row.familyId, row.templateId, row.primarySlotId, row.pngUrl);
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT INTO render_results (id, ad_spec_id, image_id, family_id, template_id, headline_id, png_url)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      row.id,
+      row.adSpecId,
+      row.imageId,
+      row.familyId,
+      row.templateId,
+      row.primarySlotId,
+      row.pngUrl,
+    ],
+  });
 }
 
-export function getRenderResult(id: string) {
-  const db = getDb();
-  return db.prepare(`SELECT * FROM render_results WHERE id = ?`).get(id) as
-    | {
-        id: string;
-        ad_spec_id: string;
-        image_id: string;
-        family_id: string;
-        template_id: string;
-        headline_id: string;
-        png_url: string;
-        approved: number;
-        replaced_by: string | null;
-        created_at: string;
-      }
-    | undefined;
+export async function getRenderResult(id: string) {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT * FROM render_results WHERE id = ?`,
+    args: [id],
+  });
+  const row = result.rows[0];
+  if (!row) return undefined;
+  return {
+    id: row.id as string,
+    ad_spec_id: row.ad_spec_id as string,
+    image_id: row.image_id as string,
+    family_id: row.family_id as string,
+    template_id: row.template_id as string,
+    headline_id: row.headline_id as string,
+    png_url: row.png_url as string,
+    approved: row.approved as number,
+    replaced_by: row.replaced_by as string | null,
+    created_at: row.created_at as string,
+  };
 }
 
-export function getActiveResults(imageId: string) {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT * FROM render_results WHERE image_id = ? AND replaced_by IS NULL ORDER BY created_at DESC`
-    )
-    .all(imageId) as {
-    id: string;
-    ad_spec_id: string;
-    image_id: string;
-    template_id: string;
-    headline_id: string;
-    png_url: string;
-    approved: number;
-    replaced_by: string | null;
-    created_at: string;
-  }[];
+export async function getActiveResults(imageId: string) {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT * FROM render_results WHERE image_id = ? AND replaced_by IS NULL ORDER BY created_at DESC`,
+    args: [imageId],
+  });
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    ad_spec_id: row.ad_spec_id as string,
+    image_id: row.image_id as string,
+    template_id: row.template_id as string,
+    headline_id: row.headline_id as string,
+    png_url: row.png_url as string,
+    approved: row.approved as number,
+    replaced_by: row.replaced_by as string | null,
+    created_at: row.created_at as string,
+  }));
 }
 
-export function setApproval(resultId: string, approved: boolean) {
-  const db = getDb();
-  db.prepare(`UPDATE render_results SET approved = ? WHERE id = ?`).run(
-    approved ? 1 : 0,
-    resultId
-  );
+export async function setApproval(resultId: string, approved: boolean) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `UPDATE render_results SET approved = ? WHERE id = ?`,
+    args: [approved ? 1 : 0, resultId],
+  });
 }
 
-export function markReplaced(oldResultId: string, newResultId: string) {
-  const db = getDb();
-  db.prepare(`UPDATE render_results SET replaced_by = ? WHERE id = ?`).run(
-    newResultId,
-    oldResultId
+export async function markReplaced(oldResultId: string, newResultId: string) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `UPDATE render_results SET replaced_by = ? WHERE id = ?`,
+    args: [newResultId, oldResultId],
+  });
+}
+
+export async function clearAll() {
+  await ensureMigrated();
+  const client = getClient();
+  await client.batch(
+    [
+      `DELETE FROM render_results`,
+      `DELETE FROM ad_specs`,
+      `DELETE FROM copy_pools`,
+      `DELETE FROM safe_zones`,
+      `DELETE FROM images`,
+    ],
+    "write"
   );
 }

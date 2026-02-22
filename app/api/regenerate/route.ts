@@ -34,20 +34,20 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Load existing result + AdSpec
-    const oldResult = getRenderResult(resultId);
+    const oldResult = await getRenderResult(resultId);
     if (!oldResult) {
       return NextResponse.json({ error: "Result not found" }, { status: 404 });
     }
 
-    const oldSpecRow = getAdSpec(oldResult.ad_spec_id);
+    const oldSpecRow = await getAdSpec(oldResult.ad_spec_id);
     if (!oldSpecRow) {
       return NextResponse.json({ error: "AdSpec not found" }, { status: 404 });
     }
     const oldSpec: AdSpec = JSON.parse(oldSpecRow.data);
 
     // 2. Load STORED CopyPool + SafeZones (never generate new ones)
-    const safeZonesJson = getSafeZones(oldSpec.imageId);
-    const copyPoolJson = getCopyPool(oldSpec.imageId);
+    const safeZonesJson = await getSafeZones(oldSpec.imageId);
+    const copyPoolJson = await getCopyPool(oldSpec.imageId);
     if (!safeZonesJson || !copyPoolJson) {
       return NextResponse.json(
         { error: "No stored AI data found — generate first" },
@@ -174,13 +174,13 @@ export async function POST(req: NextRequest) {
     };
 
     // 4. Store new AdSpec
-    insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
+    await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
 
     // 5. Render new PNG
     const { pngUrl, renderResultId } = await renderAd(newSpec, safeZones);
 
     // 6. Store new result, mark old as replaced
-    insertRenderResult({
+    await insertRenderResult({
       id: renderResultId,
       adSpecId: newSpec.id,
       imageId: newSpec.imageId,
@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
       primarySlotId: newSpec.primarySlotId,
       pngUrl,
     });
-    markReplaced(resultId, renderResultId);
+    await markReplaced(resultId, renderResultId);
 
     return NextResponse.json({
       result: {

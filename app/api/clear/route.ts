@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { clearAll } from "@/lib/db";
 import { clearAllStorage } from "@/lib/storage";
 
 export async function POST() {
@@ -10,12 +10,7 @@ export async function POST() {
     await clearAllStorage();
 
     // Wipe all DB records in foreign-key order
-    const db = getDb();
-    db.prepare(`DELETE FROM render_results`).run();
-    db.prepare(`DELETE FROM ad_specs`).run();
-    db.prepare(`DELETE FROM copy_pools`).run();
-    db.prepare(`DELETE FROM safe_zones`).run();
-    db.prepare(`DELETE FROM images`).run();
+    await clearAll();
 
     return NextResponse.json({ ok: true });
   } catch (err) {

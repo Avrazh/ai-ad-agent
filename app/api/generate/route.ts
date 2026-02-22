@@ -49,30 +49,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "imageId required" }, { status: 400 });
     }
 
-    let image = getImage(imageId);
+    let image = await getImage(imageId);
     if (!image) {
       // SQLite was reset (cold start) — re-seed from client-provided values
       if (!imageUrl) {
         return NextResponse.json({ error: "Image not found" }, { status: 404 });
       }
-      insertImage({
+      await insertImage({
         id: imageId,
         filename: imageId + ".png",
         url: imageUrl,
         width: imageWidth ?? 0,
         height: imageHeight ?? 0,
       });
-      image = getImage(imageId)!;
+      image = await getImage(imageId)!;
     }
 
     // 1. Get or create SafeZones (AI call — cached per imageId)
     let safeZones: SafeZones;
-    const cachedZones = getSafeZones(imageId);
+    const cachedZones = await getSafeZones(imageId);
     if (cachedZones) {
       safeZones = JSON.parse(cachedZones);
     } else {
       safeZones = await analyzeSafeZones(imageId);
-      upsertSafeZones(imageId, JSON.stringify(safeZones));
+      await upsertSafeZones(imageId, JSON.stringify(safeZones));
     }
 
     // forceTemplateId: exact template overrides all family/diversity logic
@@ -90,12 +90,12 @@ export async function POST(req: NextRequest) {
 
     // 2. Get or create CopyPool (AI call — cached per imageId)
     let copyPool: CopyPool;
-    const cachedCopy = getCopyPool(imageId);
+    const cachedCopy = await getCopyPool(imageId);
     if (cachedCopy) {
       copyPool = JSON.parse(cachedCopy);
     } else {
       copyPool = await generateCopyPool(imageId);
-      upsertCopyPool(imageId, JSON.stringify(copyPool));
+      await upsertCopyPool(imageId, JSON.stringify(copyPool));
     }
 
     // 3. Create AdSpecs — 1 per family (random style picked per family)
@@ -175,9 +175,9 @@ export async function POST(req: NextRequest) {
     // 4. Render each AdSpec → PNG
     const results = [];
     for (const spec of specs) {
-      insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
+      await insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
       const { pngUrl, renderResultId } = await renderAd(spec, safeZones);
-      insertRenderResult({
+      await insertRenderResult({
         id: renderResultId,
         adSpecId: spec.id,
         imageId: spec.imageId,
