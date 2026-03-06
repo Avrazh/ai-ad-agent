@@ -2,39 +2,149 @@ import type { CopyPool, CopySlot, Language } from "@/lib/types";
 import { newId } from "@/lib/ids";
 import { read as readStorage } from "@/lib/storage";
 import path from "path";
+import Anthropic from "@anthropic-ai/sdk";
+import { withRetry } from "./retry";
+
+const MODEL = "claude-haiku-4-5-20251001";
 
 /**
- * Mock copy generator — returns typed slots per language:
- *   9 headline slots (benefit×2, curiosity, urgency, emotional, aspirational×2, story, contrast)
- *   3 quote slots   (customer review voice + attribution)
- *   8 subtext slots (angle-matched short descriptors — one per headline angle)
- *   × 4 languages = 80 slots total
+ * Generates a CopyPool using Claude Haiku vision.
+ * Claude looks at the image and writes product-specific slots:
+ *   9 headline slots × 2 languages (EN + DE) = 18
+ *   3 quote slots    × 2 languages (EN + DE) = 6
+ *   8 subtext slots  × 2 languages (EN + DE) = 16
+ *   Total: 40 slots
  *
- * Subtext slots carry the same angle as their matching headline, so the
- * renderer can pair them deterministically (same angle = same tone).
- *
- * Later: replace internals with real AI (Claude/GPT vision).
- * Contract stays the same: imageId in → CopyPool out.
+ * Falls back to hardcoded pool if the API call fails or key is missing.
  */
 export async function generateCopyPool(imageId: string): Promise<CopyPool> {
-  // Load image from storage — ready for real AI vision call
   const { getImage } = await import("@/lib/db");
   const img = await getImage(imageId);
   if (!img) throw new Error(`Image "${imageId}" not found`);
   const imageBuffer = await readStorage("uploads", img.url);
   const ext = path.extname(img.filename).replace(".", "");
-  const mimeType = ext === "jpg" ? "jpeg" : ext;
-  const imageBase64 = `data:image/${mimeType};base64,${imageBuffer.toString("base64")}`;
+  const mimeType = (ext === "jpg" ? "jpeg" : ext) as "jpeg" | "png" | "gif" | "webp";
+  const imageBase64 = imageBuffer.toString("base64");
 
-  // REAL AI: replace the pools below with a Claude/GPT vision call, e.g.:
-  // const slots = await callAI({ imageBase64, slotTypes: ["headline","quote","subtext"], languages: [...] });
-  // return { imageId, slots };
-  void imageBase64; // remove this line when wiring real AI
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    console.warn("[copy] ANTHROPIC_API_KEY not set — using hardcoded pool");
+    return buildHardcodedPool(imageId);
+  }
 
-  // Simulate processing delay
-  await new Promise((r) => setTimeout(r, 300));
+  try {
+    const client = new Anthropic({ apiKey });
 
-  // ── Headline slots (short punchy 1-8 words) ─────────────────────────────
+    const response = await withRetry(() => client.messages.create({
+      model: MODEL,
+      max_tokens: 2048,
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: `image/${mimeType}`, data: imageBase64 },
+            },
+            {
+              type: "text",
+              text: `You are an expert e-commerce ad copywriter. Look at this product image carefully and write ad copy for it in English (en) and German (de).
+
+Return ONLY a raw JSON object (no markdown, no explanation) with this exact shape:
+
+{
+  "en": {
+    "headlines": [
+      {"angle":"benefit","text":"..."},
+      {"angle":"benefit","text":"..."},
+      {"angle":"curiosity","text":"..."},
+      {"angle":"urgency","text":"..."},
+      {"angle":"emotional","text":"..."},
+      {"angle":"aspirational","text":"..."},
+      {"angle":"aspirational","text":"..."},
+      {"angle":"story","text":"..."},
+      {"angle":"contrast","text":"..."}
+    ],
+    "quotes": [
+      {"text":"...","attribution":"— Name, Verified Buyer"},
+      {"text":"...","attribution":"— Name, Verified Buyer"},
+      {"text":"...","attribution":"— Name, Verified Buyer"}
+    ],
+    "subtexts": [
+      {"angle":"benefit","text":"..."},
+      {"angle":"curiosity","text":"..."},
+      {"angle":"urgency","text":"..."},
+      {"angle":"emotional","text":"..."},
+      {"angle":"aspirational","text":"..."},
+      {"angle":"aspirational","text":"..."},
+      {"angle":"story","text":"..."},
+      {"angle":"contrast","text":"..."}
+    ]
+  },
+  "de": { ... same structure ... }
+}
+
+Rules:
+- headlines: 1-8 words, punchy, specific to what you see in the image
+- aspirational headlines: ≤7 words, refined, no emojis, no urgency
+- quotes: 10-25 words, customer review voice, first person, specific benefit
+- subtexts: 3-8 words, match the angle of its paired headline
+- German: natural fluent German, not a literal translation
+- No emojis anywhere
+- Write about the actual product visible in the image, not generic copy`,
+            },
+          ],
+        },
+      ],
+    }), "copy");
+
+    const raw = response.content.find((b) => b.type === "text")?.text ?? "";
+    const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+    const parsed = JSON.parse(text) as Record<
+      string,
+      {
+        headlines: { angle: string; text: string }[];
+        quotes: { text: string; attribution: string }[];
+        subtexts: { angle: string; text: string }[];
+      }
+    >;
+
+    const slots: CopySlot[] = [];
+
+    for (const lang of ["en", "de"] as Language[]) {
+      const bucket = parsed[lang];
+      if (!bucket) continue;
+
+      for (const h of bucket.headlines) {
+        slots.push({ id: newId("sl"), lang, slotType: "headline", text: h.text, angle: h.angle as CopySlot["angle"], wordCount: h.text.trim().split(/\s+/).filter(Boolean).length });
+      }
+      for (const q of bucket.quotes) {
+        slots.push({ id: newId("sl"), lang, slotType: "quote", text: q.text, attribution: q.attribution, wordCount: q.text.trim().split(/\s+/).filter(Boolean).length });
+      }
+      for (const s of bucket.subtexts) {
+        slots.push({ id: newId("sl"), lang, slotType: "subtext", text: s.text, angle: s.angle as CopySlot["angle"], wordCount: s.text.trim().split(/\s+/).filter(Boolean).length });
+      }
+    }
+
+    console.log(`[copy] CopyPool from Claude for ${imageId} — ${slots.length} slots`);
+    console.table(
+      slots.map((s) => ({
+        lang:  s.lang,
+        type:  s.slotType,
+        angle: s.angle ?? (s.slotType === "quote" ? "—" : ""),
+        text:  s.text,
+      }))
+    );
+    return { imageId, slots };
+  } catch (err) {
+    console.error("[copy] Claude call failed — using hardcoded fallback:", err);
+    return buildHardcodedPool(imageId);
+  }
+}
+
+// ── Hardcoded fallback pool (generic, used when API key is missing or call fails) ──
+
+function buildHardcodedPool(imageId: string): CopyPool {
   const headlinePool: Record<Language, { angle: string; text: string }[]> = {
     en: [
       { angle: "benefit",      text: "Salon look in 5 minutes" },
@@ -58,93 +168,25 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
       { angle: "story",        text: "Sie hörte auf, zum Nagelstudio zu gehen. Das ist der Grund." },
       { angle: "contrast",     text: "Salon-Qualität. Heimvorteil." },
     ],
-    fr: [
-      { angle: "benefit",      text: "Look salon en 5 minutes" },
-      { angle: "benefit",      text: "Sans colle, sans désordre, sans stress" },
-      { angle: "curiosity",    text: "Et si vos ongles duraient 2 semaines ?" },
-      { angle: "urgency",      text: "Édition limitée — commandez vite" },
-      { angle: "emotional",    text: "Vous méritez des ongles qui font tourner les têtes" },
-      { angle: "aspirational", text: "L'élégance, naturellement." },
-      { angle: "aspirational", text: "Pour celles qui savent." },
-      { angle: "story",        text: "Elle a arrêté les manucures. Voici pourquoi." },
-      { angle: "contrast",     text: "Prix salon. Rapidité maison." },
-    ],
-    es: [
-      { angle: "benefit",      text: "Look de salón en 5 minutos" },
-      { angle: "benefit",      text: "Sin pegamento, sin desorden, sin estrés" },
-      { angle: "curiosity",    text: "¿Y si las uñas duraran 2 semanas?" },
-      { angle: "urgency",      text: "Edición limitada — consigue la tuya" },
-      { angle: "emotional",    text: "Mereces uñas que roben miradas" },
-      { angle: "aspirational", text: "Elegancia sin esfuerzo." },
-      { angle: "aspirational", text: "Para las que lo saben." },
-      { angle: "story",        text: "Dejó de ir a la manicura. Esto es lo que pasó." },
-      { angle: "contrast",     text: "Precio de salón. Velocidad en casa." },
-    ],
+    fr: [],
+    es: [],
   };
 
-  // ── Quote slots (customer review voice, 10-25 words) ────────────────────
   const quotePool: Record<Language, { text: string; attribution: string }[]> = {
     en: [
-      {
-        text: "I literally threw away my nail kit after using these. Zero chipping, zero hassle, zero regrets.",
-        attribution: "— Emma R., Verified Buyer",
-      },
-      {
-        text: "My manicurist was shocked these aren't gel. Two weeks in and they still look perfect.",
-        attribution: "— Sophie M., Verified Buyer",
-      },
-      {
-        text: "I've tried every press-on brand out there. Nothing comes close to this quality.",
-        attribution: "— Jade L., Verified Buyer",
-      },
+      { text: "I literally threw away my nail kit after using these. Zero chipping, zero hassle, zero regrets.", attribution: "— Emma R., Verified Buyer" },
+      { text: "My manicurist was shocked these aren't gel. Two weeks in and they still look perfect.", attribution: "— Sophie M., Verified Buyer" },
+      { text: "I've tried every press-on brand out there. Nothing comes close to this quality.", attribution: "— Jade L., Verified Buyer" },
     ],
     de: [
-      {
-        text: "Ich habe mein Nagelset weggeworfen, nachdem ich diese benutzt habe. Kein Absplittern, kein Aufwand, keine Reue.",
-        attribution: "— Emma R., Verifizierte Käuferin",
-      },
-      {
-        text: "Meine Nageldesignerin war schockiert, dass das kein Gel ist. Zwei Wochen später sehen sie noch perfekt aus.",
-        attribution: "— Sophie M., Verifizierte Käuferin",
-      },
-      {
-        text: "Ich habe jede Marke ausprobiert. Nichts kommt an diese Qualität heran.",
-        attribution: "— Jade L., Verifizierte Käuferin",
-      },
+      { text: "Ich habe mein Nagelset weggeworfen, nachdem ich diese benutzt habe. Kein Absplittern, kein Aufwand, keine Reue.", attribution: "— Emma R., Verifizierte Käuferin" },
+      { text: "Meine Nageldesignerin war schockiert, dass das kein Gel ist. Zwei Wochen später sehen sie noch perfekt aus.", attribution: "— Sophie M., Verifizierte Käuferin" },
+      { text: "Ich habe jede Marke ausprobiert. Nichts kommt an diese Qualität heran.", attribution: "— Jade L., Verifizierte Käuferin" },
     ],
-    fr: [
-      {
-        text: "J'ai littéralement jeté ma trousse à ongles. Zéro écaillage, zéro tracas, zéro regret.",
-        attribution: "— Emma R., Acheteuse vérifiée",
-      },
-      {
-        text: "Ma manucure était choquée que ce ne soit pas du gel. Deux semaines plus tard, toujours parfait.",
-        attribution: "— Sophie M., Acheteuse vérifiée",
-      },
-      {
-        text: "J'ai essayé toutes les marques. Rien n'égale cette qualité.",
-        attribution: "— Jade L., Acheteuse vérifiée",
-      },
-    ],
-    es: [
-      {
-        text: "Literalmente tiré mi kit de uñas después de usarlas. Sin astillas, sin complicaciones, sin arrepentimientos.",
-        attribution: "— Emma R., Compradora verificada",
-      },
-      {
-        text: "Mi manicurista no podía creer que no fueran gel. Dos semanas después y siguen perfectas.",
-        attribution: "— Sophie M., Compradora verificada",
-      },
-      {
-        text: "He probado todas las marcas. Nada se acerca a esta calidad.",
-        attribution: "— Jade L., Compradora verificada",
-      },
-    ],
+    fr: [],
+    es: [],
   };
 
-  // ── Subtext slots (3-8 words, angle-matched to headline pool) ───────────
-  // Each entry carries the same angle as its paired headline so the renderer
-  // can request "subtext matching the primary slot's angle" deterministically.
   const subtextPool: Record<Language, { angle: string; text: string }[]> = {
     en: [
       { angle: "benefit",      text: "Professional results at home" },
@@ -166,62 +208,21 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
       { angle: "story",        text: "Ihr Geheimnis. Jetzt deins." },
       { angle: "contrast",     text: "Salon-Qualität. Heimvorteil." },
     ],
-    fr: [
-      { angle: "benefit",      text: "Résultats professionnels à domicile" },
-      { angle: "curiosity",    text: "Découvrez ce que vous manquiez" },
-      { angle: "urgency",      text: "Limité · Commandez vite" },
-      { angle: "emotional",    text: "Parce que vous méritez le meilleur" },
-      { angle: "aspirational", text: "Collection Luxe" },
-      { angle: "aspirational", text: "Pour celles qui savent" },
-      { angle: "story",        text: "Son secret. Maintenant le vôtre." },
-      { angle: "contrast",     text: "Qualité salon. Prix maison." },
-    ],
-    es: [
-      { angle: "benefit",      text: "Resultados profesionales en casa" },
-      { angle: "curiosity",    text: "Descubre lo que te has perdido" },
-      { angle: "urgency",      text: "Limitado · Consigue el tuyo" },
-      { angle: "emotional",    text: "Porque mereces lo mejor" },
-      { angle: "aspirational", text: "Colección de Lujo" },
-      { angle: "aspirational", text: "Para las que lo saben" },
-      { angle: "story",        text: "Su secreto. Ahora el tuyo." },
-      { angle: "contrast",     text: "Calidad salón. Precio de casa." },
-    ],
+    fr: [],
+    es: [],
   };
 
   const slots: CopySlot[] = [];
 
-  for (const lang of Object.keys(headlinePool) as Language[]) {
-    // Headline slots
+  for (const lang of ["en", "de"] as Language[]) {
     for (const entry of headlinePool[lang]) {
-      slots.push({
-        id: newId("sl"),
-        lang,
-        slotType: "headline",
-        text: entry.text,
-        angle: entry.angle as CopySlot["angle"],
-      });
+      slots.push({ id: newId("sl"), lang, slotType: "headline", text: entry.text, angle: entry.angle as CopySlot["angle"], wordCount: entry.text.trim().split(/\s+/).filter(Boolean).length });
     }
-
-    // Quote slots
     for (const entry of quotePool[lang]) {
-      slots.push({
-        id: newId("sl"),
-        lang,
-        slotType: "quote",
-        text: entry.text,
-        attribution: entry.attribution,
-      });
+      slots.push({ id: newId("sl"), lang, slotType: "quote", text: entry.text, attribution: entry.attribution, wordCount: entry.text.trim().split(/\s+/).filter(Boolean).length });
     }
-
-    // Subtext slots — angle-tagged for matched pairing
     for (const entry of subtextPool[lang]) {
-      slots.push({
-        id: newId("sl"),
-        lang,
-        slotType: "subtext",
-        text: entry.text,
-        angle: entry.angle as CopySlot["angle"],
-      });
+      slots.push({ id: newId("sl"), lang, slotType: "subtext", text: entry.text, angle: entry.angle as CopySlot["angle"], wordCount: entry.text.trim().split(/\s+/).filter(Boolean).length });
     }
   }
 

@@ -3,6 +3,7 @@
 // If this file ever imports from 'lib/ai/', it's a bug.
 
 import { NextRequest, NextResponse } from "next/server";
+import { pickBestZone } from "@/app/api/generate/route";
 import {
   getRenderResult,
   getAdSpec,
@@ -70,11 +71,7 @@ export async function POST(req: NextRequest) {
       // Pick a different style within the same family, keep copy if slot types match
       const newStyle = pickDifferentStyle(oldSpec.familyId, oldSpec.templateId);
       newTemplateId = newStyle.id;
-      const otherZones = newStyle.supportedZones.filter((z: string) => z !== oldSpec.zoneId);
-      newZoneId =
-        otherZones.length > 0
-          ? otherZones[Math.floor(Math.random() * otherZones.length)]
-          : newStyle.supportedZones[0];
+      newZoneId = pickBestZone(safeZones, newStyle.supportedZones, oldSpec.zoneId);
 
       // Rebuild copy for the new template's slot types
       newCopy = {};
@@ -150,11 +147,8 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Also randomize zone (keep same style)
-      const otherZones = currentTemplate.supportedZones.filter((z) => z !== oldSpec.zoneId);
-      if (otherZones.length > 0) {
-        newZoneId = otherZones[Math.floor(Math.random() * otherZones.length)];
-      }
+      // Pick best zone (keep same style, prefer different from current)
+      newZoneId = pickBestZone(safeZones, currentTemplate.supportedZones, oldSpec.zoneId);
     }
 
     const newTemplate = getTemplate(newTemplateId);
@@ -169,7 +163,11 @@ export async function POST(req: NextRequest) {
       zoneId: newZoneId,
       primarySlotId: newPrimarySlotId,
       copy: newCopy,
-      theme: newTemplate.themeDefaults,
+      // Preserve AI-generated theme + surpriseSpec when regenerating a surprise ad
+      theme: oldSpec.surpriseSpec ? oldSpec.theme : newTemplate.themeDefaults,
+      ...(oldSpec.surpriseSpec && newTemplateId === "ai_surprise"
+        ? { surpriseSpec: oldSpec.surpriseSpec }
+        : {}),
       renderMeta: oldSpec.renderMeta,
     };
 

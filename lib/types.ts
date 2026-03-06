@@ -29,7 +29,6 @@ export type ZoneId = "A" | "B" | "C";
 
 export type SafeZones = {
   imageId: string;
-  recommendedFamily?: FamilyId;  // AI-recommended family for this image
   avoidRegions: NormRect[];
   zones: { id: ZoneId; rect: NormRect }[];
 };
@@ -50,6 +49,7 @@ export type CopySlot = {
   text: string;
   angle?: Angle;        // headline slots only
   attribution?: string; // quote slots only — "— Jane D., Verified Buyer"
+  wordCount?: number;   // pre-computed word count for length-aware matching
 };
 
 export type CopyPool = {
@@ -71,7 +71,7 @@ export const FORMAT_DIMS: Record<Format, { w: number; h: number }> = {
 // ── Family ──────────────────────────────────────────────────
 // A family is the creative concept (e.g. "promo", "testimonial").
 // AI knows about families. Styles are a pure rendering concern.
-export type FamilyId = "promo" | "testimonial" | "minimal" | "luxury";
+export type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
 
 export type FamilyDefinition = {
   id: FamilyId;
@@ -83,8 +83,10 @@ export type FamilyDefinition = {
 // A style is a visual/structural variant within a family.
 // Each style has its own build() function and themeDefaults.
 export type TemplateId =
-  | "boxed_text" | "quote_card" | "star_review"
-  | "luxury_minimal_center" | "luxury_editorial_left" | "luxury_soft_frame" | "luxury_soft_frame_open";
+  | "quote_card" | "star_review"
+  | "luxury_editorial_left" | "luxury_soft_frame_open"
+  | "switch_grid_3x2_no_text"
+  | "ai_surprise";
 
 export type TemplateTheme = {
   fontHeadline: string;
@@ -105,6 +107,7 @@ export type TemplateDefinition = {
   // Ordered list of slot types this template renders.
   // First entry = "primary" slot (cycled by New Headline button).
   copySlots: CopySlotType[];
+  preferredHeadlineLength?: "short" | "medium" | "long"; // for length-aware slot matching
 };
 
 // ── AdSpec (contract between AI + renderer) ─────────────────
@@ -125,6 +128,86 @@ export type AdSpec = {
   };
   theme: TemplateTheme;
   renderMeta: { w: number; h: number };
+  surpriseSpec?: SurpriseSpec; // only present on ai_surprise renders
+};
+
+// ── AI Style Pool ────────────────────────────────────────────
+// Generated per image by the AI image API (fal.ai / OpenAI).
+// Empty until real AI is connected — infrastructure ready.
+export type AIStyleVariant = {
+  id: string;
+  name: string;
+  layout: {
+    type: string;                      // "grid_3x2" | "split" | "overlay" etc.
+    config: Record<string, unknown>;   // layout-specific params for the build fn
+  };
+  copySlots: CopySlotType[];
+  reusable: boolean;
+  applicability: {
+    scope: "universal" | "conditional" | "this-image-only";
+    condition?: string;                // e.g. "works on hand/nail close-ups"
+  };
+  estimatedCostUsd: number;
+};
+
+export type AIStylePool = {
+  imageId: string;
+  variants: AIStyleVariant[];
+};
+
+// ── Surprise Me ─────────────────────────────────────────────
+// Returned by Claude Haiku vision call — fresh per click (never cached).
+// Random seeds in the prompt guarantee variety even for the same image.
+export type SurpriseSpec = {
+  // ── Composition ──────────────────────────────────────────────
+  layout:
+    | "top_bottom"     // image top 60%, solid color panel below
+    | "split_left"     // image left 55%, text panel right 45%
+    | "split_right"    // text panel left 45%, image right 55%
+    | "full_overlay"   // image full-bleed, semi-transparent overlay
+    | "bottom_bar"     // image full-bleed, solid color bar at very bottom
+    | "color_block"    // bold solid color block left 55%, image right 45%
+    | "frame_overlay"  // full-bleed image, thick SVG frame, text over image
+    | "magazine";      // image top 45%, editorial text zone with decorative letter below
+
+  // ── Palette ───────────────────────────────────────────────────
+  bgColor: string;          // hex — text panel / canvas background
+  textColor: string;        // hex — primary text color
+  accentColor: string;      // hex — accent elements, decorations
+  overlayOpacity: number;   // 0–1; used by full_overlay layout
+  imageOpacity?: number;    // 0.3–1.0 — mute/tint the product photo
+
+  // ── Typography — headline ─────────────────────────────────────
+  font: "serif" | "sans" | "bebas"; // Playfair Display | Inter | Bebas Neue
+  fontWeight: 300 | 400 | 700 | 900;
+  letterSpacingKey: "tight" | "normal" | "wide" | "ultra";
+  textTransform: "none" | "uppercase";
+  textAlign: "left" | "center" | "right";
+  headlineScale: "small" | "medium" | "large" | "huge";
+  headlineRotation?: number;   // −4 to 4 — subtle editorial slant on headline
+
+  // ── Typography — subtext (can differ from headline font) ──────
+  subtextFont?: "serif" | "sans" | "bebas"; // defaults to "sans" if omitted
+
+  // ── Accent (small decoration just before the headline) ────────
+  accent: "line" | "bar" | "dot" | "circle" | "none";
+
+  // ── Label (short tag above the headline) ─────────────────────
+  label?: string;              // e.g. "NEW", "EXCLUSIVE", "SS25", "LIMITED"
+  labelStyle?: "tag" | "outlined" | "plain"; // tag=colored bg, outlined=border, plain=text only
+  labelRotation?: number;      // −15 to 15 degrees
+
+  // ── Callout (bold badge overlaid on the canvas) ───────────────
+  calloutText?: string;        // e.g. "50% OFF", "#1", "2024", "SALE"
+  calloutPosition?: "top_right" | "top_left" | "bottom_right" | "bottom_left";
+
+  // ── Decoration (larger structural visual element) ─────────────
+  decoration?: "none" | "corner_lines" | "side_stripe" | "geometric_block" | "diagonal_cut";
+
+  // ── Copy ──────────────────────────────────────────────────────
+  en: { headline: string; subtext: string };
+  de: { headline: string; subtext: string };
+  preferredHeadlineLength?: "short" | "medium" | "long"; // for length-aware slot matching
 };
 
 // ── Render result ───────────────────────────────────────────

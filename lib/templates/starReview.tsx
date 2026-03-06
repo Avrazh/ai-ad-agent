@@ -21,8 +21,16 @@ const definition: TemplateDefinition = {
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
   const { w, h } = spec.renderMeta;
   const theme = spec.theme;
-  const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.17));
-  const starSize = Math.min(36, Math.round(zonePx.h * 0.12));
+
+  // Natural card height at design sizes ≈ 185px (stars 36 + starMb 14 + text 91 + padding 44)
+  const available = Math.max(60, h - zonePx.y - 24);
+  const fontScale = Math.min(1, available / 185);
+
+  const headlineFontSize = Math.min(theme.fontSize, Math.round(Math.min(theme.fontSize, zonePx.h * 0.17) * fontScale));
+  const starSize = Math.min(Math.round(36 * fontScale), Math.round(zonePx.h * 0.12));
+  const PAD_V = Math.max(8, Math.round(22 * fontScale));
+  const PAD_H = Math.max(10, Math.round(28 * fontScale));
+  const STAR_MB = Math.max(6, Math.round(14 * fontScale));
 
   return (
     <div style={{ width: w, height: h, position: "relative", display: "flex" }}>
@@ -52,7 +60,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
           style={{
             background: theme.bg,
             borderRadius: theme.radius,
-            padding: "22px 28px",
+            paddingTop: PAD_V, paddingBottom: PAD_V,
+            paddingLeft: PAD_H, paddingRight: PAD_H,
             display: "flex",
             flexDirection: "column",
             maxWidth: "100%",
@@ -64,7 +73,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
             style={{
               display: "flex",
               flexDirection: "row",
-              marginBottom: 14,
+              marginBottom: STAR_MB,
             }}
           >
             <span style={{ fontSize: starSize, color: "#F59E0B", display: "flex" }}>★</span>

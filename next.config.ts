@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3", "@resvg/resvg-js"],
+  serverExternalPackages: ["better-sqlite3", "@resvg/resvg-js", "sharp"],
 };
 
 export default nextConfig;

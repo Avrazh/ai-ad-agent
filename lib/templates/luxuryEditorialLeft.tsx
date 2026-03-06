@@ -12,7 +12,7 @@ const definition: TemplateDefinition = {
   supportedZones: ["A", "B", "C"],
   themeDefaults: {
     fontHeadline: "Playfair Display",
-    fontSize: 46,
+    fontSize: 60,
     color: "#1A1A1A",
     bg: "rgba(255,252,248,0.92)",
     radius: 0,
@@ -20,6 +20,7 @@ const definition: TemplateDefinition = {
   },
   maxLines: 4,
   copySlots: ["headline", "subtext"],
+  preferredHeadlineLength: "medium",
 };
 
 const GOLD = "#C8A96E";
@@ -27,11 +28,47 @@ const GOLD = "#C8A96E";
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
   const { w, h } = spec.renderMeta;
   const theme = spec.theme;
-  const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.12));
-  const subtextFontSize = Math.round(headlineFontSize * 0.52);
+
+  // Natural card height at design sizes ≈ 398px (3 lines × 60px × 1.3 + padding 64 + subtext 42 + buffer)
+  // Using 3-line estimate so wrapping headlines never overflow in any format.
+  const available = Math.max(60, h - zonePx.y - 24);
+  const fontScale = Math.min(1, available / 398);
+
+  const headlineFontSize = Math.round(theme.fontSize * fontScale);
   const subtext = spec.copy.subtext ?? "Luxury Collection";
+  const PAD_V = Math.max(12, Math.round(32 * fontScale));
+  const PAD_H = Math.max(14, Math.round(36 * fontScale));
+  const SUBTEXT_MT = Math.max(6, Math.round(16 * fontScale));
   const barWidth = 3;
   const barGap = 22; // space between bar and text
+  // Explicit pixel width for the text column — avoids Satori flex shrink issues
+  const textColWidth = Math.max(60, zonePx.w - 2 * PAD_H - barWidth - barGap);
+
+  // --- Word-fit sizing (same pattern as boxedText) ---
+  const MIN_FONT = 22;
+  // Playfair Display is a proportional serif — avg char width ~0.52× font size
+  const CHAR_RATIO = 0.52;
+
+  const longestWordLen = (spec.copy.headline ?? "")
+    .split(/\s+/).filter(Boolean)
+    .reduce((max, w) => Math.max(max, w.length), 0);
+
+  const wordFitFont = longestWordLen > 0
+    ? Math.max(MIN_FONT, Math.floor(textColWidth / (longestWordLen * CHAR_RATIO)))
+    : headlineFontSize;
+
+  const finalFontSize = Math.max(MIN_FONT, Math.min(headlineFontSize, wordFitFont));
+
+  // If word still doesn't fit at finalFontSize, expand column into padding buffer
+  let finalTextColWidth = textColWidth;
+  if (longestWordLen > 0) {
+    const wordPxAtFont = Math.ceil(longestWordLen * CHAR_RATIO * finalFontSize);
+    if (wordPxAtFont > finalTextColWidth) {
+      finalTextColWidth = Math.min(wordPxAtFont + 8, zonePx.w - barWidth - barGap - 20);
+    }
+  }
+
+  const finalSubtextFontSize = Math.round(finalFontSize * 0.52);
 
   return (
     <div style={{ width: w, height: h, position: "relative", display: "flex" }}>
@@ -61,12 +98,12 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
           style={{
             background: theme.bg,
             borderRadius: theme.radius,
-            padding: "32px 36px",
+            paddingTop: PAD_V, paddingBottom: PAD_V,
+            paddingLeft: PAD_H, paddingRight: PAD_H,
             display: "flex",
             flexDirection: "row",
-            alignItems: "stretch",
-            width: "100%",
-            position: "relative",
+            width: zonePx.w,
+            overflow: "hidden",
           }}
         >
           {/* Gold vertical bar */}
@@ -81,25 +118,25 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
             }}
           />
 
-          {/* Text column */}
+          {/* Text column — all widths explicit in px, no "100%" to avoid Satori ambiguity */}
           <div
             style={{
               display: "flex",
               flexDirection: "column",
               alignItems: "flex-start",
-              flex: 1,
+              width: finalTextColWidth,
             }}
           >
             {/* Headline */}
             <p
               style={{
                 fontFamily: theme.fontHeadline,
-                fontSize: headlineFontSize,
+                fontSize: finalFontSize,
                 fontWeight: 700,
                 color: theme.color,
                 lineHeight: 1.3,
                 margin: 0,
-                overflow: "hidden",
+                width: finalTextColWidth,
               }}
             >
               {spec.copy.headline ?? ""}
@@ -109,14 +146,14 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
             <p
               style={{
                 fontFamily: "Inter",
-                fontSize: subtextFontSize,
+                fontSize: finalSubtextFontSize,
                 fontWeight: 400,
                 color: "#7A7060",
                 letterSpacing: "0.10em",
                 textTransform: "uppercase",
                 margin: 0,
-                marginTop: 16,
-                overflow: "hidden",
+                marginTop: SUBTEXT_MT,
+                width: finalTextColWidth,
               }}
             >
               {subtext}

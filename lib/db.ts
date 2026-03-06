@@ -66,6 +66,26 @@ async function migrate(): Promise<void> {
         FOREIGN KEY (ad_spec_id) REFERENCES ad_specs(id),
         FOREIGN KEY (image_id)   REFERENCES images(id)
       )`,
+      `CREATE TABLE IF NOT EXISTS ai_style_pools (
+        image_id TEXT PRIMARY KEY,
+        data     TEXT NOT NULL,
+        FOREIGN KEY (image_id) REFERENCES images(id)
+      )`,
+      `CREATE TABLE IF NOT EXISTS saved_ai_styles (
+        id                 TEXT PRIMARY KEY,
+        name               TEXT NOT NULL,
+        template_id        TEXT NOT NULL,
+        applicability      TEXT,
+        estimated_cost_usd REAL NOT NULL DEFAULT 0,
+        created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS developer_feedback (
+        id          TEXT PRIMARY KEY,
+        message     TEXT NOT NULL,
+        image_id    TEXT,
+        template_id TEXT,
+        created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
     ],
     "write"
   );
@@ -77,6 +97,25 @@ async function migrate(): Promise<void> {
     );
   } catch {
     // Column already exists — ignore
+  }
+
+  // Additive migration: add surprise_spec column to saved_ai_styles
+  try {
+    await client.execute(
+      `ALTER TABLE saved_ai_styles ADD COLUMN surprise_spec TEXT`
+    );
+  } catch {
+    // Column already exists — ignore
+  }
+
+  // Seed default saved AI style if table is empty
+  try {
+    await client.execute(
+      `INSERT OR IGNORE INTO saved_ai_styles (id, name, template_id, estimated_cost_usd)
+       VALUES ('sas_default', 'Grid 3×2', 'switch_grid_3x2_no_text', 0)`
+    );
+  } catch {
+    // Ignore — table may not exist yet on very old DBs
   }
 }
 
@@ -297,8 +336,90 @@ export async function clearAll() {
       `DELETE FROM ad_specs`,
       `DELETE FROM copy_pools`,
       `DELETE FROM safe_zones`,
+      `DELETE FROM ai_style_pools`,
       `DELETE FROM images`,
+      // saved_ai_styles intentionally NOT cleared — user preferences persist
     ],
     "write"
   );
+}
+
+// ── AIStylePool queries ─────────────────────────────────────
+export async function upsertAIStylePool(imageId: string, data: string) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT OR REPLACE INTO ai_style_pools (image_id, data) VALUES (?, ?)`,
+    args: [imageId, data],
+  });
+}
+
+export async function getAIStylePool(imageId: string): Promise<string | undefined> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT data FROM ai_style_pools WHERE image_id = ?`,
+    args: [imageId],
+  });
+  const row = result.rows[0];
+  return row ? (row.data as string) : undefined;
+}
+
+// ── SavedAIStyle queries ────────────────────────────────────
+export async function getSavedAIStyles() {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute(
+    `SELECT * FROM saved_ai_styles ORDER BY created_at ASC`
+  );
+  return result.rows.map((row) => ({
+    id: row.id as string,
+    name: row.name as string,
+    templateId: row.template_id as string,
+    applicability: row.applicability as string | null,
+    estimatedCostUsd: row.estimated_cost_usd as number,
+    createdAt: row.created_at as string,
+    surprise_spec: row.surprise_spec as string | null,
+  }));
+}
+
+export async function insertSavedAIStyle(row: {
+  id: string;
+  name: string;
+  templateId: string;
+  applicability?: string;
+  estimatedCostUsd?: number;
+  surpriseSpec?: string; // JSON-encoded SurpriseSpec (without en/de copy)
+}) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT INTO saved_ai_styles (id, name, template_id, applicability, estimated_cost_usd, surprise_spec)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+    args: [row.id, row.name, row.templateId, row.applicability ?? null, row.estimatedCostUsd ?? 0, row.surpriseSpec ?? null],
+  });
+}
+
+export async function deleteSavedAIStyle(id: string) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `DELETE FROM saved_ai_styles WHERE id = ?`,
+    args: [id],
+  });
+}
+
+// ── DeveloperFeedback queries ───────────────────────────────
+export async function insertDeveloperFeedback(row: {
+  id: string;
+  message: string;
+  imageId?: string;
+  templateId?: string;
+}): Promise<void> {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `INSERT INTO developer_feedback (id, message, image_id, template_id) VALUES (?, ?, ?, ?)`,
+    args: [row.id, row.message, row.imageId ?? null, row.templateId ?? null],
+  });
 }

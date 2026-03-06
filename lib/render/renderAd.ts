@@ -2,6 +2,7 @@ import satori, { type FontWeight, type FontStyle } from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import { readFile } from "fs/promises";
 import path from "path";
+import sharp from "sharp";
 import type { AdSpec, SafeZones } from "@/lib/types";
 import { toPixels } from "@/lib/types";
 import { getTemplate } from "@/lib/templates";
@@ -12,6 +13,9 @@ type FontEntry = { name: string; data: Buffer; weight: FontWeight; style: FontSt
 
 // Cache fonts in memory after first load
 let fontsLoaded: FontEntry[] | null = null;
+
+// Cache resized image base64 per "imageId:WxH" — images never change after upload
+const imageBase64Cache = new Map<string, string>();
 
 async function loadFonts() {
   if (fontsLoaded) return fontsLoaded;
@@ -60,12 +64,20 @@ export async function renderAd(
   // Convert normalized zone to pixel coords
   const zonePx = toPixels(zone.rect, spec.renderMeta.w, spec.renderMeta.h);
 
-  // Load the source image as base64 — pass URL so read() works in blob mode too
-  const { filename: imageFilename, url: imageUrl } = await getImageInfo(spec.imageId);
-  const imageBuffer = await readStorage("uploads", imageUrl);
-  const ext = path.extname(imageFilename).replace(".", "");
-  const mimeType = ext === "jpg" ? "jpeg" : ext;
-  const imageBase64 = `data:image/${mimeType};base64,${imageBuffer.toString("base64")}`;
+  // Load source image, resize to canvas dimensions, cache per imageId+canvas size.
+  // Resizing here means resvg receives a pixel-perfect image with no in-render scaling needed.
+  const cacheKey = `${spec.imageId}:${spec.renderMeta.w}x${spec.renderMeta.h}`;
+  let imageBase64 = imageBase64Cache.get(cacheKey);
+  if (!imageBase64) {
+    const { url: imageUrl } = await getImageInfo(spec.imageId);
+    const rawBuffer = await readStorage("uploads", imageUrl);
+    const resizedBuffer = await sharp(rawBuffer)
+      .resize(spec.renderMeta.w, spec.renderMeta.h, { fit: "cover", position: "center" })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    imageBase64 = `data:image/jpeg;base64,${resizedBuffer.toString("base64")}`;
+    imageBase64Cache.set(cacheKey, imageBase64);
+  }
 
   // Build the template JSX
   const element = template.build(spec, imageBase64, zonePx);

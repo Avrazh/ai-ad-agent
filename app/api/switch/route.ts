@@ -64,49 +64,69 @@ export async function POST(req: NextRequest) {
       // 4. Rebuild copy for new language (angle-matched)
       let newPrimarySlotId = oldSpec.primarySlotId;
       let newCopy = { ...oldSpec.copy };
+      let newSurpriseSpec = oldSpec.surpriseSpec;
 
       if (lang && lang !== oldSpec.lang) {
-        const template = getTemplate(oldSpec.templateId);
-        const langSlots = copyPool.slots.filter((s: CopySlot) => s.lang === newLang);
-        const oldPrimary = copyPool.slots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
-        const targetAngle = oldPrimary?.angle;
+        if (oldSpec.surpriseSpec) {
+          // ai_surprise: copy lives in surpriseSpec.en / .de — swap language bucket
+          const langCopy = newLang === "de" ? oldSpec.surpriseSpec.de : oldSpec.surpriseSpec.en;
+          newCopy = { headline: langCopy.headline, subtext: langCopy.subtext };
+          // Also try to pull from CopyPool for richer copy (same pattern as generate route)
+          const langSlots = copyPool.slots.filter((s: CopySlot) => s.lang === newLang);
+          const headlineSlots = langSlots.filter((s: CopySlot) => s.slotType === "headline");
+          const hlSlot = headlineSlots.find((s: CopySlot) => s.angle === "aspirational")
+            ?? headlineSlots[0];
+          const stSlot = langSlots.find((s: CopySlot) => s.slotType === "subtext");
+          if (hlSlot) newCopy.headline = hlSlot.text;
+          if (stSlot) newCopy.subtext = stSlot.text;
+          // Keep surpriseSpec in sync with the displayed copy
+          newSurpriseSpec = {
+            ...oldSpec.surpriseSpec,
+            en: newLang === "en" ? { headline: newCopy.headline ?? oldSpec.surpriseSpec.en.headline, subtext: newCopy.subtext ?? oldSpec.surpriseSpec.en.subtext } : oldSpec.surpriseSpec.en,
+            de: newLang === "de" ? { headline: newCopy.headline ?? oldSpec.surpriseSpec.de.headline, subtext: newCopy.subtext ?? oldSpec.surpriseSpec.de.subtext } : oldSpec.surpriseSpec.de,
+          };
+        } else {
+          const template = getTemplate(oldSpec.templateId);
+          const langSlots = copyPool.slots.filter((s: CopySlot) => s.lang === newLang);
+          const oldPrimary = copyPool.slots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
+          const targetAngle = oldPrimary?.angle;
 
-        newCopy = {};
-        let primarySlot: CopySlot | undefined;
+          newCopy = {};
+          let primarySlot: CopySlot | undefined;
 
-        for (let i = 0; i < template.copySlots.length; i++) {
-          const slotType = template.copySlots[i];
-          const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
+          for (let i = 0; i < template.copySlots.length; i++) {
+            const slotType = template.copySlots[i];
+            const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
 
-          if (i === 0) {
-            // Primary slot — try to match same angle in new language
-            let pick: CopySlot | undefined;
-            if (targetAngle) {
-              pick = typeSlots.find((s: CopySlot) => s.angle === targetAngle);
-            }
-            pick = pick ?? typeSlots[0];
-            if (pick) {
-              newPrimarySlotId = pick.id;
-              primarySlot = pick;
-              newCopy[slotType] = pick.text;
-              if (pick.attribution) newCopy.attribution = pick.attribution;
-            }
-          } else {
-            // Secondary slots — match the new primary's angle for tonal consistency
-            const matchAngle = primarySlot?.angle;
-            const slot = (matchAngle
-              ? typeSlots.find((s: CopySlot) => s.angle === matchAngle)
-              : null) ?? typeSlots[0];
-            if (slot) {
-              newCopy[slotType] = slot.text;
-              if (slot.attribution) newCopy.attribution = slot.attribution;
+            if (i === 0) {
+              // Primary slot — try to match same angle in new language
+              let pick: CopySlot | undefined;
+              if (targetAngle) {
+                pick = typeSlots.find((s: CopySlot) => s.angle === targetAngle);
+              }
+              pick = pick ?? typeSlots[0];
+              if (pick) {
+                newPrimarySlotId = pick.id;
+                primarySlot = pick;
+                newCopy[slotType] = pick.text;
+                if (pick.attribution) newCopy.attribution = pick.attribution;
+              }
+            } else {
+              // Secondary slots — match the new primary's angle for tonal consistency
+              const matchAngle = primarySlot?.angle;
+              const slot = (matchAngle
+                ? typeSlots.find((s: CopySlot) => s.angle === matchAngle)
+                : null) ?? typeSlots[0];
+              if (slot) {
+                newCopy[slotType] = slot.text;
+                if (slot.attribution) newCopy.attribution = slot.attribution;
+              }
             }
           }
         }
       }
 
       // 5. Build new AdSpec
-      const template = getTemplate(oldSpec.templateId);
       const newSpec: AdSpec = {
         id: newId("as"),
         imageId: oldSpec.imageId,
@@ -117,8 +137,9 @@ export async function POST(req: NextRequest) {
         zoneId: oldSpec.zoneId,
         primarySlotId: newPrimarySlotId,
         copy: newCopy,
-        theme: template.themeDefaults,
+        theme: oldSpec.theme,   // preserve custom colors (important for ai_surprise)
         renderMeta: newDims,
+        ...(newSurpriseSpec ? { surpriseSpec: newSurpriseSpec } : {}),
       };
 
       // 6. Store + render + link

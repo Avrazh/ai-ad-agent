@@ -68,11 +68,20 @@ export function getUrl(bucket: Bucket, id: string): string {
   return `/api/files/${bucket}/${id}`;
 }
 
-// Delete all generated PNGs from Blob (call when a new image is uploaded)
+// Delete all generated PNGs (call when a new image is uploaded)
 export async function removeGenerated(): Promise<void> {
-  if (!USE_BLOB) return;
-  const { blobs } = await list({ prefix: "generated/" });
-  if (blobs.length > 0) await del(blobs.map((b) => b.url));
+  if (USE_BLOB) {
+    const { blobs } = await list({ prefix: "generated/" });
+    if (blobs.length > 0) await del(blobs.map((b) => b.url));
+    return;
+  }
+  const dir = bucketPath("generated");
+  try {
+    const files = await fs.readdir(dir);
+    await Promise.all(files.map((f) => fs.unlink(path.join(dir, f)).catch(() => {})));
+  } catch {
+    // Directory may not exist yet — ignore
+  }
 }
 
 // Wipe everything from both uploads/ and generated/ — handles Blob and local.

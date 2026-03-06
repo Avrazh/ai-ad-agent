@@ -19,6 +19,7 @@ const definition: TemplateDefinition = {
   },
   maxLines: 3,
   copySlots: ["headline"],
+  preferredHeadlineLength: "short",
 };
 
 // Frame inset from canvas edges (px)
@@ -29,7 +30,7 @@ const FRAME_STROKE = 1.5;
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
   const { w, h } = spec.renderMeta;
   const theme = spec.theme;
-  const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.51));
+  const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.28));
 
   const frameX = FRAME_INSET;
   const frameY = FRAME_INSET;

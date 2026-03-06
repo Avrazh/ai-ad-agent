@@ -22,12 +22,19 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
   const { w, h } = spec.renderMeta;
   const theme = spec.theme;
 
-  // Quote mark dominates — roughly 35% of zone height, capped generously
-  const quoteMarkSize = Math.min(240, Math.round(zonePx.h * 2.90));
-  // Body text: bold, readable but clearly smaller than the mark
-  const headlineFontSize = Math.min(theme.fontSize, Math.round(zonePx.h * 0.95));
-  // Attribution smaller than body
+  // available = space from zone top to canvas bottom minus margin
+  // Natural card height at design sizes ≈ 396px (quoteMarkEffective 129 + text 120 + sep 41 + attr 34 + padding 72)
+  const available = Math.max(60, h - zonePx.y - 24);
+  const fontScale = Math.min(1, available / 396);
+
+  const quoteMarkSize  = Math.round(240 * fontScale);
+  const headlineFontSize = Math.min(theme.fontSize, Math.round(theme.fontSize * fontScale));
   const attributionFontSize = Math.round(headlineFontSize * 0.72);
+  const PAD_V = Math.max(10, Math.round(36 * fontScale));
+  const PAD_H = Math.max(12, Math.round(40 * fontScale));
+  const SEP_MT = Math.max(8, Math.round(24 * fontScale));
+  const SEP_MB = Math.max(6, Math.round(16 * fontScale));
+  const MARK_MB = Math.round(-20 * fontScale);
 
   const accentBlue = "#1AABFB";
 
@@ -59,7 +66,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
           style={{
             background: theme.bg,
             borderRadius: theme.radius,
-            padding: "36px 40px",
+            paddingTop: PAD_V, paddingBottom: PAD_V,
+            paddingLeft: PAD_H, paddingRight: PAD_H,
             display: "flex",
             flexDirection: "column",
             width: "100%",
@@ -73,9 +81,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
               fontSize: quoteMarkSize,
               fontWeight: 700,
               color: accentBlue,
-              // lineHeight < 1 compresses space below the glyph
               lineHeight: 0.62,
-              marginBottom: -20,
+              marginBottom: MARK_MB,
               display: "flex",
             }}
           >
@@ -100,8 +107,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect) {
           {/* Full-width separator line */}
           <div
             style={{
-              marginTop: 24,
-              marginBottom: 16,
+              marginTop: SEP_MT,
+              marginBottom: SEP_MB,
               width: "100%",
               height: 1,
               background: "#E0E0E0",
