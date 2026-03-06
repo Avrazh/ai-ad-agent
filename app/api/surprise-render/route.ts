@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resvg } from "@resvg/resvg-js";
+import path from "path";
 import { generateSurpriseSVG } from "@/lib/ai/surpriseRender";
 import { read, save } from "@/lib/storage";
 import { newId } from "@/lib/ids";
@@ -33,9 +34,18 @@ export async function POST(req: NextRequest) {
       `data:${mimeType};base64,${imageBase64}`
     );
 
-    // 3. SVG → PNG via resvg (already installed)
+    // 3. SVG → PNG via resvg
+    // Must supply our bundled fonts — Vercel Linux has zero system fonts installed,
+    // so without this all text renders invisible.
     const resvg = new Resvg(svg, {
       fitTo: { mode: "width", value: 1080 },
+      font: {
+        fontDirs: [path.join(process.cwd(), "fonts")],
+        defaultFontFamily: "Inter",
+        sansSerifFamily: "Inter",
+        serifFamily: "Playfair Display",
+        loadSystemFonts: false,
+      },
     });
     const pngBuffer = Buffer.from(resvg.render().asPng());
 
