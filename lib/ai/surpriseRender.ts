@@ -13,7 +13,9 @@ const LANG_NAMES: Record<string, string> = {
 
 export async function generateSurpriseSVG(
   imageUrl: string,
-  lang: string
+  lang: string,
+  userPrompt?: string,
+  referenceImage?: { base64: string; mimeType: "image/jpeg" | "image/png" | "image/webp" }
 ): Promise<string> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
@@ -30,37 +32,52 @@ export async function generateSurpriseSVG(
   const langName = LANG_NAMES[lang] ?? "English";
   const client = new Anthropic({ apiKey });
 
-  const response = await withRetry(
-    () =>
-      client.messages.create({
-        model: MODEL,
-        max_tokens: 8000,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mimeType, data: imageBase64 },
-              },
-              {
-                type: "text",
-                text: `You are a world-class creative director. Design a stunning, surprising print advertisement as a complete SVG.
+  const creativeDirection = userPrompt
+    ? `CREATIVE DIRECTION (highest priority — your design MUST reflect this above all else):
+"${userPrompt}"
 
-DIMENSIONS: exactly 1080Ã—1920 pixels (9:16 portrait)
+`
+    : "";
+
+  const content: Anthropic.MessageParam["content"] = [
+    {
+      type: "image",
+      source: { type: "base64", media_type: mimeType, data: imageBase64 },
+    },
+    ...(referenceImage
+      ? [
+          {
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: referenceImage.mimeType,
+              data: referenceImage.base64,
+            },
+          },
+          {
+            type: "text" as const,
+            text: "The image above is a STYLE REFERENCE only (not the product). Use it to inspire layout, color palette, mood, and typography. The first image is the actual product — feature it prominently.",
+          },
+        ]
+      : []),
+    {
+      type: "text",
+      text: `${creativeDirection}You are a world-class creative director. Design a stunning, surprising print advertisement as a complete SVG.
+
+DIMENSIONS: exactly 1080×1920 pixels (9:16 portrait)
 LANGUAGE: Write all text in ${langName}
 
 REQUIREMENTS:
 - Include the product photo using EXACTLY this placeholder as the href attribute value: __PRODUCT_IMAGE__
   Example: <image href="__PRODUCT_IMAGE__" x="0" y="0" width="1080" height="960" preserveAspectRatio="xMidYMid slice"/>
-- The headline must be BOLD and SURPRISING â€” something that makes the viewer stop and think "how did we not think of that?" Be provocative, poetic, paradoxical, or emotionally striking. Maximum 6 words. NO generic advertising copy.
+- The headline must be BOLD and SURPRISING — something that makes the viewer stop and think "how did we not think of that?" Be provocative, poetic, paradoxical, or emotionally striking. Maximum 6 words. NO generic advertising copy.
 - Design philosophy: MINIMALIST. Lots of negative space. Let the product and one headline breathe. Resist the urge to fill space.
-- Use typography as the primary design element â€” one dominant text element, large scale, high contrast
-- Maximum 2 colors total (not counting the product photo) â€” prefer black, white, or one accent
-- Be specific to what you actually see in this product image â€” do not write generic copy
-- The overall design must feel editorial, refined, and unexpected â€” like a luxury brand campaign
+- Use typography as the primary design element — one dominant text element, large scale, high contrast
+- Maximum 2 colors total (not counting the product photo) — prefer black, white, or one accent
+- Be specific to what you actually see in this product image — do not write generic copy
+- The overall design must feel editorial, refined, and unexpected — like a luxury brand campaign
 
-LAYOUT VARIETY â€” pick ONE of these approaches (do NOT default to "photo top, text bottom bar"):
+LAYOUT VARIETY — pick ONE of these approaches (do NOT default to "photo top, text bottom bar"):
 A) Full-bleed photo with ONE massive headline word overlaid directly on the image at an unexpected position (top-left, center, diagonal)
 B) Split: left half solid color with large vertical text, right half product photo
 C) Product photo small and centered on a large solid background, headline above or below with extreme whitespace
@@ -76,10 +93,15 @@ SVG TECHNICAL RULES:
 - The SVG must be fully self-contained and valid
 
 Return ONLY the raw SVG code. Start with <svg and end with </svg>. No markdown fences. No explanation. No comments outside the SVG.`,
-              },
-            ],
-          },
-        ],
+    },
+  ];
+
+  const response = await withRetry(
+    () =>
+      client.messages.create({
+        model: MODEL,
+        max_tokens: 8000,
+        messages: [{ role: "user", content }],
       }),
     "surpriseRender"
   );
@@ -87,7 +109,9 @@ Return ONLY the raw SVG code. Start with <svg and end with </svg>. No markdown f
   let svg = (response.content[0] as { type: "text"; text: string }).text.trim();
 
   // Strip markdown fences if Claude wraps them
-  svg = svg.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
+  svg = svg.replace(/^```[a-z]*
+?/i, "").replace(/
+?```$/i, "").trim();
 
   // Ensure it starts with <svg
   if (!svg.startsWith("<svg")) {
