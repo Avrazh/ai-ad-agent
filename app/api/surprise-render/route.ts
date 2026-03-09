@@ -8,7 +8,22 @@ import { insertAdSpec, insertRenderResult } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageId, imageUrl, lang = "en" } = await req.json();
+    const {
+      imageId,
+      imageUrl,
+      lang = "en",
+      userPrompt,
+      referenceImageBase64,
+      referenceImageMimeType,
+    } = await req.json();
+
+    const referenceImage =
+      referenceImageBase64 && referenceImageMimeType
+        ? {
+            base64: referenceImageBase64 as string,
+            mimeType: referenceImageMimeType as "image/jpeg" | "image/png" | "image/webp",
+          }
+        : undefined;
 
     if (!imageId || !imageUrl) {
       return NextResponse.json(
@@ -18,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Claude generates SVG with __PRODUCT_IMAGE__ placeholder
-    let svg = await generateSurpriseSVG(imageUrl, lang);
+    let svg = await generateSurpriseSVG(imageUrl, lang, userPrompt, referenceImage);
 
     // 2. Load product image and replace placeholder with real base64
     const imageBuffer = await read("uploads", imageUrl);
