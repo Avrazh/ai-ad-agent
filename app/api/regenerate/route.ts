@@ -22,9 +22,10 @@ import type { AdSpec, SafeZones, CopyPool, CopySlot } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { resultId, mode } = body as {
+    const { resultId, mode, angle } = body as {
       resultId: string;
       mode: "headline" | "style";
+      angle?: string; // specific tone angle requested from the UI Tone stage
     };
 
     if (!resultId || !mode) {
@@ -107,23 +108,35 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === "headline") {
-      // Pick a different primary slot in the same language, prefer a different angle
+      // Pick a different primary slot in the same language
       const currentTemplate = getTemplate(oldSpec.templateId);
       const primarySlotType = currentTemplate.copySlots[0] ?? "headline";
       const langPrimarySlots = langSlots.filter(
         (s: CopySlot) => s.slotType === primarySlotType
       );
-      const candidates = langPrimarySlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
 
       let newPrimary: CopySlot | undefined;
-      if (candidates.length > 0) {
-        const currentSlot = langPrimarySlots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
-        const currentAngle = currentSlot?.angle;
-        const differentAngle = candidates.filter((s: CopySlot) => s.angle !== currentAngle);
+      if (angle) {
+        // Tone stage: user requested a specific angle — pick a slot of that angle,
+        // prefer one different from current; wrap around if all used.
+        const angleSlots = langPrimarySlots.filter((s: CopySlot) => s.angle === angle);
+        const different = angleSlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
         newPrimary =
-          differentAngle.length > 0
-            ? differentAngle[Math.floor(Math.random() * differentAngle.length)]
-            : candidates[Math.floor(Math.random() * candidates.length)];
+          different.length > 0
+            ? different[Math.floor(Math.random() * different.length)]
+            : angleSlots[Math.floor(Math.random() * angleSlots.length)];
+      } else {
+        // Default "New Headline": prefer a different angle from current
+        const candidates = langPrimarySlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
+        if (candidates.length > 0) {
+          const currentSlot = langPrimarySlots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
+          const currentAngle = currentSlot?.angle;
+          const differentAngle = candidates.filter((s: CopySlot) => s.angle !== currentAngle);
+          newPrimary =
+            differentAngle.length > 0
+              ? differentAngle[Math.floor(Math.random() * differentAngle.length)]
+              : candidates[Math.floor(Math.random() * candidates.length)];
+        }
       }
 
       if (newPrimary) {

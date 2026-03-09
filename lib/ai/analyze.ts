@@ -32,6 +32,11 @@ export async function analyzeSafeZones(imageId: string): Promise<SafeZones> {
   const mimeType = (ext === "jpg" ? "jpeg" : ext) as "jpeg" | "png" | "gif" | "webp";
   const imageBase64 = imageBuffer.toString("base64");
 
+  if (process.env.SKIP_AI === "true") {
+    console.log("[analyze] SKIP_AI=true — using hardcoded zones (dev mode)");
+    return { imageId, ...HARDCODED_FALLBACK };
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.warn("[analyze] ANTHROPIC_API_KEY not set — using hardcoded zones");

@@ -168,7 +168,9 @@ export type SurpriseSpec = {
     | "bottom_bar"     // image full-bleed, solid color bar at very bottom
     | "color_block"    // bold solid color block left 55%, image right 45%
     | "frame_overlay"  // full-bleed image, thick SVG frame, text over image
-    | "magazine";      // image top 45%, editorial text zone with decorative letter below
+    | "magazine"       // image top 45%, editorial text zone with decorative letter below
+    | "postcard"       // full-bleed bg image + centered paper card with headline + image window
+    | "vertical_text"; // left: image, right: solid panel, headline letters straddle split with image clipped inside (raw SVG)
 
   // ── Palette ───────────────────────────────────────────────────
   bgColor: string;          // hex — text panel / canvas background
