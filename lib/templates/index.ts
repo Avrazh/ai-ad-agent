@@ -2,11 +2,6 @@
 import { registerFamily } from "./familyRegistry";
 
 registerFamily({
-  id: "promo",
-  name: "Promo",
-  aiDescription: "Bold promotional overlays that highlight offers and product benefits",
-});
-registerFamily({
   id: "testimonial",
   name: "Testimonial",
   aiDescription: "Customer quote styles that build trust through social proof",
@@ -21,15 +16,19 @@ registerFamily({
   name: "Luxury Editorial",
   aiDescription: "Aspirational, minimal luxury copy — short, refined, no aggressive hooks, no emojis",
 });
+registerFamily({
+  id: "ai",
+  name: "AI Style",
+  aiDescription: "AI-generated visual treatments — image manipulation, graphic overlays, no text",
+});
 
 // Import all styles to trigger registration
-import "./boxedText";
 import "./quoteCard";
 import "./starReview";
-import "./luxuryMinimalCenter";
 import "./luxuryEditorialLeft";
-import "./luxurySoftFrame";
 import "./luxurySoftFrameOpen";
+import "./gridSwitchLayout";
+import "./aiSurprise";
 
 export { getTemplate, getAllTemplates, getTemplateIds, getStylesForFamily } from "./registry";
 export { registerFamily, getFamily, getAllFamilies, pickRandomStyle, pickDifferentStyle } from "./familyRegistry";

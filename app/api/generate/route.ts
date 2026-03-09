@@ -1,20 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeSafeZones } from "@/lib/ai/analyze";
 import { generateCopyPool } from "@/lib/ai/copy";
+import { generateSurpriseSpec, generateSurpriseSpecFromReference } from "@/lib/ai/aiSurprise";
 import {
   getImage,
+  insertImage,
   getSafeZones,
   upsertSafeZones,
   getCopyPool,
   upsertCopyPool,
   insertAdSpec,
   insertRenderResult,
+  getSavedAIStyles,
 } from "@/lib/db";
 import "@/lib/templates"; // ensure templates + families registered
-import { pickRandomStyle, getAllFamilies, getStylesForFamily } from "@/lib/templates";
+import { getAllFamilies, getStylesForFamily, getTemplate } from "@/lib/templates";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { SafeZones, CopyPool, AdSpec, FamilyId, Angle, Language, Format, Headline } from "@/lib/types";
+import type { SafeZones, CopyPool, CopySlot, AdSpec, FamilyId, Angle, Language, Format, TemplateId, ZoneId, SurpriseSpec } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -22,75 +25,260 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       imageId,
+      imageUrl,
+      imageWidth,
+      imageHeight,
       familyIds,
+      forceTemplateId,
+      surpriseMe,
+      savedSurpriseSpecId,
+      forceSurpriseSpec,
+      referenceImageBase64,
+      referenceImageMimeType,
       lang = "en",
       format = "4:5",
-      showAllStyles = false,
     } = body as {
       imageId: string;
-      familyIds: FamilyId[];
+      imageUrl?: string;
+      imageWidth?: number;
+      imageHeight?: number;
+      familyIds?: FamilyId[];
+      forceTemplateId?: string;
+      surpriseMe?: boolean;
+      savedSurpriseSpecId?: string;  // reuse saved layout without AI call
+      forceSurpriseSpec?: SurpriseSpec; // use provided spec directly — no AI, no DB lookup
+      referenceImageBase64?: string;    // base64 reference ad — triggers style-transfer spec generation
+      referenceImageMimeType?: string;
       lang?: Language;
       format?: Format;
-      showAllStyles?: boolean;
     };
 
     if (!imageId) {
       return NextResponse.json({ error: "imageId required" }, { status: 400 });
     }
 
-    const image = getImage(imageId);
+    let image = await getImage(imageId);
     if (!image) {
-      return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      // SQLite was reset (cold start) — re-seed from client-provided values
+      if (!imageUrl) {
+        return NextResponse.json({ error: "Image not found" }, { status: 404 });
+      }
+      await insertImage({
+        id: imageId,
+        filename: imageId + ".png",
+        url: imageUrl,
+        width: imageWidth ?? 0,
+        height: imageHeight ?? 0,
+      });
+      image = await getImage(imageId)!;
     }
 
-    // Default to all registered families if none specified
-    const families: FamilyId[] = familyIds?.length
-      ? familyIds
-      : getAllFamilies().map((f) => f.id);
+    // ── Surprise Me path ────────────────────────────────────────────────────
+    // Two sub-modes:
+    //   surpriseMe=true          → fresh AI call (Haiku vision + random seeds)
+    //   savedSurpriseSpecId=xxx  → reuse saved layout spec, pick copy from CopyPool
+    if (surpriseMe || savedSurpriseSpecId || forceSurpriseSpec) {
+      // 1. Ensure SafeZones exist (needed by renderAd even though ai_surprise ignores zonePx)
+      let safeZones: SafeZones;
+      const cachedZones = await getSafeZones(imageId);
+      if (cachedZones) {
+        safeZones = JSON.parse(cachedZones);
+      } else {
+        safeZones = await analyzeSafeZones(imageId);
+        await upsertSafeZones(imageId, JSON.stringify(safeZones));
+      }
+
+      // 2. Ensure CopyPool exists (so "New Headline" works after a surprise render)
+      let copyPool: CopyPool | null = null;
+      const cachedCopy = await getCopyPool(imageId);
+      if (cachedCopy) {
+        copyPool = JSON.parse(cachedCopy);
+      } else {
+        copyPool = await generateCopyPool(imageId);
+        await upsertCopyPool(imageId, JSON.stringify(copyPool));
+      }
+
+      // 3. Get or generate the SurpriseSpec
+      let surprise: SurpriseSpec;
+      if (forceSurpriseSpec) {
+        // Use provided spec directly — no AI call, no DB lookup (used for layout preview)
+        surprise = forceSurpriseSpec;
+        // Replace copy with copy from the current image's pool
+        const langSlots = copyPool?.slots.filter((s) => s.lang === lang) ?? [];
+        const headlineSlots = langSlots.filter((s) => s.slotType === "headline");
+        const tempUsed = new Set<string>();
+        const hlSlot = pickSlot(headlineSlots, tempUsed, "aspirational", surprise.preferredHeadlineLength)
+          ?? pickSlot(headlineSlots, tempUsed, undefined, surprise.preferredHeadlineLength);
+        const stSlot = langSlots.find((s) => s.slotType === "subtext");
+        const headline = hlSlot?.text ?? surprise.en.headline;
+        const subtext  = stSlot?.text ?? surprise.en.subtext;
+        surprise = { ...surprise, en: { headline, subtext }, de: { headline, subtext } };
+      } else if (savedSurpriseSpecId) {
+        // Reuse a previously saved layout — no AI call
+        const allSaved = await getSavedAIStyles();
+        const saved = allSaved.find((s) => s.id === savedSurpriseSpecId);
+        if (!saved?.surprise_spec) {
+          return NextResponse.json({ error: "Saved surprise style not found" }, { status: 404 });
+        }
+        surprise = JSON.parse(saved.surprise_spec) as SurpriseSpec;
+        // Replace copy with copy from the current image's pool
+        const langSlots = copyPool?.slots.filter((s) => s.lang === lang) ?? [];
+        const hlSlot = langSlots.find((s) => s.slotType === "headline" && s.angle === "aspirational")
+          ?? langSlots.find((s) => s.slotType === "headline");
+        const stSlot = langSlots.find((s) => s.slotType === "subtext");
+        const headline = hlSlot?.text ?? surprise.en.headline;
+        const subtext  = stSlot?.text ?? surprise.en.subtext;
+        surprise = { ...surprise, en: { headline, subtext }, de: { headline, subtext } };
+      } else if (referenceImageBase64) {
+        // Style-transfer: generate spec inspired by a reference ad image
+        const refMime = (referenceImageMimeType ?? "jpeg") as "jpeg" | "png" | "gif" | "webp";
+        surprise = await generateSurpriseSpecFromReference(imageId, referenceImageBase64, refMime);
+      } else {
+        // Fresh AI call
+        surprise = await generateSurpriseSpec(imageId);
+      }
+
+      // 4. Build AdSpec
+      const dims = FORMAT_DIMS[format];
+      const langCopy = lang === "de" ? surprise.de : surprise.en;
+      const zoneId = pickBestZone(safeZones, ["A", "B", "C"]);
+
+      const spec: AdSpec = {
+        id: newId("as"),
+        imageId,
+        format,
+        lang,
+        familyId: "ai",
+        templateId: "ai_surprise",
+        zoneId,
+        primarySlotId: newId("surprise"),
+        copy: {
+          headline: langCopy.headline,
+          subtext:  langCopy.subtext,
+        },
+        theme: {
+          fontHeadline: surprise.font === "sans" ? "Inter" : "Playfair Display",
+          fontSize: 90,
+          color: surprise.textColor,
+          bg:    surprise.bgColor,
+          radius: 0,
+          shadow: false,
+        },
+        surpriseSpec: surprise,
+        renderMeta: dims,
+      };
+
+      await insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
+      const { pngUrl, renderResultId } = await renderAd(spec, safeZones);
+      await insertRenderResult({
+        id: renderResultId,
+        adSpecId: spec.id,
+        imageId: spec.imageId,
+        familyId: "ai",
+        templateId: "ai_surprise",
+        primarySlotId: spec.primarySlotId,
+        pngUrl,
+      });
+
+      return NextResponse.json({
+        results: [{
+          id: renderResultId,
+          adSpecId: spec.id,
+          imageId: spec.imageId,
+          familyId: "ai",
+          templateId: "ai_surprise",
+          primarySlotId: spec.primarySlotId,
+          format: spec.format,
+          pngUrl,
+          approved: false,
+          createdAt: new Date().toISOString(),
+        }],
+      });
+    }
+    // ── End Surprise Me path ─────────────────────────────────────────────────
 
     // 1. Get or create SafeZones (AI call — cached per imageId)
     let safeZones: SafeZones;
-    const cachedZones = getSafeZones(imageId);
+    const cachedZones = await getSafeZones(imageId);
     if (cachedZones) {
       safeZones = JSON.parse(cachedZones);
     } else {
       safeZones = await analyzeSafeZones(imageId);
-      upsertSafeZones(imageId, JSON.stringify(safeZones));
+      await upsertSafeZones(imageId, JSON.stringify(safeZones));
     }
+
+    // forceTemplateId: exact template overrides all family logic
+    const forcedTemplate = forceTemplateId
+      ? getTemplate(forceTemplateId as TemplateId)
+      : null;
+
+    // use provided familyIds, or forceTemplate's family, or all registered families
+    const families: FamilyId[] = forcedTemplate
+      ? [forcedTemplate.familyId]
+      : (familyIds?.length ? familyIds : getAllFamilies().map((f) => f.id));
 
     // 2. Get or create CopyPool (AI call — cached per imageId)
     let copyPool: CopyPool;
-    const cachedCopy = getCopyPool(imageId);
+    const cachedCopy = await getCopyPool(imageId);
     if (cachedCopy) {
       copyPool = JSON.parse(cachedCopy);
     } else {
       copyPool = await generateCopyPool(imageId);
-      upsertCopyPool(imageId, JSON.stringify(copyPool));
+      await upsertCopyPool(imageId, JSON.stringify(copyPool));
     }
 
     // 3. Create AdSpecs — 1 per family (random style picked per family)
     const dims = FORMAT_DIMS[format];
-    const langHeadlines = copyPool.headlines.filter((h) => h.lang === lang);
+    const langSlots = copyPool.slots.filter((s) => s.lang === lang);
     const specs: AdSpec[] = [];
-    const usedHeadlineIds = new Set<string>();
-    const angles: Angle[] = ["benefit", "curiosity", "urgency", "emotional"];
+    const usedSlotIds = new Set<string>();
+    const headlineAngles: Angle[] = ["benefit", "curiosity", "urgency", "emotional"];
 
     let specIndex = 0;
     for (const familyId of families) {
-      const stylesToUse = showAllStyles
-        ? getStylesForFamily(familyId)
-        : [pickRandomStyle(familyId)];
+      let stylesToUse = getStylesForFamily(familyId);
+      if (forcedTemplate) {
+        stylesToUse = [forcedTemplate];
+      }
 
       for (const style of stylesToUse) {
-        // Pick a compatible zone
-        const zoneId = style.supportedZones[specIndex % style.supportedZones.length];
+        const zoneId = pickBestZone(safeZones, style.supportedZones);
 
-        // Pick a headline — luxury always gets aspirational; others spread across angles
-        const targetAngle: Angle | undefined = familyId === "luxury"
-          ? "aspirational"
-          : (specIndex < angles.length ? angles[specIndex] : undefined);
-        const headline = pickHeadline(langHeadlines, usedHeadlineIds, targetAngle);
-        usedHeadlineIds.add(headline.id);
+        const copy: AdSpec["copy"] = {};
+        let primarySlotId = "";
+        let primarySlot: CopySlot | undefined;
+
+        for (let i = 0; i < style.copySlots.length; i++) {
+          const slotType = style.copySlots[i];
+          const typeSlots = langSlots.filter((s) => s.slotType === slotType);
+
+          if (i === 0) {
+            // Primary slot — angle-aware + length-aware pick
+            const targetAngle: Angle | undefined =
+              familyId === "luxury"
+                ? "aspirational"
+                : slotType === "headline"
+                  ? (specIndex < headlineAngles.length ? headlineAngles[specIndex] : undefined)
+                  : undefined;
+            const preferredLength = slotType === "headline" ? style.preferredHeadlineLength : undefined;
+            const slot = pickSlot(typeSlots, usedSlotIds, targetAngle, preferredLength);
+            if (slot) {
+              primarySlotId = slot.id;
+              primarySlot = slot;
+              usedSlotIds.add(slot.id);
+              copy[slotType] = slot.text;
+              if (slot.attribution) copy.attribution = slot.attribution;
+            }
+          } else {
+            // Secondary slots — match the primary slot's angle for tonal consistency
+            const targetAngle = primarySlot?.angle;
+            const slot = pickSlot(typeSlots, usedSlotIds, targetAngle);
+            if (slot) {
+              copy[slotType] = slot.text;
+              if (slot.attribution) copy.attribution = slot.attribution;
+            }
+          }
+        }
 
         const spec: AdSpec = {
           id: newId("as"),
@@ -100,8 +288,8 @@ export async function POST(req: NextRequest) {
           familyId,
           templateId: style.id,
           zoneId,
-          headlineId: headline.id,
-          headlineText: headline.text,
+          primarySlotId,
+          copy,
           theme: style.themeDefaults,
           renderMeta: dims,
         };
@@ -114,15 +302,15 @@ export async function POST(req: NextRequest) {
     // 4. Render each AdSpec → PNG
     const results = [];
     for (const spec of specs) {
-      insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
+      await insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
       const { pngUrl, renderResultId } = await renderAd(spec, safeZones);
-      insertRenderResult({
+      await insertRenderResult({
         id: renderResultId,
         adSpecId: spec.id,
         imageId: spec.imageId,
         familyId: spec.familyId,
         templateId: spec.templateId,
-        headlineId: spec.headlineId,
+        primarySlotId: spec.primarySlotId,
         pngUrl,
       });
 
@@ -132,7 +320,7 @@ export async function POST(req: NextRequest) {
         imageId: spec.imageId,
         familyId: spec.familyId,
         templateId: spec.templateId,
-        headlineId: spec.headlineId,
+        primarySlotId: spec.primarySlotId,
         format: spec.format,
         pngUrl,
         approved: false,
@@ -150,23 +338,91 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function pickHeadline(
-  headlines: Headline[],
+function rectsOverlap(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+export function pickBestZone(
+  safeZones: SafeZones,
+  supportedZones: string[],
+  preferDifferentFrom?: string
+): ZoneId {
+  const candidates = safeZones.zones.filter((z) => supportedZones.includes(z.id));
+  if (!candidates.length) return supportedZones[0] as ZoneId;
+
+  const scored = candidates.map((z) => ({
+    id: z.id,
+    overlap: safeZones.avoidRegions.some((r) => rectsOverlap(z.rect, r)) ? 1 : 0,
+  }));
+
+  // Shuffle before sorting so equal-scored zones are picked at random (stable sort
+  // would always favour whichever zone appears first in the array — usually A).
+  for (let i = scored.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [scored[i], scored[j]] = [scored[j], scored[i]];
+  }
+
+  const sorted = scored.sort((a, b) => {
+    if (a.id === preferDifferentFrom) return 1;
+    if (b.id === preferDifferentFrom) return -1;
+    return a.overlap - b.overlap;
+  });
+  return sorted[0].id as ZoneId;
+}
+
+function lengthTag(slot: CopySlot): "short" | "medium" | "long" {
+  const wc = slot.wordCount ?? slot.text.trim().split(/\s+/).filter(Boolean).length;
+  return wc <= 4 ? "short" : wc <= 7 ? "medium" : "long";
+}
+
+function pickSlot(
+  slots: CopySlot[],
   usedIds: Set<string>,
-  preferredAngle?: Angle
-) {
-  // Try to find an unused headline matching the preferred angle
-  if (preferredAngle) {
-    const match = headlines.find(
-      (h) => h.angle === preferredAngle && !usedIds.has(h.id)
+  preferredAngle?: Angle,
+  preferredLength?: "short" | "medium" | "long"
+): CopySlot | undefined {
+  if (!slots.length) return undefined;
+
+  // 1. Unused + angle match + length match
+  if (preferredAngle && preferredLength) {
+    const match = slots.find(
+      (s) => s.angle === preferredAngle && !usedIds.has(s.id) && lengthTag(s) === preferredLength
     );
     if (match) return match;
   }
 
-  // Fall back to any unused headline
-  const unused = headlines.find((h) => !usedIds.has(h.id));
+  // 2. Unused + angle match
+  if (preferredAngle) {
+    const match = slots.find(
+      (s) => s.angle === preferredAngle && !usedIds.has(s.id)
+    );
+    if (match) return match;
+  }
+
+  // 3. Unused + length match
+  if (preferredLength) {
+    const match = slots.find(
+      (s) => !usedIds.has(s.id) && lengthTag(s) === preferredLength
+    );
+    if (match) return match;
+  }
+
+  // 4. Any unused slot
+  const unused = slots.find((s) => !usedIds.has(s.id));
   if (unused) return unused;
 
-  // All used — pick random
-  return headlines[Math.floor(Math.random() * headlines.length)];
+  // 5. All used — angle match
+  if (preferredAngle) {
+    const angleMatch = slots.find((s) => s.angle === preferredAngle);
+    if (angleMatch) return angleMatch;
+  }
+
+  // 6. All used — length match
+  if (preferredLength) {
+    const lenMatch = slots.find((s) => lengthTag(s) === preferredLength);
+    if (lenMatch) return lenMatch;
+  }
+
+  // 7. Random
+  return slots[Math.floor(Math.random() * slots.length)];
 }

@@ -1,6 +1,6 @@
 import fs from "fs/promises";
 import path from "path";
-import { put } from "@vercel/blob";
+import { put, del, list } from "@vercel/blob";
 
 type Bucket = "uploads" | "generated";
 
@@ -39,7 +39,11 @@ export async function save(bucket: Bucket, id: string, buffer: Buffer): Promise<
 // Accepts either a bare filename (local mode) or a full https:// blob URL
 export async function read(bucket: Bucket, filenameOrUrl: string): Promise<Buffer> {
   if (filenameOrUrl.startsWith("https://")) {
-    const res = await fetch(filenameOrUrl);
+    const headers: HeadersInit = {};
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      headers["Authorization"] = `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`;
+    }
+    const res = await fetch(filenameOrUrl, { headers });
     if (!res.ok) throw new Error(`Blob fetch failed with status ${res.status}`);
     return Buffer.from(await res.arrayBuffer());
   }
@@ -62,4 +66,73 @@ export async function exists(bucket: Bucket, id: string): Promise<boolean> {
 // Returns a local serve URL (only used in local/dev mode)
 export function getUrl(bucket: Bucket, id: string): string {
   return `/api/files/${bucket}/${id}`;
+}
+
+// Delete all generated PNGs (call when a new image is uploaded)
+export async function removeGenerated(): Promise<void> {
+  if (USE_BLOB) {
+    const { blobs } = await list({ prefix: "generated/" });
+    if (blobs.length > 0) await del(blobs.map((b) => b.url));
+    return;
+  }
+  const dir = bucketPath("generated");
+  try {
+    const files = await fs.readdir(dir);
+    await Promise.all(files.map((f) => fs.unlink(path.join(dir, f)).catch(() => {})));
+  } catch {
+    // Directory may not exist yet — ignore
+  }
+}
+
+// Wipe everything from both uploads/ and generated/ — handles Blob and local.
+// Safe to call even when the DB has been reset (cold start); lists files directly.
+export async function clearAllStorage(): Promise<void> {
+  if (USE_BLOB) {
+    const [uploadsRes, generatedRes] = await Promise.all([
+      list({ prefix: "uploads/" }),
+      list({ prefix: "generated/" }),
+    ]);
+    const allUrls = [
+      ...uploadsRes.blobs.map((b) => b.url),
+      ...generatedRes.blobs.map((b) => b.url),
+    ];
+    if (allUrls.length > 0) await del(allUrls);
+    return;
+  }
+
+  // Local filesystem: delete all files in both bucket directories
+  for (const bucket of ["uploads", "generated"] as Bucket[]) {
+    const dir = bucketPath(bucket);
+    try {
+      const files = await fs.readdir(dir);
+      await Promise.all(files.map((f) => fs.unlink(path.join(dir, f)).catch(() => {})));
+    } catch {
+      // Directory may not exist yet — ignore
+    }
+  }
+}
+
+// Delete a single blob URL (e.g. old uploaded image)
+export async function removeBlobUrl(url: string): Promise<void> {
+  if (!USE_BLOB || !url.startsWith("https://")) return;
+  await del(url);
+}
+
+// Delete a file by its stored URL — works for both Blob CDN and local filesystem.
+// Local URLs have the form /api/files/<bucket>/<filename>.
+export async function removeByUrl(url: string): Promise<void> {
+  if (!url) return;
+  if (USE_BLOB) {
+    if (url.startsWith("https://")) await del(url);
+    return;
+  }
+  // Local fallback: extract bucket + filename from /api/files/<bucket>/<filename>
+  const match = url.match(/^\/api\/files\/(uploads|generated)\/(.+)$/);
+  if (!match) return;
+  const [, bucket, filename] = match;
+  try {
+    await fs.unlink(filePath(bucket as Bucket, filename));
+  } catch {
+    // File may already be gone — ignore
+  }
 }

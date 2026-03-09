@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { save } from "@/lib/storage";
+import { save, removeBlobUrl } from "@/lib/storage";
 import { insertImage, getAllImages } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import path from "path";
@@ -21,6 +21,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const previousImageUrl = formData.get("previousImageUrl") as string | null;
+
+    // Delete the old upload blob if the client explicitly passes it
+    if (previousImageUrl) await removeBlobUrl(previousImageUrl);
+
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext = path.extname(file.name) || ".png";
     const id = newId("img");
@@ -31,7 +36,7 @@ export async function POST(req: NextRequest) {
     // Read image dimensions from the buffer
     const { width, height } = readDimensions(buffer, file.type);
 
-    insertImage({ id, filename, url, width, height });
+    await insertImage({ id, filename, url, width, height });
 
     return NextResponse.json({ imageId: id, url, width, height });
   } catch (err) {
@@ -41,7 +46,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const images = getAllImages();
+  const images = await getAllImages();
   return NextResponse.json({ images });
 }
 

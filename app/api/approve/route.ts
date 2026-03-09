@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const result = getRenderResult(resultId);
+    const result = await getRenderResult(resultId);
     if (!result) {
       return NextResponse.json(
         { error: "Result not found" },
@@ -24,7 +24,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    setApproval(resultId, approved);
+    await setApproval(resultId, approved);
 
     return NextResponse.json({ ok: true, resultId, approved });
   } catch (err) {

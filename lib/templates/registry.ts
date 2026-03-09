@@ -1,11 +1,11 @@
-import type { TemplateDefinition, TemplateId, FamilyId, AdSpec, PixelRect } from "@/lib/types";
-import type { ReactElement } from "react";
+import type { TemplateDefinition, TemplateId, FamilyId, AdSpec, PixelRect, SafeZones } from "@/lib/types";
 
 export type TemplateBuildFn = (
   spec: AdSpec,
   imageBase64: string,
-  zonePx: PixelRect
-) => ReactElement;
+  zonePx: PixelRect,
+  safeZones?: SafeZones
+) => string;
 
 export type RegisteredTemplate = TemplateDefinition & {
   build: TemplateBuildFn;
