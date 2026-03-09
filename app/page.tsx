@@ -246,6 +246,15 @@ function StatusIcon({ status }: { status: QueueItem["status"] }) {
   return <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/20" />;
 }
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function Home() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -253,6 +262,9 @@ export default function Home() {
   const [selectedFormat, setSelectedFormat] = useState<Format>("4:5");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [surpriseMode, setSurpriseMode] = useState<"auto" | "reference" | "prompt">("auto");
+  const [surpriseRefFile, setSurpriseRefFile] = useState<File | null>(null);
+  const [surprisePrompt, setSurprisePrompt] = useState("");
   const [activeLayout, setActiveLayout] = useState<SurpriseLayout | null>(null);
   const [hoveredLayout, setHoveredLayout] = useState<SurpriseLayout | null>(null);
   const [layoutPreviewsMap, setLayoutPreviewsMap] = useState<Record<string, Partial<Record<SurpriseLayout, string>>>>({});
@@ -455,6 +467,13 @@ export default function Home() {
       if (!item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
+        const extraFields: Record<string, string> = {};
+        if (surpriseMode === "prompt" && surprisePrompt.trim()) {
+          extraFields.userPrompt = surprisePrompt.trim();
+        } else if (surpriseMode === "reference" && surpriseRefFile) {
+          extraFields.referenceImageBase64 = await fileToBase64(surpriseRefFile);
+          extraFields.referenceImageMimeType = surpriseRefFile.type;
+        }
         const res = await fetch("/api/surprise-render", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -462,6 +481,7 @@ export default function Home() {
             imageId: item.imageId,
             imageUrl: item.imageUrl,
             lang: selectedLang,
+            ...extraFields,
           }),
         });
         if (!res.ok) {
@@ -477,7 +497,7 @@ export default function Home() {
         setDetailLoading(false);
       }
     },
-    [detailLoading, updateItem, selectedLang]
+    [detailLoading, updateItem, selectedLang, surpriseMode, surprisePrompt, surpriseRefFile]
   );
 
 
@@ -1289,11 +1309,73 @@ export default function Home() {
                       </div>
                     </div>
                     {/* AI — Surprise Me */}
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <p className="text-[11px] text-gray-600">AI</p>
+
+                      {/* Mode tabs */}
+                      <div className="flex gap-1 rounded-lg bg-white/[0.04] p-0.5">
+                        {(["auto", "reference", "prompt"] as const).map((mode) => (
+                          <button
+                            key={mode}
+                            onClick={() => setSurpriseMode(mode)}
+                            className={"flex-1 rounded-md py-1 text-[11px] font-medium transition " +
+                              (surpriseMode === mode
+                                ? "bg-indigo-500/20 text-indigo-300"
+                                : "text-gray-500 hover:text-gray-300")}
+                          >
+                            {mode === "auto" ? "✨ Auto" : mode === "reference" ? "🖼 Ref" : "💬 Prompt"}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Reference image upload */}
+                      {surpriseMode === "reference" && (
+                        surpriseRefFile ? (
+                          <div className="relative w-full h-20 rounded-lg overflow-hidden border border-white/10">
+                            <img
+                              src={URL.createObjectURL(surpriseRefFile)}
+                              className="w-full h-full object-cover"
+                              alt="Reference"
+                            />
+                            <button
+                              onClick={() => setSurpriseRefFile(null)}
+                              className="absolute top-1 right-1 rounded-full bg-black/60 text-white text-[10px] w-5 h-5 flex items-center justify-center hover:bg-black/80"
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center gap-1 w-full h-20 rounded-lg border border-dashed border-white/20 hover:border-indigo-400/40 cursor-pointer transition bg-white/[0.02] hover:bg-indigo-500/5">
+                            <span className="text-lg">🖼</span>
+                            <span className="text-[10px] text-gray-500">Drop or click to upload style reference</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="hidden"
+                              onChange={(e) => { const f = e.target.files?.[0]; if (f) setSurpriseRefFile(f); }}
+                            />
+                          </label>
+                        )
+                      )}
+
+                      {/* Prompt textarea */}
+                      {surpriseMode === "prompt" && (
+                        <textarea
+                          value={surprisePrompt}
+                          onChange={(e) => setSurprisePrompt(e.target.value)}
+                          placeholder="Describe the mood, style, or concept..."
+                          rows={2}
+                          className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-gray-200 placeholder-gray-600 resize-none focus:outline-none focus:border-indigo-500/40"
+                        />
+                      )}
+
+                      {/* Action button */}
                       <button
                         onClick={() => handleSurpriseMe(selectedItem)}
-                        disabled={detailLoading || !selectedItem.imageId}
+                        disabled={
+                          detailLoading ||
+                          !selectedItem.imageId ||
+                          (surpriseMode === "reference" && !surpriseRefFile) ||
+                          (surpriseMode === "prompt" && !surprisePrompt.trim())
+                        }
                         className="w-full rounded-lg border border-indigo-500/20 bg-indigo-500/10 py-2 text-xs font-medium text-indigo-300 hover:bg-indigo-500/20 hover:text-indigo-200 transition disabled:opacity-40"
                       >
                         <span className="flex items-center justify-center gap-2">
