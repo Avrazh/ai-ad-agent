@@ -5,9 +5,20 @@ Generates print-quality ad images from product photos. User uploads images, clic
 
 ---
 
+## Terminology
+
+| Term | Meaning |
+|---|---|
+| **Preset Styles** | All 10 Playwright-rendered styles (6 layouts + 2 Testimonial + 2 Luxury). No AI at render time. Headline/lang/format are all changeable after generation. |
+| **Surprise Me** | Claude Sonnet generates a complete SVG/HTML ad — fully final, not tweakable. A separate creative mode. |
+
+The distinction: Preset Styles = fast, cheap, flexible. Surprise Me = slow, costs AI credits, fixed output.
+
+---
+
 ## Style inventory
 
-### Satori-rendered templates (modifiable — lang/format/headline can be changed after generation)
+### Preset Styles — Testimonial + Luxury families (Playwright, modifiable)
 | templateId | family | label | notes |
 |---|---|---|---|
 | `quote_card` | testimonial | Quote | Customer quote layout |
@@ -15,17 +26,20 @@ Generates print-quality ad images from product photos. User uploads images, clic
 | `luxury_editorial_left` | luxury | Editorial | Gold left-bar, Playfair Display |
 | `luxury_soft_frame_open` | luxury | Frame Open | SVG border frame, Playfair Display |
 
-### Satori-rendered layouts — "Other" section (modifiable — same as above)
-8 layout pills in the sidebar, each uses a predefined `SurpriseSpec` passed as `forceSurpriseSpec`. All render via the `ai_surprise` templateId using Satori. Language and format controls are fully functional.
+### Preset Styles — 6 Layouts (Playwright, modifiable)
+8 layout pills in the sidebar, each uses a predefined `SurpriseSpec` passed as `forceSurpriseSpec`. All render via the `ai_surprise` templateId using Playwright. Language and format controls are fully functional.
 
-Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom_bar`, `color_block`, `frame_overlay`, `magazine`
+Layout names: `split_right`, `full_overlay`, `bottom_bar`, `frame_overlay`, `postcard`, `vertical_text`
 
-### AI-generated — Surprise Me (FINAL — not modifiable)
+Adding a new layout = 3 touches: add to `SurpriseLayout` type union in `app/page.tsx`, add entry to `LAYOUT_PREVIEWS` with a `SurpriseSpec`, add `if (layout === "...")` JSX block in `lib/templates/aiSurprise.tsx`.
+
+### Surprise Me — AI-generated (FINAL — not modifiable)
 - Button: "✨ Surprise Me" → calls `/api/surprise-render`
-- Claude Sonnet generates a complete SVG ad (full layout, copy, colors — all decided by Claude)
+- Claude Sonnet generates a complete HTML/SVG ad (full layout, copy, colors — all decided by Claude)
 - Returns `templateId: "ai_surprise_svg"`
 - Language/format controls are **hidden** for this result
 - Cannot switch headline, language, format — it is a finished creative piece
+- Fonts embedded as base64 data URIs in the HTML page injected into Puppeteer
 
 ### Dead / unreachable
 - `switch_grid_3x2_no_text` — registered in template registry but has no UI entry point
@@ -47,7 +61,7 @@ Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom
 - Pick style from family registry
 - Pick best zone (avoids avoidRegions)
 - Pick copy slot matching family tone (luxury → aspirational angle)
-- Render PNG via Satori (JSX→SVG) + resvg (SVG→PNG)
+- Render PNG via Playwright: template returns HTML string → Puppeteer screenshots headless Chrome → PNG
 
 ### Caching
 - SafeZones and CopyPool cached in SQLite per imageId — AI never called again for the same image
@@ -99,7 +113,7 @@ Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom
 |---|---|
 | `app/page.tsx` | All UI — queue, sidebar style picker, detail panel |
 | `app/api/analyze/route.ts` | Upload + AI analysis only (no rendering) — called by Analyze All button |
-| `app/api/generate/route.ts` | Main generate endpoint — Satori renders |
+| `app/api/generate/route.ts` | Main generate endpoint — Playwright renders |
 | `app/api/surprise-render/route.ts` | Surprise Me endpoint — Claude SVG render |
 | `app/api/regenerate/route.ts` | New headline / style switch |
 | `app/api/switch/route.ts` | Lang/format re-render without AI |
@@ -107,7 +121,7 @@ Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom
 | `lib/ai/analyze.ts` | Claude Haiku — safe zone detection |
 | `lib/ai/copy.ts` | Claude Haiku — copy pool generation |
 | `lib/ai/surpriseRender.ts` | Claude Sonnet — full SVG ad generation |
-| `lib/ai/aiSurprise.ts` | Claude Haiku — SurpriseSpec generation (for Other layouts) |
+| `lib/ai/aiSurprise.ts` | Claude Sonnet — SurpriseSpec generation (for Other layouts) |
 | `lib/templates/index.ts` | Registers all families and templates |
 | `lib/templates/registry.ts` | Template registry (Map, insertion-order) |
 | `lib/types.ts` | All shared types |
@@ -117,10 +131,11 @@ Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom
 
 ## Design decisions
 - `ai_surprise_svg` (Surprise Me) is always final — no controls shown, no re-render
-- The 8 Other layout pills use `forceSurpriseSpec` — they ARE modifiable (not the same as Surprise Me)
-- Surprise Me is kept out of batch rotation — it is a different creative approach
+- The 8 layout pills are **Preset Styles** using `forceSurpriseSpec` — they ARE modifiable (not the same as Surprise Me)
+- Surprise Me is kept separate from Preset Styles — different cost, different creative approach, not used by the agent
 - Preview thumbnails generate once per image on first select, cached per imageId in React state
 - `generatingPreviewsFor` ref prevents duplicate generation for the same image
+- Future agent feature will use **Preset Styles only** (cheap, fast, tweakable during review)
 
 ### Critical: Analyze All vs. rendering
 - **"Analyze All" button** = upload + AI analysis ONLY. Zero ad renders happen here.
@@ -133,11 +148,15 @@ Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom
 - It must also use `theme: oldSpec.theme`, NOT `theme: template.themeDefaults`
 - Failing to do this causes Other layout ads to revert to the "top_bottom" layout on every lang/format switch
 
-### aiSurprise.tsx: font sizing helpers
-- `wordFitSize(size, textW)` — horizontal cap: largest font where the longest word fits in column width
-- `heightFitSize(size, panelH, hasSubtext, hasLabel, hasAccent)` — vertical cap: largest font where worst-case 3-line headline + subtext fits inside the colored panel
-- Both applied together: `wordFitSize(heightFitSize(rawSize, ...), textW)`
-- Layouts that need heightFitSize: `top_bottom`, `magazine`, `bottom_bar` (have fixed-height text panels)
+### aiSurprise.tsx: font fitting (Playwright)
+- All templates return **HTML strings** (not JSX). No manual CHAR_RATIO / wordFitSize math.
+- Headlines marked with `data-fit-headline` attribute.
+- After `page.setContent()`, `page.evaluate()` runs a JS loop that shrinks font size 1px at a time until:
+  - `el.getBoundingClientRect().bottom <= clipAncestor.getBoundingClientRect().bottom` (no vertical overflow)
+  - `el.scrollWidth <= el.offsetWidth` (no horizontal overflow / word clipping)
+- Clip ancestor = nearest `overflow:hidden` parent, found by walking up the DOM.
+- `word-break: normal; overflow-wrap: normal` enforced — words never split mid-character.
+- Minimum font size floor: 12px.
 
 ---
 
@@ -153,9 +172,19 @@ Layout names: `top_bottom`, `split_left`, `split_right`, `full_overlay`, `bottom
 ---
 
 ## Models used
-| Task | Model |
-|---|---|
-| Safe zone detection | `claude-haiku-4-5-20251001` |
-| Copy pool generation | `claude-haiku-4-5-20251001` |
-| SurpriseSpec generation | `claude-haiku-4-5-20251001` |
-| Full SVG ad (Surprise Me) | `claude-sonnet-4-6` |
+| Task | Model | File |
+|---|---|---|
+| Safe zone detection | `claude-haiku-4-5-20251001` | `lib/ai/analyze.ts` |
+| Copy pool generation | `claude-haiku-4-5-20251001` | `lib/ai/copy.ts` |
+| SurpriseSpec generation (layout pills) | `claude-sonnet-4-6` | `lib/ai/aiSurprise.ts` |
+| Surprise Me / Inspired by Reference SVG | `claude-sonnet-4-6` | `lib/ai/surpriseRender.ts` |
+
+Rule: cheap (Haiku) for first-generate analysis; better (Sonnet) for all creative/AI output.
+
+## Rendering pipeline
+- **Local dev:** `puppeteer` (bundled Chromium, works on Windows/Mac/Linux)
+- **Production (Vercel/Lambda):** `@sparticuz/chromium` + `puppeteer-core` (stripped ~45MB Chromium, fits serverless 50MB limit)
+- Detection: `IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)`
+- Browser instance cached across requests (`browserInstance` module-level singleton)
+- Fonts loaded once at startup as base64 data URIs, injected as `@font-face` CSS into every page
+- Flow: `template.build()` → HTML string → `page.setContent()` → `page.evaluate()` font-fit → `page.screenshot()` → PNG

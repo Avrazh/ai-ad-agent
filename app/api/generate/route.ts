@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeSafeZones } from "@/lib/ai/analyze";
 import { generateCopyPool } from "@/lib/ai/copy";
-import { generateSurpriseSpec } from "@/lib/ai/aiSurprise";
+import { generateSurpriseSpec, generateSurpriseSpecFromReference } from "@/lib/ai/aiSurprise";
 import {
   getImage,
   insertImage,
@@ -33,6 +33,8 @@ export async function POST(req: NextRequest) {
       surpriseMe,
       savedSurpriseSpecId,
       forceSurpriseSpec,
+      referenceImageBase64,
+      referenceImageMimeType,
       lang = "en",
       format = "4:5",
     } = body as {
@@ -45,6 +47,8 @@ export async function POST(req: NextRequest) {
       surpriseMe?: boolean;
       savedSurpriseSpecId?: string;  // reuse saved layout without AI call
       forceSurpriseSpec?: SurpriseSpec; // use provided spec directly — no AI, no DB lookup
+      referenceImageBase64?: string;    // base64 reference ad — triggers style-transfer spec generation
+      referenceImageMimeType?: string;
       lang?: Language;
       format?: Format;
     };
@@ -125,6 +129,10 @@ export async function POST(req: NextRequest) {
         const headline = hlSlot?.text ?? surprise.en.headline;
         const subtext  = stSlot?.text ?? surprise.en.subtext;
         surprise = { ...surprise, en: { headline, subtext }, de: { headline, subtext } };
+      } else if (referenceImageBase64) {
+        // Style-transfer: generate spec inspired by a reference ad image
+        const refMime = (referenceImageMimeType ?? "jpeg") as "jpeg" | "png" | "gif" | "webp";
+        surprise = await generateSurpriseSpecFromReference(imageId, referenceImageBase64, refMime);
       } else {
         // Fresh AI call
         surprise = await generateSurpriseSpec(imageId);

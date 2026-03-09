@@ -26,6 +26,11 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
   const mimeType = (ext === "jpg" ? "jpeg" : ext) as "jpeg" | "png" | "gif" | "webp";
   const imageBase64 = imageBuffer.toString("base64");
 
+  if (process.env.SKIP_AI === "true") {
+    console.log("[copy] SKIP_AI=true — using hardcoded pool (dev mode)");
+    return buildHardcodedPool(imageId);
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.warn("[copy] ANTHROPIC_API_KEY not set — using hardcoded pool");
