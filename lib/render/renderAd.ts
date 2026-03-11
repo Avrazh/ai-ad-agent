@@ -15,6 +15,7 @@ import { type Browser } from "puppeteer-core";
 const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
 
 let browserInstance: Browser | null = null;
+let launchPromise: Promise<Browser> | null = null;
 
 async function launchBrowser(): Promise<Browser> {
   if (IS_SERVERLESS) {
@@ -30,16 +31,25 @@ async function launchBrowser(): Promise<Browser> {
 async function getBrowser(): Promise<Browser> {
   if (browserInstance) {
     try { await browserInstance.version(); return browserInstance; }
-    catch { console.warn("[renderAd] Browser crashed — relaunching"); browserInstance = null; }
+    catch { console.warn("[renderAd] Browser crashed — relaunching"); browserInstance = null; launchPromise = null; }
   }
-  browserInstance = await launchBrowser();
-  const cleanup = () => { browserInstance?.close().catch(() => {}); browserInstance = null; };
-  process.once("exit", cleanup);
-  process.once("SIGINT", cleanup);
-  process.once("SIGTERM", cleanup);
-  if (process.env.NODE_ENV !== "production")
-    process.once("SIGUSR2", () => { cleanup(); process.kill(process.pid, "SIGUSR2"); });
-  return browserInstance;
+  // Launch lock: if a launch is already in progress, wait for it instead of spawning a second Chromium
+  if (!launchPromise) {
+    launchPromise = launchBrowser().then(b => {
+      browserInstance = b;
+      const cleanup = () => { browserInstance?.close().catch(() => {}); browserInstance = null; launchPromise = null; };
+      process.once("exit", cleanup);
+      process.once("SIGINT", cleanup);
+      process.once("SIGTERM", cleanup);
+      if (process.env.NODE_ENV !== "production")
+        process.once("SIGUSR2", () => { cleanup(); process.kill(process.pid, "SIGUSR2"); });
+      return b;
+    }).catch(err => {
+      launchPromise = null;
+      throw err;
+    });
+  }
+  return launchPromise;
 }
 
 
