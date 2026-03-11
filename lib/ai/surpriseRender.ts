@@ -45,7 +45,7 @@ export async function generateSurpriseSVG(
   if (hasReference) {
     const analysisResponse = await withRetry(() => client.messages.create({
       model: MODEL,
-      max_tokens: 1000,
+      max_tokens: 1200,
       messages: [{
         role: "user",
         content: [
@@ -55,7 +55,7 @@ export async function generateSurpriseSVG(
           },
           {
             type: "text",
-            text: `You are a layout engineer. Analyse this reference advertisement and produce a precise technical specification that can be used to recreate its structure in SVG code. Be extremely specific with numbers and measurements.
+            text: `You are a layout engineer. Analyse this reference advertisement and produce a precise technical specification of its VISUAL STRUCTURE only. Do NOT extract, quote, or reference any headline text, copy, slogans, or written content from the reference — those will be written fresh. Extract only the layout, proportions, colors, and typography style. Be extremely specific with numbers and measurements.
 
 Return your analysis in this exact format:
 
@@ -66,7 +66,7 @@ PANEL_COLOR: [the solid panel/background color behind text, e.g. "#000000" or "#
 HEADLINE_FONT: [serif OR sans-serif, weight: bold/regular, case: UPPERCASE/Title/lowercase, approximate size: large/medium/small]
 HEADLINE_POSITION: [e.g. "centered horizontally, in the bottom panel, about 30% from top of panel" or "left-aligned, top-left corner, 5% from edges"]
 HEADLINE_COLOR: [exact text color]
-SUBTEXT: [YES/NO — if yes: describe font, size, position, color]
+SUBTEXT: [YES/NO — if yes: describe font, size, position, color only — do not quote the actual text]
 ACCENT_ELEMENTS: [any lines, borders, shapes, e.g. "thin white horizontal line above headline" or "none"]
 OVERALL_TONE: [e.g. "high-contrast black and white", "warm editorial", "minimal white space"]`,
           },
@@ -80,7 +80,7 @@ OVERALL_TONE: [e.g. "high-contrast black and white", "warm editorial", "minimal 
   const creativeDirectionBlock = userPrompt
     ? `
 
-CREATIVE DIRECTION (highest priority):
+CREATIVE DIRECTION (this overrides all other style rules — follow it exactly):
 ${userPrompt}
 `
     : "";
@@ -91,7 +91,7 @@ ${userPrompt}
 SPECIFICATION (derived from the reference image above):
 ${referenceAnalysis}
 
-${userPrompt ? `\n\nCREATIVE DIRECTION (highest priority — interpret the layout through this lens):\n${userPrompt}\n` : ""}YOUR TASK:\nImplement the layout described in the SPECIFICATION above as SVG, substituting the product photo (second image above) for the reference product. The structure, proportions, colors, and typography style must match the specification precisely.
+${userPrompt ? `\n\nCREATIVE DIRECTION (highest priority — interpret the layout through this lens):\n${userPrompt}\n` : ""}YOUR TASK:\nImplement the layout structure from the SPECIFICATION as SVG, placing the product photo (second image) in the product position. Write completely new, product-specific headline copy — do NOT reuse or mimic any text from the reference.
 
 IMPLEMENTATION RULES:
 1. Background color — use the EXACT color from the specification (not black unless specified)
@@ -101,6 +101,8 @@ IMPLEMENTATION RULES:
 5. Text placement — headline position and alignment must match (left/center/right, top/middle/bottom)
 6. Graphic elements — include any lines, borders, shapes, or overlays mentioned in the specification
 7. Do NOT add elements not in the specification. Do NOT substitute a dark background if the spec says white/light
+7b. Minimalistic tendency — when the spec has open space, keep it open; do not fill gaps with decorative elements
+8. COPY — write a bold, product-specific headline in ${langName}. Do not copy or echo any text from the reference image.
 
 DIMENSIONS: exactly 1080×1920 pixels (9:16 portrait)
 LANGUAGE: Write all copy in ${langName} — match the headline length and tone from the specification
@@ -126,14 +128,20 @@ LANGUAGE: Write all text in ${langName}
 
 REQUIREMENTS:
 - Include the product photo using EXACTLY this placeholder as the href attribute value: __PRODUCT_IMAGE__
-  Example: <image href="__PRODUCT_IMAGE__" x="0" y="0" width="1080" height="960" preserveAspectRatio="xMidYMid slice"/>
-${userPrompt ? `CREATIVE DIRECTION (highest priority — shape the entire concept around this):\n${userPrompt}\n\n` : ""}- The headline must be BOLD and SURPRISING — something that makes the viewer stop and think "how did we not think of that?" Be provocative, poetic, paradoxical, or emotionally striking. Maximum 6 words. NO generic advertising copy.
-- Design philosophy: MINIMALIST. Lots of negative space. Let the product and one headline breathe. Resist the urge to fill space.
-- Use typography as the primary design element — one dominant text element, large scale, high contrast
-- Maximum 2 colors total (not counting the product photo) — prefer black, white, or one accent
-- Be specific to what you actually see in this product image — do not write generic copy
-- The overall design must feel editorial, refined, and unexpected — like a luxury brand campaign
-- LAYOUT — invent something completely original. Do not follow any preset pattern. Surprise yourself.
+  Example: <image href="__PRODUCT_IMAGE__" x="0" y="0" width="1080" height="960" preserveAspectRatio="xMidYMid slice"/>
+${userPrompt ? `CREATIVE DIRECTION — follow this above all else. It overrides the defaults below:
+${userPrompt}
+
+Generate something that fully embodies this direction. The rules below are only defaults — ignore or override any that conflict with the creative direction.
+
+` : ""}DEFAULTS (apply when no creative direction overrides them):
+- Study the product image carefully — write copy that is specific to what you see, not generic
+- The headline must be BOLD, CATCHY, and SURPRISING — something that stops the viewer. Can be provocative, poetic, witty, paradoxical, punchy, or emotionally striking. Any length that fits the design. NO generic advertising copy.
+- Color palette: free choice — use whatever palette serves the concept best. Minimalist monochrome, vivid accent, warm tones, neon on dark — all valid.
+- Layout: completely original. Explore split compositions, full-bleed image with text overlay, bold typographic layouts, asymmetric grids, diagonal crops — anything unexpected.
+- Design tendency: lean minimalistic — let negative space work, resist adding elements unless they serve the concept.
+- Typography can be a primary design element: oversized, rotated, fragmented, stacked — push it.
+- The overall feel can range from editorial and refined to bold and graphic — match what the product calls for.
 - TEXT ELEMENTS — include ONLY: 1 headline + optionally 1 short subtext line. NO labels, NO page numbers, NO studio names, NO URLs, NO footnotes, NO watermarks, NO brand names, NO decorative small text of any kind. If it is not the headline or subtext, it must not exist.
 
 SVG TECHNICAL RULES:
@@ -155,7 +163,6 @@ Return ONLY the raw SVG code. Start with <svg and end with </svg>. No markdown f
             role: "user",
             content: [
               // Include reference image again in step 2 so Claude can see it visually
-              // (same as ChatGPT where the reference stays visible throughout the conversation)
               ...(hasReference ? [{
                 type: "image" as const,
                 source: { type: "base64" as const, media_type: refMime, data: referenceBase64! },

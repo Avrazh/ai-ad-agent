@@ -129,6 +129,8 @@ export type AdSpec = {
   theme: TemplateTheme;
   renderMeta: { w: number; h: number };
   surpriseSpec?: SurpriseSpec; // only present on ai_surprise renders
+  showBrand?: boolean;         // show brand name overlay
+  brandColor?: string;          // auto-detected text color for brand name overlay
 };
 
 // ── AI Style Pool ────────────────────────────────────────────
@@ -170,7 +172,8 @@ export type SurpriseSpec = {
     | "frame_overlay"  // full-bleed image, thick SVG frame, text over image
     | "magazine"       // image top 45%, editorial text zone with decorative letter below
     | "postcard"       // full-bleed bg image + centered paper card with headline + image window
-    | "vertical_text"; // left: image, right: solid panel, headline letters straddle split with image clipped inside (raw SVG)
+    | "vertical_text" // left: image, right: solid panel, headline letters straddle split with image clipped inside (raw SVG)
+    | "clean_headline"; // full-bleed image, no overlay, large serif headline over photo
 
   // ── Palette ───────────────────────────────────────────────────
   bgColor: string;          // hex — text panel / canvas background

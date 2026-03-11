@@ -21,7 +21,7 @@ type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
 type SurpriseLayout =
   | "split_right" | "full_overlay"
   | "bottom_bar" | "frame_overlay" | "postcard"
-  | "vertical_text";
+  | "vertical_text" | "clean_headline";
 
 type SurpriseSpec = {
   layout: SurpriseLayout;
@@ -66,6 +66,11 @@ const LAYOUT_PREVIEWS: { layout: SurpriseLayout; label: string; spec: SurpriseSp
     layout: "vertical_text", label: "Letters",
     spec: { layout: "vertical_text", bgColor: "#FFFFFF", textColor: "#1A1A1A", accentColor: "#1A1A1A", overlayOpacity: 0, font: "bebas", fontWeight: 400, letterSpacingKey: "normal", textTransform: "uppercase", textAlign: "left", headlineScale: "medium", accent: "none", preferredHeadlineLength: "short", en: { headline: "GLOW", subtext: "Collection" }, de: { headline: "GLANZ", subtext: "Kollektion" } },
   },
+  {
+    layout: "clean_headline", label: "Headline",
+    spec: { layout: "clean_headline", bgColor: "#000000", textColor: "#1a1a1a", accentColor: "#1a1a1a", overlayOpacity: 0, font: "serif", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "center", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "" }, de: { headline: "Vorschau", subtext: "" } },
+  },
+
 ];
 type Language = "en" | "de" | "fr" | "es";
 type Format = "4:5" | "1:1" | "9:16";
@@ -82,6 +87,7 @@ type QueueItem = {
   status: "idle" | "uploading" | "analyzing" | "analyzed" | "generating" | "done" | "error";
   result?: RenderResultItem;
   usedFamilyId?: FamilyId;
+  usedSurpriseSpec?: SurpriseSpec;
   lang?: Language;
   approved: boolean;
   error?: string;
@@ -176,7 +182,7 @@ export default function Home() {
   const [selectedFormat, setSelectedFormat] = useState<Format>("9:16");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [activeLayout, setActiveLayout] = useState<SurpriseLayout | null>(null);
+  const [brandByImage, setBrandByImage] = useState<Record<string, boolean>>({});
   // Static previews — pre-rendered thumbnails served from /previews/
   const sharedLayoutPreviews: Partial<Record<SurpriseLayout, string>> = Object.fromEntries(
     LAYOUT_PREVIEWS.map((p) => [p.layout, `/previews/${p.layout}.png`])
@@ -191,6 +197,11 @@ export default function Home() {
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
+  const [surprisePanelOpen, setSurprisePanelOpen] = useState(false);
+  const [ownHeadlineOpen, setOwnHeadlineOpen] = useState(false);
+  const [ownHeadlineInput, setOwnHeadlineInput] = useState("");
+  const [aiInfoOpen, setAiInfoOpen] = useState(false);
+  const [toneByImage, setToneByImage] = useState<Record<string, string>>({});
 
   const usedStyleIdsRef = useRef<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -323,10 +334,10 @@ export default function Home() {
 
         updateItem(item.id, { status: "analyzed" });
 
-        // Auto-render with bottom_bar so the image is immediately shown in the
+        // Auto-render with clean_headline (9:16) so the image is immediately shown in the
         // correct format and format/lang controls work without picking a layout first.
         try {
-          const defaultSpec = LAYOUT_PREVIEWS[2].spec; // bottom_bar
+          const defaultSpec = LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec;
           const autoRes = await fetch("/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -336,15 +347,15 @@ export default function Home() {
               imageWidth: uploaded.width,
               imageHeight: uploaded.height,
               forceSurpriseSpec: defaultSpec,
+              showBrand,
               lang: selectedLangRef.current,
-              format: selectedFormatRef.current,
+              format: "9:16",
             }),
           });
           if (autoRes.ok) {
             const autoData = await autoRes.json();
             const autoResult: RenderResultItem = autoData.results[0];
-            updateItem(item.id, { result: autoResult, status: "done", usedFamilyId: "ai" as FamilyId, lang: selectedLangRef.current });
-            setActiveLayout("bottom_bar");
+            updateItem(item.id, { result: autoResult, status: "done", usedFamilyId: "ai" as FamilyId, lang: selectedLangRef.current, usedSurpriseSpec: defaultSpec });
           }
         } catch {
           // Auto-render failed — leave item in "analyzed" so user can still pick a layout manually
@@ -367,7 +378,8 @@ export default function Home() {
       item: QueueItem,
       templateId: string,
       lang: Language,
-      format: Format
+      format: Format,
+      showBrandOverride?: boolean
     ) => {
       if (!item.imageId || detailLoading) return;
       setDetailLoading(true);
@@ -384,6 +396,7 @@ export default function Home() {
             autoFamily: false,
             lang,
             format,
+            showBrand: showBrandOverride !== undefined ? showBrandOverride : showBrand,
           }),
         });
         if (!res.ok) {
@@ -402,6 +415,7 @@ export default function Home() {
           approved: false,
           usedFamilyId: result.familyId as FamilyId,
           lang,
+          usedSurpriseSpec: undefined,
         });
       } catch (err) {
         console.error("Re-render error:", err);
@@ -495,9 +509,17 @@ export default function Home() {
     [detailLoading, referenceImage, updateItem, selectedLang, surprisePrompt]
   );
 
+  // Auto-generate when a reference image is uploaded via the AI Reference card
+  useEffect(() => {
+    if (referenceImage && selectedItem && selectedItem.imageId && !detailLoading) {
+      handleInspiredByReference(selectedItem);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referenceImage]);
+
   // ── Preview a specific layout — no AI call, fixed spec ──
   const handlePreviewLayout = useCallback(
-    async (item: QueueItem, spec: SurpriseSpec, langOverride?: Language, formatOverride?: Format) => {
+    async (item: QueueItem, spec: SurpriseSpec, langOverride?: Language, formatOverride?: Format, showBrandOverride?: boolean) => {
       if (!item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
@@ -512,6 +534,7 @@ export default function Home() {
             forceSurpriseSpec: spec,
             lang: langOverride ?? selectedLangRef.current,
             format: formatOverride ?? selectedFormatRef.current,
+            showBrand: showBrandOverride !== undefined ? showBrandOverride : showBrand,
           }),
         });
         if (!res.ok) {
@@ -520,8 +543,7 @@ export default function Home() {
         }
         const data = await res.json();
         const result: RenderResultItem = data.results[0];
-        updateItem(item.id, { result, approved: false, usedFamilyId: "ai" as FamilyId, lang: langOverride ?? selectedLangRef.current });
-        setActiveLayout(spec.layout);
+        updateItem(item.id, { result, approved: false, usedFamilyId: "ai" as FamilyId, lang: langOverride ?? selectedLangRef.current, usedSurpriseSpec: spec });
       } catch (err) {
         console.error("Preview layout error:", err);
       } finally {
@@ -542,14 +564,14 @@ export default function Home() {
 
   // Shared helper: re-render existing ad via /api/switch (preserves headline, no AI call)
   const handleSwitch = useCallback(
-    async (item: QueueItem, lang: Language, format: Format) => {
+    async (item: QueueItem, lang: Language, format: Format, showBrandOverride?: boolean) => {
       if (!item.result || detailLoading) return;
       setDetailLoading(true);
       try {
         const res = await fetch("/api/switch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultIds: [item.result.id], lang, format }),
+          body: JSON.stringify({ resultIds: [item.result.id], lang, format, ...(showBrandOverride !== undefined ? { showBrand: showBrandOverride } : {}) }),
         });
         if (!res.ok) throw new Error("Switch failed");
         const data = await res.json();
@@ -575,7 +597,7 @@ export default function Home() {
         handleSwitch(item, lang, selectedFormatRef.current);
       } else if (item.imageId) {
         // No render yet — auto-render with bottom_bar, passing the new lang explicitly
-        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS[2].spec }, lang, selectedFormatRef.current);
+        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec }, lang, selectedFormatRef.current);
       }
     },
     [handleSwitch, handlePreviewLayout]
@@ -590,7 +612,7 @@ export default function Home() {
         handleSwitch(item, selectedLangRef.current, format);
       } else if (item.imageId) {
         // No render yet — auto-render with bottom_bar, passing the new format explicitly
-        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS[2].spec }, selectedLangRef.current, format);
+        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec }, selectedLangRef.current, format);
       }
     },
     [handleSwitch, handlePreviewLayout]
@@ -639,8 +661,38 @@ export default function Home() {
         }
         const data = await res.json();
         updateItem(item.id, { result: data.result, approved: false });
+        setToneByImage(prev => ({ ...prev, [item.id]: angle }));
       } catch (err) {
         console.error("Tone headline error:", err);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [detailLoading, updateItem]
+  );
+
+  // ── Own headline (user-typed) ─────────────────────────────
+  const handleOwnHeadline = useCallback(
+    async (item: QueueItem, text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || !item.result || detailLoading) return;
+      setOwnHeadlineOpen(false);
+      setDetailLoading(true);
+      try {
+        const res = await fetch("/api/regenerate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultId: item.result.id, mode: "headline", angle: "own", customHeadline: trimmed }),
+        });
+        if (!res.ok) {
+          const d = await res.json();
+          throw new Error(d.error || "Regeneration failed");
+        }
+        const data = await res.json();
+        updateItem(item.id, { result: data.result, approved: false });
+        setToneByImage(prev => ({ ...prev, [item.id]: "own" }));
+      } catch (err) {
+        console.error("Own headline error:", err);
       } finally {
         setDetailLoading(false);
       }
@@ -730,6 +782,8 @@ export default function Home() {
 
   const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
   const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
+  const showBrand = selectedItemId != null ? (brandByImage[selectedItemId] ?? false) : false;
+  const activeLayout = selectedItem?.usedSurpriseSpec?.layout ?? null;
   const prevItem = selectedIdx > 0 ? queue[selectedIdx - 1] : null;
   const nextItem =
     selectedIdx >= 0 && selectedIdx < queue.length - 1
@@ -745,7 +799,7 @@ export default function Home() {
 
   // Close layout panel whenever the selected image changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setLayoutPanelOpen(false); }, [selectedItemId]);
+  useEffect(() => { setLayoutPanelOpen(false); setOwnHeadlineOpen(false); setOwnHeadlineInput(""); }, [selectedItemId]);
 
   // Sync format + lang controls to the selected image's last-used values
   useEffect(() => {
@@ -926,13 +980,10 @@ export default function Home() {
                   <img
                     src={item.previewUrl}
                     alt=""
-                    className="h-9 w-9 rounded object-cover shrink-0 border border-white/10"
+                    className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="truncate text-[13px] text-gray-300 leading-tight">
-                      {item.file.name}
-                    </p>
-                    <p className="text-[11px] mt-0.5">
+                    <p className="text-[11px]">
                       {item.status === "uploading" && (
                         <span className="text-indigo-400">Uploading...</span>
                       )}
@@ -1030,15 +1081,9 @@ export default function Home() {
         ) : (
           <div className="flex-1 flex flex-col overflow-hidden">
 
-            {/* Filename bar */}
-            <div className="shrink-0 px-6 py-3 border-b border-white/[0.06] flex items-center justify-center gap-3">
-              <p className="text-sm font-medium text-gray-200 truncate">{selectedItem.file.name}</p>
-              <p className="text-[11px] text-gray-600 shrink-0">{selectedIdx + 1} of {queue.length}</p>
-            </div>
-
             {/* ── STAGE BAR ───────────────────────────────────── */}
             {(selectedItem.status === "done" || selectedItem.status === "analyzed") && selectedItem.imageId && (
-              <div className="shrink-0 flex items-stretch border-b-2 border-white/[0.08] bg-[#0a0d12] overflow-x-auto" style={{ minHeight: 72 }}>
+              <div className="shrink-0 flex items-stretch border-b-2 border-white/[0.08] bg-[#0a0d12] overflow-x-auto pt-2" style={{ minHeight: 72 }}>
 
                 {/* Stage: Format */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
@@ -1079,116 +1124,186 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Stage: Headline Tone — hidden for final SVG surprise */}
-                {!isSVGSurprise && (
-                  <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Headline Tone</span>
-                    <div className="flex items-center gap-1.5">
-                      {TONES.map(({ angle, label }) => (
-                        <button
-                          key={angle}
-                          onClick={() => selectedItem.result && handleNewHeadlineWithTone(selectedItem, angle)}
-                          disabled={detailLoading || !selectedItem.result}
-                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + pillInactive}
-                          title={`Get a ${label.toLowerCase()} headline`}
-                        >
-                          {label}
-                        </button>
-                      ))}
+                {/* Stage: Brand name */}
+                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Brand</span>
+                  <div className="flex items-center">
+                    <div
+                      onClick={() => { const next = !showBrand; if (selectedItemId) setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); if (selectedItem?.result) handleSwitch(selectedItem, selectedLangRef.current, selectedFormatRef.current, next); }}
+                      className={"w-12 h-6 rounded-full flex items-center px-0.5 transition-colors cursor-pointer " + (showBrand ? "bg-indigo-600" : "bg-white/10")}
+                    >
+                      <div className={"w-5 h-5 rounded-full bg-white shadow transition-transform " + (showBrand ? "translate-x-6" : "translate-x-0")} />
                     </div>
                   </div>
-                )}
+                </div>
+
+                {/* Stage: Headline Tone — disabled (not hidden) for final SVG surprise */}
+                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Headline Tone</span>
+                  <div className="flex items-center gap-1.5">
+                    {TONES.map(({ angle, label }) => (
+                      <button
+                        key={angle}
+                        onClick={() => selectedItem.result && handleNewHeadlineWithTone(selectedItem, angle)}
+                        disabled={isSVGSurprise || detailLoading || !selectedItem.result}
+                        className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (toneByImage[selectedItemId ?? ""] === angle ? pillActive : pillInactive)}
+                        title={`Get a ${label.toLowerCase()} headline`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+
+                    {/* "Your own" tone button */}
+                    <button
+                      onClick={() => { setOwnHeadlineOpen(o => !o); setOwnHeadlineInput(""); }}
+                      disabled={isSVGSurprise || detailLoading || !selectedItem.result}
+                      className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (ownHeadlineOpen ? pillActive : pillInactive)}
+                      title="Type your own headline"
+                    >
+                      Your own
+                    </button>
+
+                    {/* Inline input — shown when "Your own" is toggled open */}
+                    {ownHeadlineOpen && (
+                      <form
+                        onSubmit={e => { e.preventDefault(); handleOwnHeadline(selectedItem, ownHeadlineInput); }}
+                        className="flex items-center gap-1.5"
+                      >
+                        <input
+                          autoFocus
+                          value={ownHeadlineInput}
+                          onChange={e => setOwnHeadlineInput(e.target.value)}
+                          placeholder="Type headline…"
+                          className="rounded-md px-3 py-1.5 text-sm bg-white/10 border border-white/20 text-white placeholder-gray-500 focus:outline-none focus:border-white/40 w-52"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!ownHeadlineInput.trim() || detailLoading}
+                          className="rounded-md px-3 py-1.5 text-sm font-medium border border-white/20 text-white disabled:opacity-30 hover:bg-white/10 transition"
+                        >
+                          Apply
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
 
                 {/* Stage: Language */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Language</span>
                   <div className="flex items-center gap-1.5">
-                    {(["en", "de", "fr", "es"] as Language[]).map((l) => {
-                      const avail = ["en", "de"].includes(l);
-                      return (
+                    {(["en", "de"] as Language[]).map((l) => (
                         <button
                           key={l}
-                          onClick={() => avail && handleLangChange(l)}
-                          disabled={!avail || isSVGSurprise || detailLoading}
-                          title={avail ? undefined : "Coming soon"}
-                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition " + (!avail ? "opacity-20 cursor-not-allowed border-white/5 text-gray-600" : "disabled:opacity-30 " + (selectedLang === l ? pillActive : pillInactive))}
+                          onClick={() => handleLangChange(l)}
+                          disabled={isSVGSurprise || detailLoading}
+                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (selectedLang === l ? pillActive : pillInactive)}
                         >
                           {l.toUpperCase()}
                         </button>
-                      );
-                    })}
+                      ))}
                   </div>
                 </div>
 
-                {/* Spacer pushes AI section to the right */}
-                <div className="flex-1 min-w-4" />
-
-                {/* ✨ AI Creative — merged Surprise Me + optional reference */}
+                {/* ✨ AI Style — three generation modes */}
+                <input ref={refFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleRefImageChange} />
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-l-2 border-white/[0.08] bg-indigo-950/20 shrink-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400/50">AI</span>
-                  <div className="flex items-center">
-                  <input ref={refFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleRefImageChange} />
+                  <div className="flex items-center gap-1.5"><span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400/50">AI Style</span>
+                  <div onClick={() => setAiInfoOpen(v => !v)} className="w-3.5 h-3.5 rounded-full border border-indigo-400/60 flex items-center justify-center cursor-pointer">
+                      <span className="text-[9px] font-bold text-indigo-400/80 leading-none select-none">?</span>
+                    </div>
+                </div>
+                  <div className="flex items-center gap-2">
 
-                  {/* Merged button: Surprise Me (plain) or Inspired (with ref image) */}
-                  <div className="flex items-center rounded-lg border border-indigo-500/25 bg-indigo-500/[0.08] overflow-hidden">
-                    {/* Reference attachment slot */}
-                    {referenceImage ? (
-                      <div className="flex items-center pl-2 pr-1 gap-1 border-r border-indigo-500/20">
-                        <img
-                          src={referenceImage.preview}
-                          alt="Reference"
-                          className="w-5 h-5 rounded object-cover border border-indigo-400/30 shrink-0"
-                          title="AI will be inspired by this image"
-                        />
-                        <button
-                          onClick={() => setReferenceImage(null)}
-                          className="text-indigo-400/50 hover:text-indigo-300 transition leading-none text-sm"
-                          title="Remove reference"
-                        >×</button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => refFileInputRef.current?.click()}
-                        disabled={!selectedItem.imageId || detailLoading}
-                        title="Add a reference image to guide the AI style"
-                        className="flex items-center justify-center px-2.5 border-r border-indigo-500/20 text-indigo-400/40 hover:text-indigo-300 transition disabled:opacity-30 h-full"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                        </svg>
-                      </button>
-                    )}
-
-                    {/* Main action */}
+                    {/* Card 1: Just Generate */}
                     <button
-                      onClick={() => referenceImage ? handleInspiredByReference(selectedItem) : handleSurpriseMe(selectedItem)}
+                      onClick={() => handleSurpriseMe(selectedItem)}
                       disabled={detailLoading || !selectedItem.imageId}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-300 hover:text-indigo-100 transition disabled:opacity-40"
+                      className={"flex flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 w-[72px] transition disabled:opacity-40 border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 text-gray-400 hover:text-gray-200"}
                     >
-                      <span>✨ Surprise Me</span>
-                      {referenceImage && (
-                        <span className="text-[10px] text-indigo-400/60 font-normal">· inspired</span>
-                      )}
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                      </svg>
+                      <span className="text-[10px] font-semibold leading-tight text-center">Generate</span>
                     </button>
+
+                    {/* Card 2: AI Reference Image */}
+                    <button
+                      onClick={() => refFileInputRef.current?.click()}
+                      disabled={detailLoading || !selectedItem.imageId}
+                      className={"flex flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 w-[72px] transition disabled:opacity-40 " + (referenceImage ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-300" : "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 text-gray-400 hover:text-gray-200")}
+                    >
+                      {referenceImage ? (
+                        <img src={referenceImage.preview} alt="ref" className="w-6 h-6 rounded object-cover border border-indigo-400/30" />
+                      ) : (
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                        </svg>
+                      )}
+                      <span className="text-[10px] font-semibold leading-tight text-center">Reference</span>
+                    </button>
+
+                    {/* Card 3: With Prompt */}
+                    <button
+                      onClick={() => setSurprisePanelOpen((v) => !v)}
+                      disabled={!selectedItem.imageId || detailLoading}
+                      className={"flex flex-col items-center gap-0.5 rounded-lg border px-2 py-1.5 w-[72px] transition disabled:opacity-40 " + (surprisePanelOpen || surprisePrompt ? "border-indigo-500/40 bg-indigo-500/10 text-indigo-300" : "border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/20 text-gray-400 hover:text-gray-200")}
+                    >
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+                      </svg>
+                      <span className="text-[10px] font-semibold leading-tight text-center">Prompt</span>
+                    </button>
+
                   </div>
-                  </div>
-                  <input
-                    type="text"
-                    value={surprisePrompt}
-                    onChange={(e) => setSurprisePrompt(e.target.value)}
-                    placeholder="Creative direction..."
-                    className="text-[11px] bg-transparent border-t border-indigo-500/15 text-indigo-200/70 placeholder:text-indigo-400/30 outline-none w-full pt-1 pb-0.5"
-                  />
+                </div>
+                {/* Spacer fills remaining right space */}
+                <div className="flex-1 min-w-4" />              </div>
+            )}
+
+            {/* ── AI INFO PANEL (below stage bar) ── */}
+            {aiInfoOpen && (
+              <div className="shrink-0 border-b border-white/[0.06] bg-[#0f1318] px-5 py-3 text-[11px] text-gray-400 leading-relaxed">
+                <p className="font-semibold text-gray-200 mb-1.5">AI-generated ads</p>
+                <p className="mb-2">These buttons let Claude design a complete ad from scratch:</p>
+                <p className="mb-0.5"><span className="text-gray-200 font-medium">Generate</span> — AI picks layout, colors and copy automatically.</p>
+                <p className="mb-0.5"><span className="text-gray-200 font-medium">Reference</span> — Upload a style image for AI to match.</p>
+                <p className="mb-2"><span className="text-gray-200 font-medium">Prompt</span> — Describe the mood or concept in your own words.</p>
+                <p className="text-amber-400/80">Note: AI Style ads cannot have their headline, layout or tone changed afterwards.</p>
+              </div>
+            )}
+
+            {/* ── PROMPT PANEL (below stage bar, opened by With Prompt card) ── */}
+            {surprisePanelOpen && selectedItem.imageId && (
+              <div className="shrink-0 border-b border-white/[0.06] bg-[#0f1318] px-5 py-4">
+                <textarea
+                  value={surprisePrompt}
+                  onChange={(e) => setSurprisePrompt(e.target.value)}
+                  placeholder="Describe the mood, style, or concept you want..."
+                  rows={5}
+                  className="w-full resize-none rounded-lg border border-indigo-500/20 bg-indigo-500/[0.05] px-3 py-2.5 text-sm text-indigo-100 placeholder:text-indigo-400/30 outline-none focus:border-indigo-400/50 transition leading-relaxed"
+                />
+                <div className="flex items-center justify-between mt-3">
+                  {surprisePrompt
+                    ? <button onClick={() => setSurprisePrompt("")} className="text-xs text-indigo-400/50 hover:text-indigo-300 transition">Clear</button>
+                    : <span />}
+                  <button
+                    onClick={() => { handleSurpriseMe(selectedItem); setSurprisePanelOpen(false); }}
+                    disabled={detailLoading || !surprisePrompt.trim()}
+                    className="flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-4 py-1.5 text-xs font-semibold text-white transition"
+                  >
+                    ✨ Generate
+                  </button>
                 </div>
               </div>
             )}
 
             {/* ── LAYOUT PANEL (expandable below stage bar) ── */}
             {layoutPanelOpen && selectedItem.imageId && (
-              <div className="shrink-0 border-b border-white/[0.06] bg-[#0f1318] px-4 py-3 overflow-x-auto">
-                <div className="flex gap-2.5 items-start">
+              <div className="shrink-0 border-b border-white/[0.06] bg-[#0f1318] px-4 py-3 flex items-start gap-4">
+                <div className="flex gap-2.5 items-start overflow-x-auto flex-1 min-w-0">
                   {/* Template options — Quote, Stars, Editorial, Frame Open */}
-                  {ALL_TEMPLATES.map((t) => {
+                  {ALL_TEMPLATES.filter(t => t.templateId === "star_review").map((t) => {
                     const previewUrl = sharedTemplatePreviews[t.templateId];
                     const isActive = selectedItem.result?.templateId === t.templateId;
                     return (
@@ -1209,10 +1324,10 @@ export default function Home() {
                   })}
 
                   {/* Divider between templates and layouts */}
-                  <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" />
+                  {/* <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" /> */}
 
                   {/* Layout options — Split Right, Full Overlay, etc. */}
-                  {LAYOUT_PREVIEWS.map((p) => {
+                  {LAYOUT_PREVIEWS.filter(p => p.layout === "clean_headline").map((p) => {
                     const previewUrl = sharedLayoutPreviews[p.layout];
                     const isActive = activeLayout === p.layout && selectedItem.result?.templateId === "ai_surprise";
                     return (
@@ -1261,9 +1376,15 @@ export default function Home() {
                     <img
                       src={selectedItem.previewUrl}
                       alt=""
-                      className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl opacity-60"
+                      className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl opacity-40"
                       style={{ aspectRatio: selectedFormat === "1:1" ? "1/1" : selectedFormat === "9:16" ? "9/16" : "4/5" }}
                     />
+                  )}
+                  {!selectedItem.result && selectedItem.status === "analyzed" && !detailLoading && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                      <p className="text-xs text-gray-500">Rendering ad…</p>
+                    </div>
                   )}
                   {detailLoading && (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -1297,18 +1418,16 @@ export default function Home() {
                 {/* Action bar */}
                 {selectedItem.result && (
                   <div className="shrink-0 border-t border-white/[0.06] px-6 py-3 flex items-center gap-3">
-                    {!isSVGSurprise && (
-                      <button
-                        onClick={() => handleNewHeadline(selectedItem)}
-                        disabled={detailLoading}
-                        className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-3 text-sm text-gray-300 hover:bg-white/[0.08] hover:text-white transition disabled:opacity-40 flex items-center justify-center gap-2"
-                      >
-                        <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                        </svg>
-                        New Headline
-                      </button>
-                    )}
+                    <button
+                      onClick={() => handleNewHeadline(selectedItem)}
+                      disabled={isSVGSurprise || detailLoading}
+                      className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-3 text-sm text-gray-300 hover:bg-white/[0.08] hover:text-white transition disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                      </svg>
+                      New Headline
+                    </button>
                     <button
                       onClick={() => handleApprove(selectedItem.id, selectedItem.result!.id, !selectedItem.approved)}
                       disabled={detailLoading}

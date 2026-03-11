@@ -19,6 +19,8 @@ import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
 import type { SafeZones, CopyPool, CopySlot, AdSpec, FamilyId, Angle, Language, Format, TemplateId, ZoneId, SurpriseSpec } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
+import sharp from "sharp";
+import { read as readStorage } from "@/lib/storage";
 
 export async function POST(req: NextRequest) {
   try {
@@ -37,6 +39,7 @@ export async function POST(req: NextRequest) {
       referenceImageMimeType,
       lang = "en",
       format = "4:5",
+      showBrand = false,
     } = body as {
       imageId: string;
       imageUrl?: string;
@@ -51,6 +54,7 @@ export async function POST(req: NextRequest) {
       referenceImageMimeType?: string;
       lang?: Language;
       format?: Format;
+      showBrand?: boolean;
     };
 
     if (!imageId) {
@@ -138,6 +142,13 @@ export async function POST(req: NextRequest) {
         surprise = await generateSurpriseSpec(imageId);
       }
 
+      // 4. Auto-detect text color for clean_headline: sample brightness of the text zone
+      if (surprise.layout === 'clean_headline') {
+        const brightness = await sampleZoneBrightness(imageId);
+        const textColor = brightness <= 128 ? '#FFFFFF' : '#1a1a1a';
+        surprise = { ...surprise, textColor, accentColor: textColor };
+      }
+
       // 4. Build AdSpec
       const dims = FORMAT_DIMS[format];
       const langCopy = lang === "de" ? surprise.de : surprise.en;
@@ -166,6 +177,7 @@ export async function POST(req: NextRequest) {
         },
         surpriseSpec: surprise,
         renderMeta: dims,
+        showBrand,
       };
 
       await insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
@@ -292,6 +304,8 @@ export async function POST(req: NextRequest) {
           copy,
           theme: style.themeDefaults,
           renderMeta: dims,
+          showBrand,
+          brandColor: showBrand ? (await sampleBrandZoneBrightness(imageId) <= 128 ? '#FFFFFF' : '#1a1a1a') : undefined,
         };
 
         specs.push(spec);
@@ -425,4 +439,69 @@ function pickSlot(
 
   // 7. Random
   return slots[Math.floor(Math.random() * slots.length)];
+}
+
+/**
+ * Sample the average perceived brightness of the image in the clean_headline text zone.
+ * Zone is proportional: x 9.26-90.74%, y 20.05-79.95% (from 1080x1920 reference).
+ * Returns a value 0-255. Below 128 = dark background → white text.
+ */
+async function sampleZoneBrightness(imageId: string): Promise<number> {
+  try {
+    const img = await getImage(imageId);
+    if (!img) return 255;
+    const buf = await readStorage('uploads', img.url);
+    const meta = await sharp(buf).metadata();
+    const iw = meta.width ?? 1080;
+    const ih = meta.height ?? 1920;
+    const left   = Math.round(iw * 0.0926);
+    const top    = Math.round(ih * 0.2005);
+    const width  = Math.round(iw * 0.8148);
+    const height = Math.round(ih * 0.5990); // zone height ~1150px
+    const { data } = await sharp(buf)
+      .extract({ left, top, width, height })
+      .resize(64, 64, { fit: 'fill' }) // downsample for speed
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let sum = 0;
+    const channels = data.length / (64 * 64);
+    for (let i = 0; i < data.length; i += channels) {
+      // Perceived luminance
+      sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    return sum / (64 * 64);
+  } catch {
+    return 255; // safe default: assume light bg
+  }
+}
+
+/**
+ * Sample brightness at the brand name zone (bottom of safe zone, y 78-86%).
+ */
+export async function sampleBrandZoneBrightness(imageId: string): Promise<number> {
+  try {
+    const img = await getImage(imageId);
+    if (!img) return 255;
+    const buf = await readStorage('uploads', img.url);
+    const meta = await sharp(buf).metadata();
+    const iw = meta.width ?? 1080;
+    const ih = meta.height ?? 1920;
+    const left   = Math.round(iw * 0.05);
+    const top    = Math.round(ih * 0.78);
+    const width  = Math.round(iw * 0.90);
+    const height = Math.round(ih * 0.08);
+    const { data } = await sharp(buf)
+      .extract({ left, top, width, height })
+      .resize(64, 16, { fit: 'fill' })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    let sum = 0;
+    const channels = data.length / (64 * 16);
+    for (let i = 0; i < data.length; i += channels) {
+      sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+    return sum / (64 * 16);
+  } catch {
+    return 255;
+  }
 }

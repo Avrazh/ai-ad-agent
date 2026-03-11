@@ -10,10 +10,10 @@ const MODEL = "claude-haiku-4-5-20251001";
 /**
  * Generates a CopyPool using Claude Haiku vision.
  * Claude looks at the image and writes product-specific slots:
- *   9 headline slots × 2 languages (EN + DE) = 18
- *   3 quote slots    × 2 languages (EN + DE) = 6
- *   8 subtext slots  × 2 languages (EN + DE) = 16
- *   Total: 40 slots
+ *   14 headline slots × 2 languages (EN + DE) = 28 (2 per angle)
+ *   3 quote slots     × 2 languages (EN + DE) = 6
+ *   14 subtext slots  × 2 languages (EN + DE) = 28 (2 per angle)
+ *   Total: 62 slots
  *
  * Falls back to hardcoded pool if the API call fails or key is missing.
  */
@@ -63,11 +63,16 @@ Return ONLY a raw JSON object (no markdown, no explanation) with this exact shap
       {"angle":"benefit","text":"..."},
       {"angle":"benefit","text":"..."},
       {"angle":"curiosity","text":"..."},
+      {"angle":"curiosity","text":"..."},
       {"angle":"urgency","text":"..."},
+      {"angle":"urgency","text":"..."},
+      {"angle":"emotional","text":"..."},
       {"angle":"emotional","text":"..."},
       {"angle":"aspirational","text":"..."},
       {"angle":"aspirational","text":"..."},
       {"angle":"story","text":"..."},
+      {"angle":"story","text":"..."},
+      {"angle":"contrast","text":"..."},
       {"angle":"contrast","text":"..."}
     ],
     "quotes": [
@@ -77,12 +82,18 @@ Return ONLY a raw JSON object (no markdown, no explanation) with this exact shap
     ],
     "subtexts": [
       {"angle":"benefit","text":"..."},
+      {"angle":"benefit","text":"..."},
+      {"angle":"curiosity","text":"..."},
       {"angle":"curiosity","text":"..."},
       {"angle":"urgency","text":"..."},
+      {"angle":"urgency","text":"..."},
+      {"angle":"emotional","text":"..."},
       {"angle":"emotional","text":"..."},
       {"angle":"aspirational","text":"..."},
       {"angle":"aspirational","text":"..."},
       {"angle":"story","text":"..."},
+      {"angle":"story","text":"..."},
+      {"angle":"contrast","text":"..."},
       {"angle":"contrast","text":"..."}
     ]
   },
@@ -155,23 +166,33 @@ function buildHardcodedPool(imageId: string): CopyPool {
       { angle: "benefit",      text: "Salon look in 5 minutes" },
       { angle: "benefit",      text: "No glue, no mess, no stress" },
       { angle: "curiosity",    text: "What if nails lasted 2 weeks?" },
+      { angle: "curiosity",    text: "The finish everyone keeps asking about" },
       { angle: "urgency",      text: "Limited drop — grab yours" },
+      { angle: "urgency",      text: "Selling fast. Don't wait." },
       { angle: "emotional",    text: "You deserve nails that turn heads" },
+      { angle: "emotional",    text: "Feel confident from fingertip to soul" },
       { angle: "aspirational", text: "Effortlessly you." },
       { angle: "aspirational", text: "Crafted for the discerning few." },
       { angle: "story",        text: "She stopped getting manicures. Here's why." },
+      { angle: "story",        text: "One kit changed her entire routine." },
       { angle: "contrast",     text: "Salon price. Home speed." },
+      { angle: "contrast",     text: "Pro finish. Zero appointment." },
     ],
     de: [
       { angle: "benefit",      text: "Salon-Look in 5 Minuten" },
       { angle: "benefit",      text: "Kein Kleber, kein Chaos, kein Stress" },
       { angle: "curiosity",    text: "Was, wenn Nägel 2 Wochen halten?" },
+      { angle: "curiosity",    text: "Das Finish, das alle ansprechen" },
       { angle: "urgency",      text: "Limitierte Edition — jetzt sichern" },
+      { angle: "urgency",      text: "Schnell weg. Nicht warten." },
       { angle: "emotional",    text: "Du verdienst Nägel, die Blicke fangen" },
+      { angle: "emotional",    text: "Selbstbewusstsein bis zur Fingerspitze" },
       { angle: "aspirational", text: "Mühelose Eleganz." },
       { angle: "aspirational", text: "Für anspruchsvolle Geschmäcker." },
       { angle: "story",        text: "Sie hörte auf, zum Nagelstudio zu gehen. Das ist der Grund." },
+      { angle: "story",        text: "Ein Kit veränderte ihre gesamte Routine." },
       { angle: "contrast",     text: "Salon-Qualität. Heimvorteil." },
+      { angle: "contrast",     text: "Profi-Finish. Kein Termin nötig." },
     ],
     fr: [],
     es: [],
@@ -195,23 +216,35 @@ function buildHardcodedPool(imageId: string): CopyPool {
   const subtextPool: Record<Language, { angle: string; text: string }[]> = {
     en: [
       { angle: "benefit",      text: "Professional results at home" },
+      { angle: "benefit",      text: "Designed for everyday perfection" },
       { angle: "curiosity",    text: "See what you've been missing" },
+      { angle: "curiosity",    text: "Discover the difference" },
       { angle: "urgency",      text: "Limited time · Limited stock" },
+      { angle: "urgency",      text: "While supplies last" },
       { angle: "emotional",    text: "Because you deserve the best" },
+      { angle: "emotional",    text: "Made for moments that matter" },
       { angle: "aspirational", text: "Luxury Collection" },
       { angle: "aspirational", text: "For the discerning few" },
       { angle: "story",        text: "Her secret. Now yours." },
+      { angle: "story",        text: "The routine that changed everything." },
       { angle: "contrast",     text: "Salon quality. Home price." },
+      { angle: "contrast",     text: "Pro results. No appointment." },
     ],
     de: [
       { angle: "benefit",      text: "Professionelle Ergebnisse zu Hause" },
+      { angle: "benefit",      text: "Für tägliche Perfektion entwickelt" },
       { angle: "curiosity",    text: "Entdecke, was du verpasst hast" },
+      { angle: "curiosity",    text: "Spüre den Unterschied" },
       { angle: "urgency",      text: "Limitiert · Jetzt sichern" },
+      { angle: "urgency",      text: "Solange der Vorrat reicht" },
       { angle: "emotional",    text: "Weil du das Beste verdienst" },
+      { angle: "emotional",    text: "Für Momente, die zählen" },
       { angle: "aspirational", text: "Luxuskollektion" },
       { angle: "aspirational", text: "Für anspruchsvolle Geschmäcker" },
       { angle: "story",        text: "Ihr Geheimnis. Jetzt deins." },
+      { angle: "story",        text: "Die Routine, die alles veränderte." },
       { angle: "contrast",     text: "Salon-Qualität. Heimvorteil." },
+      { angle: "contrast",     text: "Profi-Ergebnis. Kein Termin." },
     ],
     fr: [],
     es: [],

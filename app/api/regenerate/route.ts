@@ -22,10 +22,11 @@ import type { AdSpec, SafeZones, CopyPool, CopySlot } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { resultId, mode, angle } = body as {
+    const { resultId, mode, angle, customHeadline } = body as {
       resultId: string;
       mode: "headline" | "style";
       angle?: string; // specific tone angle requested from the UI Tone stage
+      customHeadline?: string; // user-typed headline for angle="own"
     };
 
     if (!resultId || !mode) {
@@ -115,6 +116,12 @@ export async function POST(req: NextRequest) {
         (s: CopySlot) => s.slotType === primarySlotType
       );
 
+      // "Your own" headline: user supplied text — bypass slot picker
+      if (angle === "own" && customHeadline) {
+        newPrimarySlotId = "own";
+        newCopy = { ...oldSpec.copy, [primarySlotType]: customHeadline };
+        delete newCopy.subtext;
+      } else {
       let newPrimary: CopySlot | undefined;
       if (angle) {
         // Tone stage: user requested a specific angle — pick a slot of that angle,
@@ -161,7 +168,8 @@ export async function POST(req: NextRequest) {
       }
 
       // Pick best zone (keep same style, prefer different from current)
-      newZoneId = pickBestZone(safeZones, currentTemplate.supportedZones, oldSpec.zoneId);
+        newZoneId = pickBestZone(safeZones, currentTemplate.supportedZones, oldSpec.zoneId);
+      } // end else (not "own")
     }
 
     const newTemplate = getTemplate(newTemplateId);
@@ -182,6 +190,8 @@ export async function POST(req: NextRequest) {
         ? { surpriseSpec: oldSpec.surpriseSpec }
         : {}),
       renderMeta: oldSpec.renderMeta,
+      showBrand: oldSpec.showBrand,
+      brandColor: oldSpec.brandColor,
     };
 
     // 4. Store new AdSpec

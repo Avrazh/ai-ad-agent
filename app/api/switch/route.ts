@@ -3,6 +3,7 @@
 // If this file ever imports from 'lib/ai/', it's a bug.
 
 import { NextRequest, NextResponse } from "next/server";
+import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
 import {
   getRenderResult,
   getAdSpec,
@@ -22,10 +23,11 @@ import { FORMAT_DIMS } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { resultIds, lang, format } = body as {
+    const { resultIds, lang, format, showBrand } = body as {
       resultIds: string[];
       lang?: Language;
       format?: Format;
+      showBrand?: boolean;
     };
 
     if (!resultIds?.length) {
@@ -140,6 +142,10 @@ export async function POST(req: NextRequest) {
         theme: oldSpec.theme,   // preserve custom colors (important for ai_surprise)
         renderMeta: newDims,
         ...(newSurpriseSpec ? { surpriseSpec: newSurpriseSpec } : {}),
+        showBrand: showBrand !== undefined ? showBrand : oldSpec.showBrand,
+        brandColor: showBrand !== undefined
+          ? (showBrand ? (await sampleBrandZoneBrightness(oldSpec.imageId) <= 128 ? '#FFFFFF' : '#1a1a1a') : undefined)
+          : oldSpec.brandColor,
       };
 
       // 6. Store + render + link

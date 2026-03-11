@@ -1,4 +1,5 @@
 import type { AdSpec, PixelRect, SafeZones, TemplateDefinition } from "@/lib/types";
+import { BRAND_NAME } from "@/lib/customerConfig";
 import { registerTemplate } from "./registry";
 
 const definition: TemplateDefinition = {
@@ -185,7 +186,40 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     </div>`;
   }
 
-  // ── frame_overlay ─────────────────────────────────────────────
+  // ── clean_headline ──────────────────────────────────────────────
+  // Full-bleed image with text overlay and no background overlay (overlayOpacity forced to 0)
+  if (layout === "clean_headline") {
+    // Fixed text zone — hardcoded proportionally from 1080×1920 reference:
+    // x: 100–980px (9.26%–90.74%), y: 385–1535px (20.05%–79.9%)
+    // TODO: blend with dynamic safeZones in a future pass
+    const TEXT_X      = Math.round(w * 0.0926);   // ~100px at 1080w
+    const TEXT_W      = Math.round(w * 0.8148);   // ~880px at 1080w
+    const TEXT_Y      = Math.round(h * 0.2005);   // ~385px at 1920h
+    const TEXT_MAX_Y  = Math.round(h * 0.7995);   // ~1535px at 1920h
+    const TEXT_ZONE_H = TEXT_MAX_Y - TEXT_Y;
+    const hSize  = clamp(Math.round(TEXT_W * 0.12), 48, 130);
+    const sSize  = clamp(Math.round(hSize * 0.28), 13, 28);
+    // Smart crop: center on subject so hands/face stay in frame
+    let subjectPos = "50% 50%";
+    if (safeZones?.avoidRegions?.length) {
+      const r = safeZones.avoidRegions[0];
+      subjectPos = `${Math.round((r.x + r.w / 2) * 100)}% ${Math.round((r.y + r.h / 2) * 100)}%`;
+    }
+    const brandHTML = spec.showBrand
+      ? `<div style="position:absolute;bottom:${Math.round(h * 0.2005)}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:${spec.brandColor ?? textColor};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
+      : "";
+    return `<div style="width:${w}px;height:${h}px;display:flex;position:relative;">
+      <img src="${imageBase64}" style="position:absolute;width:${w}px;height:${h}px;object-fit:cover;object-position:${subjectPos};opacity:${imageOpacity};" />
+      <div style="position:absolute;left:${TEXT_X}px;top:${TEXT_Y}px;width:${TEXT_W}px;max-height:${TEXT_ZONE_H}px;overflow:hidden;display:flex;flex-direction:column;align-items:${alignItems};">
+        ${headlineHTML(hSize, TEXT_W)}
+        ${subtextHTML(sSize)}
+      </div>
+      ${brandHTML}
+      ${calloutHTML()}
+    </div>`;
+  }
+
+    // ── frame_overlay ─────────────────────────────────────────────
   if (layout === "frame_overlay") {
     const INSET  = 28;
     const PAD    = 52;

@@ -35,6 +35,7 @@ async function getBrowser(): Promise<Browser> {
   return browserInstance;
 }
 
+
 // ── Font CSS (loaded once as base64, injected into every page) ─────────────
 type FontDef = { family: string; weight: number; file: string; format: string };
 
@@ -82,14 +83,37 @@ export async function renderAd(
 
   const zonePx = toPixels(zone.rect, spec.renderMeta.w, spec.renderMeta.h);
 
-  // Load + resize source image, cache per imageId+canvas size
+  // Load + resize source image with smart focal-point crop, cache per imageId+canvas size
   const cacheKey = `${spec.imageId}:${spec.renderMeta.w}x${spec.renderMeta.h}`;
   let imageBase64 = imageBase64Cache.get(cacheKey);
   if (!imageBase64) {
     const { url: imageUrl } = await getImageInfo(spec.imageId);
     const rawBuffer = await readStorage("uploads", imageUrl);
-    const resizedBuffer = await sharp(rawBuffer)
-      .resize(spec.renderMeta.w, spec.renderMeta.h, { fit: "cover", position: "center" })
+    // Smart crop: use avoidRegions cx for horizontal positioning (anchors on hands),
+    // keep vertical centered to avoid zoom. Falls back to "attention" if no avoidRegion.
+    const meta = await sharp(rawBuffer).metadata();
+    const sw = meta.width ?? spec.renderMeta.w;
+    const sh = meta.height ?? spec.renderMeta.h;
+    const tw = spec.renderMeta.w;
+    const th = spec.renderMeta.h;
+    const region = safeZones.avoidRegions[0];
+    const CX_BIAS = -0.10; // shift crop left — tune if hands appear off-center
+    const cx = region ? Math.max(0, Math.min(1, region.x + region.w / 2 + CX_BIAS)) : null;
+
+    let pipeline = sharp(rawBuffer);
+    if (cx !== null && sw / sh > tw / th) {
+      // Source wider than target: crop width using avoidRegion cx for horizontal alignment
+      const cropW = Math.round(sh * (tw / th));
+      const cropLeft = Math.max(0, Math.min(Math.round(cx * sw - cropW / 2), sw - cropW));
+      pipeline = pipeline.extract({ left: cropLeft, top: 0, width: cropW, height: sh });
+    } else if (cx !== null && sw / sh < tw / th) {
+      // Source taller than target: crop height using center vertical (not cy — avoids zoom)
+      const cropH = Math.round(sw * (th / tw));
+      const cropTop = Math.max(0, Math.min(Math.round(sh / 2 - cropH / 2), sh - cropH));
+      pipeline = pipeline.extract({ left: 0, top: cropTop, width: sw, height: cropH });
+    }
+    const resizedBuffer = await pipeline
+      .resize(tw, th, { fit: "cover", position: cx === null ? "attention" : "centre" })
       .jpeg({ quality: 85 })
       .toBuffer();
     imageBase64 = `data:image/jpeg;base64,${resizedBuffer.toString("base64")}`;
@@ -119,7 +143,7 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: spec.renderMeta.w, height: spec.renderMeta.h, deviceScaleFactor: 1 });
-    await page.setContent(page_html, { waitUntil: "load" });
+    await page.setContent(page_html, { waitUntil: "domcontentloaded" });
 
     // Auto-shrink headlines until they fit within their overflow:hidden ancestor
     await page.evaluate(() => {
@@ -137,20 +161,23 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
         el.style.overflowWrap = "normal";
         const clip = getClipAncestor(el);
         const clipBottom = clip.getBoundingClientRect().bottom;
-        let fs = parseFloat(getComputedStyle(el).fontSize);
         const minFs = 12;
-        while (
-          fs > minFs &&
-          (el.getBoundingClientRect().bottom > clipBottom || el.scrollWidth > el.offsetWidth)
-        ) {
-          fs -= 1;
-          el.style.fontSize = `${fs}px`;
+        const maxFs = parseFloat(getComputedStyle(el).fontSize);
+        const overflows = () =>
+          el.getBoundingClientRect().bottom > clipBottom || el.scrollWidth > el.offsetWidth;
+        if (!overflows()) return; // already fits — skip
+        let lo = minFs, hi = maxFs;
+        while (lo < hi - 1) {
+          const mid = Math.round((lo + hi) / 2);
+          el.style.fontSize = `${mid}px`;
+          if (overflows()) hi = mid; else lo = mid;
         }
+        el.style.fontSize = `${lo}px`;
       });
     });
 
     // Settle: wait two animation frames so the browser repaints after font-fit changes
-    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+    await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 
     const pngBuffer = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: spec.renderMeta.w, height: spec.renderMeta.h } });
 

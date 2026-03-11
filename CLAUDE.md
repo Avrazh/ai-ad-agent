@@ -34,13 +34,34 @@ Layout names: `split_right`, `full_overlay`, `bottom_bar`, `frame_overlay`, `pos
 Adding a new layout = 3 touches: add to `SurpriseLayout` type union in `app/page.tsx`, add entry to `LAYOUT_PREVIEWS` with a `SurpriseSpec`, add `if (layout === "...")` JSX block in `lib/templates/aiSurprise.tsx`.
 
 ### Surprise Me — AI-generated (FINAL — not modifiable)
-- Button: "✨ Surprise Me" → calls `/api/surprise-render`
-- Claude Sonnet generates a complete HTML/SVG ad (full layout, copy, colors — all decided by Claude)
+Three card-style mode buttons in the "AI Style" section of the stage bar:
+
+| Card | Label | Action |
+|---|---|---|
+| 1 | Just Generate | Calls `handleSurpriseMe` immediately — no inputs |
+| 2 | With Reference | Opens file picker; auto-triggers `handleInspiredByReference` on upload |
+| 3 | With Prompt | Toggles prompt textarea panel below the stage bar |
+
+- All three call `/api/surprise-render` → `lib/ai/surpriseRender.ts`
 - Returns `templateId: "ai_surprise_svg"`
 - Language/format controls are **hidden** for this result
 - Cannot switch headline, language, format — it is a finished creative piece
 - Fonts embedded as base64 data URIs in the HTML page injected into Puppeteer
 
+#### Three generation prompt paths (in `lib/ai/surpriseRender.ts`)
+1. **Just Generate** (no reference, no userPrompt): Creative director persona — minimalist, surprising 6-word headline, max 2 colors, editorial luxury feel
+2. **With Reference** (two-step): Step 1 — Claude analyzes reference image into a structured layout spec (BACKGROUND, LAYOUT_SPLIT, PRODUCT_POSITION, PANEL_COLOR, HEADLINE_FONT, etc.). Step 2 — implements that spec exactly, substituting the product photo
+3. **With Prompt** (userPrompt set): Same as Just Generate but injects CREATIVE DIRECTION (highest priority) block at the top with the user text
+
+`userPrompt` is also injected into the reference path (after the spec) when both reference image and prompt are provided.
+
+#### UI state (in `app/page.tsx`)
+- `surprisePanelOpen: boolean` — controls whether prompt textarea panel is visible
+- `surprisePrompt: string` — the user's creative direction text
+- `referenceImage: {base64, mimeType} | null` — uploaded reference image
+- Card 2 shows a thumbnail + "Change image" when `referenceImage !== null` (active indigo highlight)
+- Card 3 shows active indigo highlight when `surprisePanelOpen || surprisePrompt`
+- Prompt panel is a sibling div below the stage bar row (not absolute-positioned)
 ### Dead / unreachable
 - `switch_grid_3x2_no_text` — registered in template registry but has no UI entry point
 
