@@ -53,7 +53,7 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
             },
             {
               type: "text",
-              text: `You are an expert e-commerce ad copywriter. Look at this product image carefully and write ad copy for it in English (en) and German (de).
+              text: `You are an expert e-commerce ad copywriter for SWITCH NAILS, a brand that sells press-on stick-on nails. The image always shows the brand's nails product — even if a ring, bracelet, or other accessory is also visible, those are props. The product you are writing ad copy about is always the stick-on nails. Write ad copy in English (en) and German (de).
 
 Return ONLY a raw JSON object (no markdown, no explanation) with this exact shape:
 
@@ -107,7 +107,7 @@ Rules:
 - subtexts: 3-8 words, match the angle of its paired headline
 - German: natural fluent German, not a literal translation
 - No emojis anywhere
-- Write about the actual product visible in the image, not generic copy`,
+- Always write about the stick-on nails — ignore rings, jewelry or other props that appear in the image`,
             },
           ],
         },

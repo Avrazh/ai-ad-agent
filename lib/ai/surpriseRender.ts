@@ -122,7 +122,7 @@ SVG TECHNICAL RULES:
 - SVG must be fully self-contained and valid
 
 Return ONLY raw SVG. Start with <svg and end with </svg>. No markdown fences. No explanation.`
-    : `You are a world-class creative director. Design a stunning, surprising print advertisement as a complete SVG.${creativeDirectionBlock}
+    : `You are a world-class creative director for SWITCH NAILS, a brand that sells press-on stick-on nails. Design a stunning, surprising print advertisement as a complete SVG. The product is always the stick-on nails — rings, jewelry, or other accessories in the image are props, not the product.${creativeDirectionBlock}
 DIMENSIONS: exactly 1080×1920 pixels (9:16 portrait)
 LANGUAGE: Write all text in ${langName}
 
@@ -135,7 +135,7 @@ ${userPrompt}
 Generate something that fully embodies this direction. The rules below are only defaults — ignore or override any that conflict with the creative direction.
 
 ` : ""}DEFAULTS (apply when no creative direction overrides them):
-- Study the product image carefully — write copy that is specific to what you see, not generic
+- The product is always stick-on nails — write copy specific to nails, even if rings or jewelry appear in the image as props
 - The headline must be BOLD, CATCHY, and SURPRISING — something that stops the viewer. Can be provocative, poetic, witty, paradoxical, punchy, or emotionally striking. Any length that fits the design. NO generic advertising copy.
 - Color palette: free choice — use whatever palette serves the concept best. Minimalist monochrome, vivid accent, warm tones, neon on dark — all valid.
 - Layout: completely original. Explore split compositions, full-bleed image with text overlay, bold typographic layouts, asymmetric grids, diagonal crops — anything unexpected.
