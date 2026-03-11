@@ -16,22 +16,29 @@ const IS_SERVERLESS = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_N
 
 let browserInstance: Browser | null = null;
 
-async function getBrowser(): Promise<Browser> {
-  if (browserInstance) return browserInstance;
+async function launchBrowser(): Promise<Browser> {
   if (IS_SERVERLESS) {
     const puppeteer = (await import("puppeteer-core")).default;
     const chromium = (await import("@sparticuz/chromium")).default;
     const executablePath = await chromium.executablePath();
-    browserInstance = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: null,
-      executablePath,
-      headless: true,
-    });
-  } else {
-    const puppeteer = (await import("puppeteer")).default;
-    browserInstance = await puppeteer.launch({ headless: true });
+    return puppeteer.launch({ args: chromium.args, defaultViewport: null, executablePath, headless: true });
   }
+  const puppeteer = (await import("puppeteer")).default;
+  return puppeteer.launch({ headless: true });
+}
+
+async function getBrowser(): Promise<Browser> {
+  if (browserInstance) {
+    try { await browserInstance.version(); return browserInstance; }
+    catch { console.warn("[renderAd] Browser crashed — relaunching"); browserInstance = null; }
+  }
+  browserInstance = await launchBrowser();
+  const cleanup = () => { browserInstance?.close().catch(() => {}); browserInstance = null; };
+  process.once("exit", cleanup);
+  process.once("SIGINT", cleanup);
+  process.once("SIGTERM", cleanup);
+  if (process.env.NODE_ENV !== "production")
+    process.once("SIGUSR2", () => { cleanup(); process.kill(process.pid, "SIGUSR2"); });
   return browserInstance;
 }
 
@@ -141,6 +148,10 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
   // Screenshot via Playwright
   const browser = await getBrowser();
   const page = await browser.newPage();
+  const timeoutHandle = setTimeout(() => {
+    page.close().catch(() => {});
+    browserInstance = null;
+  }, 15_000);
   try {
     await page.setViewport({ width: spec.renderMeta.w, height: spec.renderMeta.h, deviceScaleFactor: 1 });
     await page.setContent(page_html, { waitUntil: "domcontentloaded" });
@@ -184,8 +195,12 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
     const renderResultId = newId("rr");
     const pngUrl = await save("generated", `${renderResultId}.png`, Buffer.from(pngBuffer));
     return { pngUrl, renderResultId };
+  } catch (err) {
+    browserInstance = null;
+    throw err;
   } finally {
-    await page.close();
+    clearTimeout(timeoutHandle);
+    await page.close().catch(() => {});
   }
 }
 
