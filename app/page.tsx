@@ -801,6 +801,16 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setLayoutPanelOpen(false); setOwnHeadlineOpen(false); setOwnHeadlineInput(""); }, [selectedItemId]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === "ArrowLeft"  && prevItem) setSelectedItemId(prevItem.id);
+      if (e.key === "ArrowRight" && nextItem) setSelectedItemId(nextItem.id);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [prevItem, nextItem]);
+
   // Sync format + lang controls to the selected image's last-used values
   useEffect(() => {
     const item = queueRef.current.find((i) => i.id === selectedItemId);
