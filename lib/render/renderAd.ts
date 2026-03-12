@@ -69,20 +69,28 @@ const FONT_DEFS: FontDef[] = [
   { family: "Bodoni Moda",      weight: 700, file: "BodoniModa-Bold.woff",        format: "woff" },
 ];
 
-let fontCSS: string | null = null;
+const fontFamilyCache = new Map<string, string>();
 
-async function getFontCSS(): Promise<string> {
-  if (fontCSS) return fontCSS;
+async function getFontCSSForFamilies(families: string[]): Promise<string> {
   const fontsDir = path.join(process.cwd(), "fonts");
-  const rules = await Promise.all(
-    FONT_DEFS.map(async ({ family, weight, file, format }) => {
-      const buf = await readFile(path.join(fontsDir, file));
-      const b64 = buf.toString("base64");
-      return `@font-face { font-family: '${family}'; font-weight: ${weight}; font-style: normal; src: url('data:font/${format};base64,${b64}') format('${format}'); }`;
+  const parts = await Promise.all(
+    [...new Set(families)].map(async family => {
+      if (fontFamilyCache.has(family)) return fontFamilyCache.get(family)!;
+      const defs = FONT_DEFS.filter(d => d.family === family);
+      if (!defs.length) return "";
+      const rules = await Promise.all(
+        defs.map(async ({ weight, file, format }) => {
+          const buf = await readFile(path.join(fontsDir, file));
+          const b64 = buf.toString("base64");
+          return `@font-face { font-family: '${family}'; font-weight: ${weight}; font-style: normal; src: url('data:font/${format};base64,${b64}') format('${format}'); }`;
+        })
+      );
+      const css = rules.join(" ");
+      fontFamilyCache.set(family, css);
+      return css;
     })
   );
-  fontCSS = rules.join("\n");
-  return fontCSS;
+  return parts.filter(Boolean).join(" ");
 }
 
 // ── Image cache ────────────────────────────────────────────────────────────
@@ -93,6 +101,9 @@ export async function renderAd(
   spec: AdSpec,
   safeZones: SafeZones
 ): Promise<{ pngUrl: string; renderResultId: string }> {
+  const t0 = Date.now();
+  const lap = (label: string, since = t0) => console.log(`[renderAd] ${label}: ${Date.now() - since}ms`);
+
   const template = getTemplate(spec.templateId);
 
   const zone = safeZones.zones.find((z) => z.id === spec.zoneId);
@@ -104,6 +115,7 @@ export async function renderAd(
   const cacheKey = `${spec.imageId}:${spec.renderMeta.w}x${spec.renderMeta.h}`;
   let imageBase64 = imageBase64Cache.get(cacheKey);
   if (!imageBase64) {
+    const t1 = Date.now();
     const { url: imageUrl } = await getImageInfo(spec.imageId);
     const rawBuffer = await readStorage("uploads", imageUrl);
     // Smart crop: use avoidRegions cx for horizontal positioning (anchors on hands),
@@ -135,13 +147,21 @@ export async function renderAd(
       .toBuffer();
     imageBase64 = `data:image/jpeg;base64,${resizedBuffer.toString("base64")}`;
     imageBase64Cache.set(cacheKey, imageBase64);
+    lap("image-resize (uncached)", t1);
+  } else {
+    console.log("[renderAd] image-resize: 0ms (cached)");
   }
 
   // Build template → HTML string
   const html = template.build(spec, imageBase64, zonePx, safeZones);
 
   // Wrap in a full HTML page with embedded fonts + reset CSS
-  const fonts = await getFontCSS();
+  // Only embed fonts actually used: Inter (always) + Playfair Display (brand name) + theme headline + Bebas Neue (ai_surprise)
+  const t2 = Date.now();
+  const neededFonts = new Set(["Inter", "Playfair Display", spec.theme.fontHeadline]);
+  if (spec.templateId === "ai_surprise") neededFonts.add("Bebas Neue");
+  const fonts = await getFontCSSForFamilies([...neededFonts]);
+  lap("font-css", t2);
   const page_html = `<!DOCTYPE html>
 <html>
 <head>
@@ -155,18 +175,26 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
 <body>${html}</body>
 </html>`;
 
-  // Screenshot via Playwright
+  // Screenshot via Puppeteer
+  const t3 = Date.now();
   const browser = await getBrowser();
+  lap("get-browser", t3);
+
+  const t4 = Date.now();
   const page = await browser.newPage();
+  lap("new-page", t4);
   const timeoutHandle = setTimeout(() => {
     page.close().catch(() => {});
     browserInstance = null;
   }, 15_000);
   try {
+    const t5 = Date.now();
     await page.setViewport({ width: spec.renderMeta.w, height: spec.renderMeta.h, deviceScaleFactor: 1 });
     await page.setContent(page_html, { waitUntil: "domcontentloaded" });
+    lap("set-content", t5);
 
     // Auto-shrink headlines until they fit within their overflow:hidden ancestor
+    const t6 = Date.now();
     await page.evaluate(() => {
       function getClipAncestor(el: Element): Element {
         let node = el.parentElement;
@@ -196,15 +224,20 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
         el.style.fontSize = `${lo}px`;
       });
     });
+    lap("font-fit", t6);
 
-    // Settle: wait two animation frames so the browser repaints after font-fit changes
+    // Settle: wait one animation frame so the browser repaints after font-fit changes
     await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
 
-    const pngBuffer = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: spec.renderMeta.w, height: spec.renderMeta.h } });
+    const t7 = Date.now();
+    const jpegBuffer = await page.screenshot({ type: "jpeg", quality: 90, clip: { x: 0, y: 0, width: spec.renderMeta.w, height: spec.renderMeta.h } });
+
+    lap("screenshot", t7);
 
     const renderResultId = newId("rr");
-    const pngUrl = await save("generated", `${renderResultId}.png`, Buffer.from(pngBuffer));
-    return { pngUrl, renderResultId };
+    const jpegUrl = await save("generated", `${renderResultId}.jpg`, Buffer.from(jpegBuffer));
+    lap("TOTAL", t0);
+    return { pngUrl: jpegUrl, renderResultId };
   } catch (err) {
     browserInstance = null;
     throw err;
