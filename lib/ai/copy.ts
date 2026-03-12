@@ -42,7 +42,7 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
 
     const response = await withRetry(() => client.messages.create({
       model: MODEL,
-      max_tokens: 2048,
+      max_tokens: 4096,
       messages: [
         {
           role: "user",
