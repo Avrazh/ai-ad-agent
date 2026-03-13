@@ -101,13 +101,13 @@ Rules:
       if (!bucket) continue;
 
       const h = bucket.headline;
-      slots.push({ id: newId("sl"), lang, slotType: "headline", text: h.text, angle: h.angle as CopySlot["angle"], wordCount: h.text.trim().split(/\s+/).filter(Boolean).length });
+      if (h?.text) slots.push({ id: newId("sl"), lang, slotType: "headline", text: h.text, angle: h.angle as CopySlot["angle"], wordCount: h.text.trim().split(/\s+/).filter(Boolean).length });
 
       const q = bucket.quote;
-      slots.push({ id: newId("sl"), lang, slotType: "quote", text: q.text, attribution: q.attribution, wordCount: q.text.trim().split(/\s+/).filter(Boolean).length });
+      if (q?.text) slots.push({ id: newId("sl"), lang, slotType: "quote", text: q.text, attribution: q.attribution, wordCount: q.text.trim().split(/\s+/).filter(Boolean).length });
 
       const s = bucket.subtext;
-      slots.push({ id: newId("sl"), lang, slotType: "subtext", text: s.text, angle: s.angle as CopySlot["angle"], wordCount: s.text.trim().split(/\s+/).filter(Boolean).length });
+      if (s?.text) slots.push({ id: newId("sl"), lang, slotType: "subtext", text: s.text, angle: s.angle as CopySlot["angle"], wordCount: s.text.trim().split(/\s+/).filter(Boolean).length });
     }
 
     console.log(`[copy] CopyPool from Claude for ${imageId} — ${slots.length} slots`);

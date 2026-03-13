@@ -128,10 +128,14 @@ export async function POST(req: NextRequest) {
         // prefer one different from current; wrap around if all used.
         const angleSlots = langPrimarySlots.filter((s: CopySlot) => s.angle === angle);
         const different = angleSlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
-        newPrimary =
-          different.length > 0
-            ? different[Math.floor(Math.random() * different.length)]
-            : angleSlots[Math.floor(Math.random() * angleSlots.length)];
+        if (angleSlots.length === 0) {
+          console.warn("[regenerate] No slots found for angle '" + angle + "' — keeping current slot");
+        } else {
+          newPrimary =
+            different.length > 0
+              ? different[Math.floor(Math.random() * different.length)]
+              : angleSlots[Math.floor(Math.random() * angleSlots.length)];
+        }
       } else {
         // Default "New Headline": prefer a different angle from current
         const candidates = langPrimarySlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
@@ -143,6 +147,8 @@ export async function POST(req: NextRequest) {
             differentAngle.length > 0
               ? differentAngle[Math.floor(Math.random() * differentAngle.length)]
               : candidates[Math.floor(Math.random() * candidates.length)];
+        } else {
+          console.warn("[regenerate] Only 1 slot available for this lang — keeping current slot");
         }
       }
 
