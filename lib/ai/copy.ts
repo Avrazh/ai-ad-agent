@@ -10,10 +10,10 @@ const MODEL = "claude-haiku-4-5-20251001";
 /**
  * Generates a CopyPool using Claude Haiku vision.
  * Claude looks at the image and writes product-specific slots:
- *   14 headline slots × 2 languages (EN + DE) = 28 (2 per angle)
- *   3 quote slots     × 2 languages (EN + DE) = 6
- *   14 subtext slots  × 2 languages (EN + DE) = 28 (2 per angle)
- *   Total: 62 slots
+ *   1 headline × 2 languages (EN + DE) = 2
+ *   1 quote    × 2 languages (EN + DE) = 2
+ *   1 subtext  × 2 languages (EN + DE) = 2
+ *   Total: 6 slots
  *
  * Falls back to hardcoded pool if the API call fails or key is missing.
  */
@@ -42,7 +42,7 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
 
     const response = await withRetry(() => client.messages.create({
       model: MODEL,
-      max_tokens: 4096,
+      max_tokens: 512,
       messages: [
         {
           role: "user",
@@ -53,61 +53,30 @@ export async function generateCopyPool(imageId: string): Promise<CopyPool> {
             },
             {
               type: "text",
-              text: `You are an expert e-commerce ad copywriter for SWITCH NAILS, a brand that sells press-on stick-on nails. The image always shows the brand's nails product — even if a ring, bracelet, or other accessory is also visible, those are props. The product you are writing ad copy about is always the stick-on nails. Write ad copy in English (en) and German (de).
+              text: `You are an expert e-commerce ad copywriter for SWITCH NAILS (press-on nails brand). The image shows the brand’s nails product. Write ad copy in English (en) and German (de).
 
 Return ONLY a raw JSON object (no markdown, no explanation) with this exact shape:
 
 {
   "en": {
-    "headlines": [
-      {"angle":"benefit","text":"..."},
-      {"angle":"benefit","text":"..."},
-      {"angle":"curiosity","text":"..."},
-      {"angle":"curiosity","text":"..."},
-      {"angle":"urgency","text":"..."},
-      {"angle":"urgency","text":"..."},
-      {"angle":"emotional","text":"..."},
-      {"angle":"emotional","text":"..."},
-      {"angle":"aspirational","text":"..."},
-      {"angle":"aspirational","text":"..."},
-      {"angle":"story","text":"..."},
-      {"angle":"story","text":"..."},
-      {"angle":"contrast","text":"..."},
-      {"angle":"contrast","text":"..."}
-    ],
-    "quotes": [
-      {"text":"...","attribution":"— Name, Verified Buyer"},
-      {"text":"...","attribution":"— Name, Verified Buyer"},
-      {"text":"...","attribution":"— Name, Verified Buyer"}
-    ],
-    "subtexts": [
-      {"angle":"benefit","text":"..."},
-      {"angle":"benefit","text":"..."},
-      {"angle":"curiosity","text":"..."},
-      {"angle":"curiosity","text":"..."},
-      {"angle":"urgency","text":"..."},
-      {"angle":"urgency","text":"..."},
-      {"angle":"emotional","text":"..."},
-      {"angle":"emotional","text":"..."},
-      {"angle":"aspirational","text":"..."},
-      {"angle":"aspirational","text":"..."},
-      {"angle":"story","text":"..."},
-      {"angle":"story","text":"..."},
-      {"angle":"contrast","text":"..."},
-      {"angle":"contrast","text":"..."}
-    ]
+    "headline": {"angle":"benefit","text":"..."},
+    "quote": {"text":"...","attribution":"— Name, Verified Buyer"},
+    "subtext": {"angle":"benefit","text":"..."}
   },
-  "de": { ... same structure ... }
+  "de": {
+    "headline": {"angle":"benefit","text":"..."},
+    "quote": {"text":"...","attribution":"— Name, Verifizierte Käuferin"},
+    "subtext": {"angle":"benefit","text":"..."}
+  }
 }
 
 Rules:
-- headlines: 1-8 words, punchy, specific to what you see in the image
-- aspirational headlines: ≤7 words, refined, no emojis, no urgency
-- quotes: 10-25 words, customer review voice, first person, specific benefit
-- subtexts: 3-8 words, match the angle of its paired headline
+- headline: 1-8 words, punchy, specific to what you see in the image. Pick best angle from: benefit, curiosity, urgency, emotional, aspirational, story, contrast
+- quote: 10-25 words, customer review voice, first person, specific benefit
+- subtext: 3-8 words, supporting line matching the headline angle
 - German: natural fluent German, not a literal translation
 - No emojis anywhere
-- Always write about the stick-on nails — ignore rings, jewelry or other props that appear in the image`,
+- Always write about the stick-on nails — ignore rings, jewelry or other props`,
             },
           ],
         },
@@ -119,9 +88,9 @@ Rules:
     const parsed = JSON.parse(text) as Record<
       string,
       {
-        headlines: { angle: string; text: string }[];
-        quotes: { text: string; attribution: string }[];
-        subtexts: { angle: string; text: string }[];
+        headline: { angle: string; text: string };
+        quote: { text: string; attribution: string };
+        subtext: { angle: string; text: string };
       }
     >;
 
@@ -131,15 +100,14 @@ Rules:
       const bucket = parsed[lang];
       if (!bucket) continue;
 
-      for (const h of bucket.headlines) {
-        slots.push({ id: newId("sl"), lang, slotType: "headline", text: h.text, angle: h.angle as CopySlot["angle"], wordCount: h.text.trim().split(/\s+/).filter(Boolean).length });
-      }
-      for (const q of bucket.quotes) {
-        slots.push({ id: newId("sl"), lang, slotType: "quote", text: q.text, attribution: q.attribution, wordCount: q.text.trim().split(/\s+/).filter(Boolean).length });
-      }
-      for (const s of bucket.subtexts) {
-        slots.push({ id: newId("sl"), lang, slotType: "subtext", text: s.text, angle: s.angle as CopySlot["angle"], wordCount: s.text.trim().split(/\s+/).filter(Boolean).length });
-      }
+      const h = bucket.headline;
+      slots.push({ id: newId("sl"), lang, slotType: "headline", text: h.text, angle: h.angle as CopySlot["angle"], wordCount: h.text.trim().split(/\s+/).filter(Boolean).length });
+
+      const q = bucket.quote;
+      slots.push({ id: newId("sl"), lang, slotType: "quote", text: q.text, attribution: q.attribution, wordCount: q.text.trim().split(/\s+/).filter(Boolean).length });
+
+      const s = bucket.subtext;
+      slots.push({ id: newId("sl"), lang, slotType: "subtext", text: s.text, angle: s.angle as CopySlot["angle"], wordCount: s.text.trim().split(/\s+/).filter(Boolean).length });
     }
 
     console.log(`[copy] CopyPool from Claude for ${imageId} — ${slots.length} slots`);
@@ -161,108 +129,13 @@ Rules:
 // ── Hardcoded fallback pool (generic, used when API key is missing or call fails) ──
 
 function buildHardcodedPool(imageId: string): CopyPool {
-  const headlinePool: Record<Language, { angle: string; text: string }[]> = {
-    en: [
-      { angle: "benefit",      text: "Salon look in 5 minutes" },
-      { angle: "benefit",      text: "No glue, no mess, no stress" },
-      { angle: "curiosity",    text: "What if nails lasted 2 weeks?" },
-      { angle: "curiosity",    text: "The finish everyone keeps asking about" },
-      { angle: "urgency",      text: "Limited drop — grab yours" },
-      { angle: "urgency",      text: "Selling fast. Don't wait." },
-      { angle: "emotional",    text: "You deserve nails that turn heads" },
-      { angle: "emotional",    text: "Feel confident from fingertip to soul" },
-      { angle: "aspirational", text: "Effortlessly you." },
-      { angle: "aspirational", text: "Crafted for the discerning few." },
-      { angle: "story",        text: "She stopped getting manicures. Here's why." },
-      { angle: "story",        text: "One kit changed her entire routine." },
-      { angle: "contrast",     text: "Salon price. Home speed." },
-      { angle: "contrast",     text: "Pro finish. Zero appointment." },
-    ],
-    de: [
-      { angle: "benefit",      text: "Salon-Look in 5 Minuten" },
-      { angle: "benefit",      text: "Kein Kleber, kein Chaos, kein Stress" },
-      { angle: "curiosity",    text: "Was, wenn Nägel 2 Wochen halten?" },
-      { angle: "curiosity",    text: "Das Finish, das alle ansprechen" },
-      { angle: "urgency",      text: "Limitierte Edition — jetzt sichern" },
-      { angle: "urgency",      text: "Schnell weg. Nicht warten." },
-      { angle: "emotional",    text: "Du verdienst Nägel, die Blicke fangen" },
-      { angle: "emotional",    text: "Selbstbewusstsein bis zur Fingerspitze" },
-      { angle: "aspirational", text: "Mühelose Eleganz." },
-      { angle: "aspirational", text: "Für anspruchsvolle Geschmäcker." },
-      { angle: "story",        text: "Sie hörte auf, zum Nagelstudio zu gehen. Das ist der Grund." },
-      { angle: "story",        text: "Ein Kit veränderte ihre gesamte Routine." },
-      { angle: "contrast",     text: "Salon-Qualität. Heimvorteil." },
-      { angle: "contrast",     text: "Profi-Finish. Kein Termin nötig." },
-    ],
-    fr: [],
-    es: [],
-  };
-
-  const quotePool: Record<Language, { text: string; attribution: string }[]> = {
-    en: [
-      { text: "I literally threw away my nail kit after using these. Zero chipping, zero hassle, zero regrets.", attribution: "— Emma R., Verified Buyer" },
-      { text: "My manicurist was shocked these aren't gel. Two weeks in and they still look perfect.", attribution: "— Sophie M., Verified Buyer" },
-      { text: "I've tried every press-on brand out there. Nothing comes close to this quality.", attribution: "— Jade L., Verified Buyer" },
-    ],
-    de: [
-      { text: "Ich habe mein Nagelset weggeworfen, nachdem ich diese benutzt habe. Kein Absplittern, kein Aufwand, keine Reue.", attribution: "— Emma R., Verifizierte Käuferin" },
-      { text: "Meine Nageldesignerin war schockiert, dass das kein Gel ist. Zwei Wochen später sehen sie noch perfekt aus.", attribution: "— Sophie M., Verifizierte Käuferin" },
-      { text: "Ich habe jede Marke ausprobiert. Nichts kommt an diese Qualität heran.", attribution: "— Jade L., Verifizierte Käuferin" },
-    ],
-    fr: [],
-    es: [],
-  };
-
-  const subtextPool: Record<Language, { angle: string; text: string }[]> = {
-    en: [
-      { angle: "benefit",      text: "Professional results at home" },
-      { angle: "benefit",      text: "Designed for everyday perfection" },
-      { angle: "curiosity",    text: "See what you've been missing" },
-      { angle: "curiosity",    text: "Discover the difference" },
-      { angle: "urgency",      text: "Limited time · Limited stock" },
-      { angle: "urgency",      text: "While supplies last" },
-      { angle: "emotional",    text: "Because you deserve the best" },
-      { angle: "emotional",    text: "Made for moments that matter" },
-      { angle: "aspirational", text: "Luxury Collection" },
-      { angle: "aspirational", text: "For the discerning few" },
-      { angle: "story",        text: "Her secret. Now yours." },
-      { angle: "story",        text: "The routine that changed everything." },
-      { angle: "contrast",     text: "Salon quality. Home price." },
-      { angle: "contrast",     text: "Pro results. No appointment." },
-    ],
-    de: [
-      { angle: "benefit",      text: "Professionelle Ergebnisse zu Hause" },
-      { angle: "benefit",      text: "Für tägliche Perfektion entwickelt" },
-      { angle: "curiosity",    text: "Entdecke, was du verpasst hast" },
-      { angle: "curiosity",    text: "Spüre den Unterschied" },
-      { angle: "urgency",      text: "Limitiert · Jetzt sichern" },
-      { angle: "urgency",      text: "Solange der Vorrat reicht" },
-      { angle: "emotional",    text: "Weil du das Beste verdienst" },
-      { angle: "emotional",    text: "Für Momente, die zählen" },
-      { angle: "aspirational", text: "Luxuskollektion" },
-      { angle: "aspirational", text: "Für anspruchsvolle Geschmäcker" },
-      { angle: "story",        text: "Ihr Geheimnis. Jetzt deins." },
-      { angle: "story",        text: "Die Routine, die alles veränderte." },
-      { angle: "contrast",     text: "Salon-Qualität. Heimvorteil." },
-      { angle: "contrast",     text: "Profi-Ergebnis. Kein Termin." },
-    ],
-    fr: [],
-    es: [],
-  };
-
-  const slots: CopySlot[] = [];
-
-  for (const lang of ["en", "de"] as Language[]) {
-    for (const entry of headlinePool[lang]) {
-      slots.push({ id: newId("sl"), lang, slotType: "headline", text: entry.text, angle: entry.angle as CopySlot["angle"], wordCount: entry.text.trim().split(/\s+/).filter(Boolean).length });
-    }
-    for (const entry of quotePool[lang]) {
-      slots.push({ id: newId("sl"), lang, slotType: "quote", text: entry.text, attribution: entry.attribution, wordCount: entry.text.trim().split(/\s+/).filter(Boolean).length });
-    }
-    for (const entry of subtextPool[lang]) {
-      slots.push({ id: newId("sl"), lang, slotType: "subtext", text: entry.text, angle: entry.angle as CopySlot["angle"], wordCount: entry.text.trim().split(/\s+/).filter(Boolean).length });
-    }
-  }
-
+  const slots: CopySlot[] = [
+    { id: newId("sl"), lang: "en", slotType: "headline", text: "Salon look in 5 minutes",            angle: "benefit", wordCount: 5 },
+    { id: newId("sl"), lang: "en", slotType: "quote",    text: "I literally threw away my nail kit after using these. Zero chipping, zero hassle, zero regrets.", attribution: "— Emma R., Verified Buyer", wordCount: 16 },
+    { id: newId("sl"), lang: "en", slotType: "subtext",  text: "Professional results at home",        angle: "benefit", wordCount: 4 },
+    { id: newId("sl"), lang: "de", slotType: "headline", text: "Salon-Look in 5 Minuten",             angle: "benefit", wordCount: 4 },
+    { id: newId("sl"), lang: "de", slotType: "quote",    text: "Ich habe mein Nagelset weggeworfen, nachdem ich diese benutzt habe. Kein Absplittern, kein Aufwand, keine Reue.", attribution: "— Emma R., Verifizierte Käuferin", wordCount: 17 },
+    { id: newId("sl"), lang: "de", slotType: "subtext",  text: "Professionelle Ergebnisse zu Hause",  angle: "benefit", wordCount: 4 },
+  ];
   return { imageId, slots };
 }
