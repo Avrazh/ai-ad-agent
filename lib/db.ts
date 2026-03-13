@@ -111,6 +111,26 @@ async function migrate(): Promise<void> {
         created_at       TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (segment_id) REFERENCES segments(id)
       )`,
+    `CREATE TABLE IF NOT EXISTS copy_slots (
+  id          TEXT PRIMARY KEY,
+  image_id    TEXT NOT NULL,
+  persona_id  TEXT,
+  slot_type   TEXT NOT NULL,
+  tone        TEXT,
+  language    TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (image_id)   REFERENCES images(id),
+  FOREIGN KEY (persona_id) REFERENCES personas(id)
+)`,
+    `CREATE TABLE IF NOT EXISTS persona_image_fit (
+  image_id   TEXT NOT NULL,
+  persona_id TEXT NOT NULL,
+  fit        TEXT NOT NULL,
+  PRIMARY KEY (image_id, persona_id),
+  FOREIGN KEY (image_id)   REFERENCES images(id),
+  FOREIGN KEY (persona_id) REFERENCES personas(id)
+)`,
     ],
     "write"
   );
@@ -779,4 +799,59 @@ export async function seedSegmentsAndPersonas() {
   }
 
   return { segments: segments.length, personas: personas.length };
+}
+
+// -- copy_slots queries ----------------------------------------
+export async function insertCopySlot(row: {
+  id: string; imageId: string; personaId?: string;
+  slotType: string; tone?: string; language: string; text: string;
+}): Promise<void> {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: 'INSERT OR IGNORE INTO copy_slots (id, image_id, persona_id, slot_type, tone, language, text) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    args: [row.id, row.imageId, row.personaId ?? null, row.slotType, row.tone ?? null, row.language, row.text],
+  });
+}
+
+export async function getCopySlotsByImage(imageId: string, personaId?: string | null) {
+  await ensureMigrated();
+  const client = getClient();
+  const result = personaId
+    ? await client.execute({ sql: 'SELECT * FROM copy_slots WHERE image_id = ? AND persona_id = ? ORDER BY created_at', args: [imageId, personaId] })
+    : await client.execute({ sql: 'SELECT * FROM copy_slots WHERE image_id = ? AND persona_id IS NULL ORDER BY created_at', args: [imageId] });
+  return result.rows.map((row) => ({
+    id: row.id as string, imageId: row.image_id as string,
+    personaId: row.persona_id as string | null, slotType: row.slot_type as string,
+    tone: row.tone as string | null, language: row.language as string,
+    text: row.text as string, createdAt: row.created_at as string,
+  }));
+}
+
+export async function hasCopySlots(imageId: string, personaId?: string | null): Promise<boolean> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = personaId
+    ? await client.execute({ sql: 'SELECT 1 FROM copy_slots WHERE image_id = ? AND persona_id = ? LIMIT 1', args: [imageId, personaId] })
+    : await client.execute({ sql: 'SELECT 1 FROM copy_slots WHERE image_id = ? AND persona_id IS NULL LIMIT 1', args: [imageId] });
+  return result.rows.length > 0;
+}
+
+export async function upsertPersonaImageFit(imageId: string, personaId: string, fit: "good" | "poor"): Promise<void> {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: 'INSERT OR REPLACE INTO persona_image_fit (image_id, persona_id, fit) VALUES (?, ?, ?)',
+    args: [imageId, personaId, fit],
+  });
+}
+
+export async function getPersonaImageFit(imageId: string): Promise<Record<string, "good" | "poor">> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: 'SELECT persona_id, fit FROM persona_image_fit WHERE image_id = ?',
+    args: [imageId],
+  });
+  return Object.fromEntries(result.rows.map((r) => [r.persona_id as string, r.fit as "good" | "poor"]));
 }
