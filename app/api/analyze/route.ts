@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeSafeZones } from "@/lib/ai/analyze";
 import { generateCopyPool } from "@/lib/ai/copy";
+import { extractImageTags } from "@/lib/ai/tags";
 import {
   getImage,
   insertImage,
@@ -8,6 +9,7 @@ import {
   upsertSafeZones,
   getCopyPool,
   upsertCopyPool,
+  upsertImageTags,
 } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -52,6 +54,13 @@ export async function POST(req: NextRequest) {
     if (!cachedCopy) {
       const copyPool = await generateCopyPool(imageId);
       await upsertCopyPool(imageId, JSON.stringify(copyPool));
+    }
+
+    // Image tags — cached in images.tags column, extracted once per image
+    const freshImage = await getImage(imageId);
+    if (!freshImage?.tags) {
+      const tags = await extractImageTags(imageId);
+      await upsertImageTags(imageId, tags);
     }
 
     return NextResponse.json({ ok: true });
