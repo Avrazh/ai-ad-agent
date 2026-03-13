@@ -20,7 +20,11 @@ export async function GET() {
     let cropX = 0, cropY = 0, cropW = 1, cropH = 1;
     if (imageAr > TARGET_AR) {
       cropW = TARGET_AR / imageAr;
-      cropX = (1 - cropW) / 2;
+      // Mirror renderAd: use avoidRegion cx with CX_BIAS for horizontal alignment
+      const CX_BIAS = -0.10;
+      const region = zones?.avoidRegions[0];
+      const cx = region ? Math.max(0, Math.min(1, region.x + region.w / 2 + CX_BIAS)) : 0.5;
+      cropX = Math.max(0, Math.min(cx - cropW / 2, 1 - cropW));
     } else if (imageAr < TARGET_AR) {
       cropH = imageAr / TARGET_AR;
       cropY = (1 - cropH) / 2;
