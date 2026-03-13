@@ -144,6 +144,15 @@ async function migrate(): Promise<void> {
     // Column already exists — ignore
   }
 
+  // Additive migration: add tags column to images
+  try {
+    await client.execute(
+      `ALTER TABLE images ADD COLUMN tags TEXT`
+    );
+  } catch {
+    // Column already exists — ignore
+  }
+
   // Additive migration: add surprise_spec column to saved_ai_styles
   try {
     await client.execute(
@@ -196,6 +205,7 @@ export async function getImage(id: string) {
     width: row.width as number,
     height: row.height as number,
     created_at: row.created_at as string,
+    tags: row.tags ? JSON.parse(row.tags as string) : null,
   };
 }
 
@@ -212,7 +222,18 @@ export async function getAllImages() {
     width: row.width as number,
     height: row.height as number,
     created_at: row.created_at as string,
+    tags: row.tags ? JSON.parse(row.tags as string) : null,
   }));
+}
+
+// ── Image tags ─────────────────────────────────────────────
+export async function upsertImageTags(imageId: string, tags: Record<string, string>) {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute({
+    sql: `UPDATE images SET tags = ? WHERE id = ?`,
+    args: [JSON.stringify(tags), imageId],
+  });
 }
 
 // ── SafeZones queries ───────────────────────────────────────
