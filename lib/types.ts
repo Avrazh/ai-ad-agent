@@ -35,6 +35,19 @@ export type SafeZones = {
 
 export type Angle = "benefit" | "curiosity" | "urgency" | "emotional" | "aspirational" | "story" | "contrast";
 export type Language = "en" | "de" | "fr" | "es";
+// ── Image context tags ───────────────────────────────────────
+// Extracted once per image via Claude Haiku vision, stored in images.tags JSON column.
+// Used for persona-aware copy generation without re-analyzing the image.
+export type ImageTags = {
+  color: string;          // nude|red|pink|white|black|blue|purple|green|orange|yellow|multicolor|clear
+  finish: string;         // glossy|matte|glitter|metallic|chrome|shimmer
+  length: string;         // short|medium|long
+  shape: string;          // round|oval|almond|square|coffin|stiletto
+  style_mood: string;     // minimal|elegant|bold|glam|playful|natural
+  complexity: string;     // clean|decorated|patterned
+  occasion?: string;      // everyday|work|night_out|bridal|seasonal
+  nail_art_type?: string; // plain|french|ombre|floral|geometric|abstract|graphic
+};
 
 // ── Copy slots ───────────────────────────────────────────────
 // headline  — short punchy (1-8 words), promo / luxury templates
