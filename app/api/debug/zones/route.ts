@@ -15,24 +15,44 @@ export async function GET() {
 
     const ZONE_COLORS: Record<string, string> = { A: "#22c55e", B: "#3b82f6", C: "#f59e0b" };
 
-    const svgRects = zones ? [
-      ...zones.avoidRegions.map(
-        (r) =>
-          `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"
-            fill="rgba(239,68,68,0.15)" stroke="#ef4444" stroke-width="0.004" stroke-dasharray="0.02,0.01"/>`
-      ),
-      ...zones.zones.map((z) => {
-        const c = ZONE_COLORS[z.id] ?? "#ffffff";
-        const r = z.rect;
-        return `
-          <rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"
-            fill="${c}26" stroke="${c}" stroke-width="0.004"/>
-          <text x="${r.x + r.w / 2}" y="${r.y + r.h / 2}"
-            dominant-baseline="middle" text-anchor="middle"
-            font-family="monospace" font-size="0.06" font-weight="bold"
-            fill="${c}" stroke="#000" stroke-width="0.01" paint-order="stroke">${z.id}</text>`;
-      }),
-    ].join("\n") : "";
+    const TARGET_AR = 9 / 16;
+    const imageAr = img.width > 0 && img.height > 0 ? img.width / img.height : TARGET_AR;
+    let cropX = 0, cropY = 0, cropW = 1, cropH = 1;
+    if (imageAr > TARGET_AR) {
+      cropW = TARGET_AR / imageAr;
+      cropX = (1 - cropW) / 2;
+    } else if (imageAr < TARGET_AR) {
+      cropH = imageAr / TARGET_AR;
+      cropY = (1 - cropH) / 2;
+    }
+    const cropSvg = `<rect x="${cropX.toFixed(4)}" y="${cropY.toFixed(4)}" width="${cropW.toFixed(4)}" height="${cropH.toFixed(4)}"
+  fill="none" stroke="#ffffff" stroke-width="0.006" stroke-dasharray="0.03,0.015" opacity="0.9"/>
+<text x="${(cropX + cropW / 2).toFixed(4)}" y="${(cropY + 0.04).toFixed(4)}"
+  dominant-baseline="middle" text-anchor="middle"
+  font-family="monospace" font-size="0.04" font-weight="bold"
+  fill="#ffffff" stroke="#000" stroke-width="0.008" paint-order="stroke">9:16</text>`;
+
+    const svgRects = [
+      ...(zones ? [
+        ...zones.avoidRegions.map(
+          (r) =>
+            `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"
+              fill="rgba(239,68,68,0.15)" stroke="#ef4444" stroke-width="0.004" stroke-dasharray="0.02,0.01"/>`
+        ),
+        ...zones.zones.map((z) => {
+          const c = ZONE_COLORS[z.id] ?? "#ffffff";
+          const r = z.rect;
+          return `
+            <rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"
+              fill="${c}26" stroke="${c}" stroke-width="0.004"/>
+            <text x="${r.x + r.w / 2}" y="${r.y + r.h / 2}"
+              dominant-baseline="middle" text-anchor="middle"
+              font-family="monospace" font-size="0.06" font-weight="bold"
+              fill="${c}" stroke="#000" stroke-width="0.01" paint-order="stroke">${z.id}</text>`;
+        }),
+      ] : []),
+      cropSvg,
+    ].join("\n");
 
     const noZones = !zones
       ? `<p style="color:#f87171;margin:8px 0 0">No zones cached yet — upload and generate first</p>`
@@ -67,6 +87,7 @@ export async function GET() {
           <span style="color:#22c55e">■ zone A (green)</span>
           <span style="color:#3b82f6">■ zone B (blue)</span>
           <span style="color:#f59e0b">■ zone C (amber)</span>
+          <span style="color:#ffffff">■ 9:16 crop (white dashed)</span>
         </div>
       </div>`);
   }
