@@ -127,7 +127,7 @@ function newItemId() {
 // Vercel 4.5 MB serverless function payload limit.
 const MAX_UPLOAD_PX = 1920; // longest side in pixels
 const JPEG_QUALITY = 0.85;
-const IMAGE_LIMIT = 2; // beta: max images per session
+const IMAGE_LIMIT = 100; // max images per session
 
 function compressImage(file: File): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -200,7 +200,6 @@ export default function Home() {
   const [surprisePanelOpen, setSurprisePanelOpen] = useState(false);
   const [ownHeadlineOpen, setOwnHeadlineOpen] = useState(false);
   const [ownHeadlineInput, setOwnHeadlineInput] = useState("");
-  const [aiInfoOpen, setAiInfoOpen] = useState(false);
   const [toneByImage, setToneByImage] = useState<Record<string, string>>({});
 
   const usedStyleIdsRef = useRef<string[]>([]);
@@ -1218,11 +1217,20 @@ export default function Home() {
                 {/* ✨ AI Style — three generation modes */}
                 <input ref={refFileInputRef} type="file" accept="image/*" className="hidden" onChange={handleRefImageChange} />
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-l-2 border-white/[0.08] bg-indigo-950/20 shrink-0">
-                  <div className="flex items-center gap-1.5"><span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400/50">AI Style</span>
-                  <div onClick={() => setAiInfoOpen(v => !v)} className="w-3.5 h-3.5 rounded-full border border-indigo-400/60 flex items-center justify-center cursor-pointer">
+                  <div className="relative flex items-center gap-1.5 group">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-indigo-400/50">AI Style</span>
+                    <div className="w-3.5 h-3.5 rounded-full border border-indigo-400/60 flex items-center justify-center cursor-default">
                       <span className="text-[9px] font-bold text-indigo-400/80 leading-none select-none">?</span>
                     </div>
-                </div>
+                    <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-white/[0.08] bg-[#0f1318] px-4 py-3 text-[11px] text-gray-400 leading-relaxed opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-50">
+                      <p className="font-semibold text-gray-200 mb-1.5">AI-generated ads</p>
+                      <p className="mb-2">These buttons let Claude design a complete ad from scratch:</p>
+                      <p className="mb-0.5"><span className="text-gray-200 font-medium">Generate</span> — AI picks layout, colors and copy automatically.</p>
+                      <p className="mb-0.5"><span className="text-gray-200 font-medium">Reference</span> — Upload a style image for AI to match.</p>
+                      <p className="mb-2"><span className="text-gray-200 font-medium">Prompt</span> — Describe the mood or concept in your own words.</p>
+                      <p className="text-amber-400/80">Note: AI Style ads cannot have their headline, layout or tone changed afterwards.</p>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
 
                     {/* Card 1: Just Generate */}
@@ -1271,17 +1279,6 @@ export default function Home() {
                 <div className="flex-1 min-w-4" />              </div>
             )}
 
-            {/* ── AI INFO PANEL (below stage bar) ── */}
-            {aiInfoOpen && (
-              <div className="shrink-0 border-b border-white/[0.06] bg-[#0f1318] px-5 py-3 text-[11px] text-gray-400 leading-relaxed">
-                <p className="font-semibold text-gray-200 mb-1.5">AI-generated ads</p>
-                <p className="mb-2">These buttons let Claude design a complete ad from scratch:</p>
-                <p className="mb-0.5"><span className="text-gray-200 font-medium">Generate</span> — AI picks layout, colors and copy automatically.</p>
-                <p className="mb-0.5"><span className="text-gray-200 font-medium">Reference</span> — Upload a style image for AI to match.</p>
-                <p className="mb-2"><span className="text-gray-200 font-medium">Prompt</span> — Describe the mood or concept in your own words.</p>
-                <p className="text-amber-400/80">Note: AI Style ads cannot have their headline, layout or tone changed afterwards.</p>
-              </div>
-            )}
 
             {/* ── PROMPT PANEL (below stage bar, opened by With Prompt card) ── */}
             {surprisePanelOpen && selectedItem.imageId && (
