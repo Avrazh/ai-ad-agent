@@ -293,8 +293,13 @@ export default function Home() {
 
     setProcessing(true);
 
-    await Promise.allSettled(itemsToProcess.map(async (item) => {
-      try {
+    // Process at most 3 images concurrently to avoid overwhelming Puppeteer
+    const CONCURRENCY = 3;
+    const results: PromiseSettledResult<void>[] = [];
+    for (let i = 0; i < itemsToProcess.length; i += CONCURRENCY) {
+      const batch = itemsToProcess.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.allSettled(batch.map(async (item) => {
+        try {
         // Step 1 — upload
         updateItem(item.id, { status: "uploading" });
         const compressed = await compressImage(item.file);
@@ -365,7 +370,9 @@ export default function Home() {
           error: err instanceof Error ? err.message : "Failed",
         });
       }
-    }));
+      }));
+      results.push(...batchResults);
+    }
 
     setProcessing(false);
   }, [processing, queue, updateItem]);
