@@ -83,42 +83,64 @@ export async function GET() {
           </div>
         </div>
         ${langSections}
-        ${await (async () => {
-          const ph = await getPersonaHeadlines(img.id, "en");
-          const entries = Object.entries(ph);
-          if (entries.length === 0) return '<p style="color:#6b7280;font-size:12px;margin:12px 0 0">No persona headlines yet</p>';
-          const rows = allPersonas.flatMap(p => {
-            const toneMap = ph[p.id];
-            if (!toneMap) return [`<tr style="background:#111827">
-              <td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap">${p.id}</td>
-              <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap">${p.name}</td>
-              <td style="padding:5px 10px;color:#6b7280;font-size:11px"><em>missing</em></td>
-              <td style="padding:5px 10px"></td>
-            </tr>`];
-            return p.tones.map((tone, i) => `<tr style="background:#111827">
-              ${i === 0 ? `<td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${p.tones.length}">${p.id}</td>
-              <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${p.tones.length}">${p.name}</td>` : ''}
-              <td style="padding:5px 10px;font-size:11px;white-space:nowrap"><span style="color:#6366f1;background:#1e1b4b;border-radius:4px;padding:1px 6px">${tone}</span></td>
-              <td style="padding:5px 10px;color:#f1f5f9;font-size:13px">${toneMap[tone] ?? '<em style="color:#6b7280">missing</em>'}</td>
-            </tr>`);
-          }).join("");
-          return `<div style="margin-top:20px">
-            <p style="color:#6b7280;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px">PERSONA HEADLINES (EN) — ${entries.length} / ${allPersonas.length}</p>
-            <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden">
-              <thead>
-                <tr style="background:#0f172a">
-                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">ID</th>
-                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Persona</th>
-                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Tone</th>
-                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Headline</th>
-                </tr>
-              </thead>
-              <tbody>${rows}</tbody>
-            </table>
-          </div>`;
-        })()}
       </div>`);
   }
+
+  // Build single persona headlines table across all images
+  const imagesWithHeadlines = await Promise.all(
+    images.map(async (img) => ({
+      img,
+      ph: await getPersonaHeadlines(img.id, "en"),
+    }))
+  );
+  const anyHeadlines = imagesWithHeadlines.some(({ ph }) => Object.keys(ph).length > 0);
+
+  const imgHeaders = imagesWithHeadlines.map(({ img }) =>
+    `<th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500;min-width:160px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <img src="${img.url}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid #333" />
+        <span style="color:#6b7280;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${img.filename}</span>
+      </div>
+    </th>`
+  ).join("");
+
+  const phRows = allPersonas.flatMap((p) =>
+    p.tones.map((tone, i) => {
+      const cells = imagesWithHeadlines.map(({ ph }) => {
+        const h = ph[p.id]?.[tone];
+        return `<td style="padding:5px 10px;color:${h ? "#f1f5f9" : "#4b5563"};font-size:13px">${h ?? "<em>—</em>"}</td>`;
+      }).join("");
+      return `<tr style="background:#111827">
+        ${i === 0
+          ? `<td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${p.tones.length}">${p.id}</td>
+             <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${p.tones.length}">${p.name}</td>`
+          : ""}
+        <td style="padding:5px 10px;font-size:11px;white-space:nowrap">
+          <span style="color:#6366f1;background:#1e1b4b;border-radius:4px;padding:1px 6px">${tone}</span>
+        </td>
+        ${cells}
+      </tr>`;
+    })
+  ).join("");
+
+  const personaTable = anyHeadlines ? `
+    <div style="margin-top:48px">
+      <h2 style="font-size:16px;font-weight:700;margin:0 0 4px">Persona Headlines</h2>
+      <p style="color:#6b7280;font-size:13px;margin:0 0 16px">${allPersonas.length} personas × 2 tones — one column per image</p>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:#0f172a">
+              <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Persona ID</th>
+              <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Name</th>
+              <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Tone</th>
+              ${imgHeaders}
+            </tr>
+          </thead>
+          <tbody>${phRows}</tbody>
+        </table>
+      </div>
+    </div>` : "";
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -137,6 +159,7 @@ export async function GET() {
   <h1>Copy Pool Debug</h1>
   <p class="sub">${images.length} image${images.length !== 1 ? "s" : ""} — refresh after analyzing</p>
   ${cards.length ? cards.join("") : '<p style="color:#6b7280">No images yet.</p>'}
+  ${personaTable}
 </body>
 </html>`;
 
