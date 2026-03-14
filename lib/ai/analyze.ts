@@ -4,7 +4,7 @@ import path from "path";
 import Anthropic from "@anthropic-ai/sdk";
 import { withRetry } from "./retry";
 
-const MODEL = "claude-haiku-4-5-20251001";
+const MODEL = "claude-sonnet-4-6";
 
 const HARDCODED_FALLBACK: Omit<SafeZones, "imageId"> = {
   avoidRegions: [{ x: 0.2, y: 0.25, w: 0.6, h: 0.5 }],
