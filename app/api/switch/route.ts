@@ -147,11 +147,13 @@ export async function POST(req: NextRequest) {
           ? (showBrand ? (await sampleBrandZoneBrightness(oldSpec.imageId) <= 128 ? '#FFFFFF' : '#1a1a1a') : undefined)
           : oldSpec.brandColor,
         ...(oldSpec.headlineYOverride !== undefined ? { headlineYOverride: oldSpec.headlineYOverride } : {}),
+        ...(oldSpec.brandNameY !== undefined ? { brandNameY: oldSpec.brandNameY } : {}),
+        ...(oldSpec.brandNameFontScale !== undefined ? { brandNameFontScale: oldSpec.brandNameFontScale } : {}),
       };
 
       // 6. Store + render + link
       await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
-      const { pngUrl, renderResultId } = await renderAd(newSpec, safeZones);
+      const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec, safeZones);
       await insertRenderResult({
         id: renderResultId,
         adSpecId: newSpec.id,
@@ -176,6 +178,13 @@ export async function POST(req: NextRequest) {
           pngUrl,
           approved: false,
           createdAt: new Date().toISOString(),
+          headlineText: newSpec.copy.headline ?? newSpec.copy.quote,
+          headlineFontScale: newSpec.surpriseSpec?.headlineFontScale ?? 1.0,
+          headlineYOverride: newSpec.headlineYOverride,
+          brandNameY: newSpec.brandNameY,
+          brandNameFontScale: newSpec.brandNameFontScale,
+          attribution: newSpec.copy.attribution,
+          subjectPos: cssSubjectPos,
         },
       });
     }

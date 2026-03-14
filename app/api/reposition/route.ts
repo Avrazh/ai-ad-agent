@@ -13,34 +13,46 @@ import type { AdSpec, SafeZones } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const { resultId, headlineYOverride } = await req.json() as { resultId: string; headlineYOverride: number };
+    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale } = await req.json() as {
+      resultId: string;
+      headlineYOverride: number;
+      headlineFontScale?: number;
+      brandNameY?: number;
+      brandNameFontScale?: number;
+    };
     if (!resultId || headlineYOverride === undefined) {
       return NextResponse.json({ error: "resultId and headlineYOverride required" }, { status: 400 });
     }
 
-    // Load existing result + spec
     const oldResult = await getRenderResult(resultId);
     if (!oldResult) return NextResponse.json({ error: "Result not found" }, { status: 404 });
     const oldSpecRow = await getAdSpec(oldResult.ad_spec_id);
     if (!oldSpecRow) return NextResponse.json({ error: "AdSpec not found" }, { status: 404 });
     const oldSpec: AdSpec = JSON.parse(oldSpecRow.data);
 
-    // Load safe zones (no AI calls)
     const zonesJson = await getSafeZones(oldSpec.imageId);
     if (!zonesJson) return NextResponse.json({ error: "Safe zones not found" }, { status: 404 });
     const safeZones: SafeZones = JSON.parse(zonesJson);
 
-    // Clone spec with override
+    const fontScale = headlineFontScale ?? oldSpec.surpriseSpec?.headlineFontScale ?? 1.0;
     const newSpecId = newId("sp");
     const newSpec: AdSpec = {
       ...oldSpec,
       id: newSpecId,
       headlineYOverride,
-      ...(oldSpec.surpriseSpec ? { surpriseSpec: { ...oldSpec.surpriseSpec, headlineYOverride } } : {}),
+      ...(brandNameY !== undefined ? { brandNameY } : {}),
+      ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}),
+      ...(oldSpec.surpriseSpec ? {
+        surpriseSpec: {
+          ...oldSpec.surpriseSpec,
+          headlineYOverride,
+          headlineFontScale: fontScale,
+        },
+      } : {}),
     };
 
     await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
-    const { pngUrl, renderResultId } = await renderAd(newSpec, safeZones);
+    const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec, safeZones);
     await insertRenderResult({
       id: renderResultId,
       adSpecId: newSpec.id,
@@ -52,6 +64,8 @@ export async function POST(req: NextRequest) {
     });
     await markReplaced(resultId, renderResultId);
 
+    const subjectPos = cssSubjectPos;
+
     return NextResponse.json({
       ok: true,
       result: {
@@ -62,6 +76,12 @@ export async function POST(req: NextRequest) {
         familyId: newSpec.familyId,
         lang: newSpec.lang,
         format: newSpec.format,
+        headlineText: newSpec.copy.headline,
+        headlineFontScale: fontScale,
+        headlineYOverride: headlineYOverride,
+        brandNameY: newSpec.brandNameY,
+        brandNameFontScale: newSpec.brandNameFontScale,
+        subjectPos,
       },
     });
   } catch (err) {

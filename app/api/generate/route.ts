@@ -181,7 +181,7 @@ export async function POST(req: NextRequest) {
       };
 
       await insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
-      const { pngUrl, renderResultId } = await renderAd(spec, safeZones);
+      const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(spec, safeZones);
       await insertRenderResult({
         id: renderResultId,
         adSpecId: spec.id,
@@ -192,6 +192,7 @@ export async function POST(req: NextRequest) {
         pngUrl,
       });
 
+      // subjectPos: use the CSS-equivalent of the sharp crop computed inside renderAd
       return NextResponse.json({
         results: [{
           id: renderResultId,
@@ -204,6 +205,10 @@ export async function POST(req: NextRequest) {
           pngUrl,
           approved: false,
           createdAt: new Date().toISOString(),
+          headlineText: spec.copy.headline,
+          headlineFontScale: spec.surpriseSpec?.headlineFontScale ?? 1.0,
+          subjectPos: cssSubjectPos,
+          attribution: spec.copy.attribution,
         }],
       });
     }
@@ -339,6 +344,9 @@ export async function POST(req: NextRequest) {
         pngUrl,
         approved: false,
         createdAt: new Date().toISOString(),
+        headlineText: spec.copy.headline ?? spec.copy.quote,
+        headlineFontScale: spec.surpriseSpec?.headlineFontScale ?? 1.0,
+        attribution: spec.copy.attribution,
       });
     }
 

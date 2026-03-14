@@ -94,7 +94,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       </div>
     </div>
   </div>
-  ${spec.showBrand ? `<div style="position:absolute;bottom:${Math.round(h * 0.2005)}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:${spec.brandColor ?? theme.color};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>` : ""}
+  ${spec.showBrand ? (() => { const bfs = Math.round(36 * (spec.brandNameFontScale ?? 1.0)); const btp = spec.brandNameY !== undefined ? Math.round(h * spec.brandNameY) : Math.round(h * 0.78); return `<div style="position:absolute;top:${btp}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:${bfs}px;font-weight:700;color:${spec.brandColor ?? theme.color};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`; })() : ""}
 </div>`;
 }
 

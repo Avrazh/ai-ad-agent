@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
     await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
 
     // 5. Render new PNG
-    const { pngUrl, renderResultId } = await renderAd(newSpec, safeZones);
+    const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec, safeZones);
 
     // 6. Store new result, mark old as replaced
     await insertRenderResult({
@@ -218,6 +218,8 @@ export async function POST(req: NextRequest) {
     });
     await markReplaced(resultId, renderResultId);
 
+    const subjectPos = cssSubjectPos;
+
     return NextResponse.json({
       result: {
         id: renderResultId,
@@ -230,6 +232,9 @@ export async function POST(req: NextRequest) {
         pngUrl,
         approved: false,
         createdAt: new Date().toISOString(),
+        headlineText: newSpec.copy.headline ?? newSpec.copy.quote,
+        attribution: newSpec.copy.attribution,
+        subjectPos,
       },
       replacedId: resultId,
     });
