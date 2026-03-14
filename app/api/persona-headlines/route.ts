@@ -21,12 +21,12 @@ export async function GET(req: NextRequest) {
 
     // Not cached (image pre-dates this feature) - generate on demand
     const generated = await generatePersonaHeadlines(imageId);
-    const rows = Object.entries(generated).map(([personaId, headline]) => ({
-      imageId,
-      personaId,
-      headline,
-      language: "en",
-    }));
+    const rows: { imageId: string; personaId: string; tone: string; headline: string; language: string }[] = [];
+    for (const [personaId, toneMap] of Object.entries(generated)) {
+      for (const [tone, headline] of Object.entries(toneMap)) {
+        rows.push({ imageId, personaId, tone, headline, language: "en" });
+      }
+    }
     await upsertPersonaHeadlines(rows);
     return NextResponse.json(generated);
   } catch (err) {
