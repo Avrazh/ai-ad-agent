@@ -95,12 +95,13 @@ async function getFontCSSForFamilies(families: string[]): Promise<string> {
 
 // ── Image cache ────────────────────────────────────────────────────────────
 const imageBase64Cache = new Map<string, string>();
+const cssSubjectPosCache = new Map<string, string>();
 
 // ── renderAd ───────────────────────────────────────────────────────────────
 export async function renderAd(
   spec: AdSpec,
   safeZones: SafeZones
-): Promise<{ pngUrl: string; renderResultId: string }> {
+): Promise<{ pngUrl: string; renderResultId: string; cssSubjectPos: string }> {
   const t0 = Date.now();
   const lap = (label: string, since = t0) => console.log(`[renderAd] ${label}: ${Date.now() - since}ms`);
 
@@ -130,16 +131,25 @@ export async function renderAd(
     const cx = region ? Math.max(0, Math.min(1, region.x + region.w / 2 + CX_BIAS)) : null;
 
     let pipeline = sharp(rawBuffer);
+    let cssX = 50, cssY = 50;
     if (cx !== null && sw / sh > tw / th) {
       // Source wider than target: crop width using avoidRegion cx for horizontal alignment
       const cropW = Math.round(sh * (tw / th));
       const cropLeft = Math.max(0, Math.min(Math.round(cx * sw - cropW / 2), sw - cropW));
       pipeline = pipeline.extract({ left: cropLeft, top: 0, width: cropW, height: sh });
+      // Compute CSS-equivalent object-position X so LiveAdCanvas matches the sharp crop
+      const s = th / sh; // scale factor (fit height)
+      const overflow = sw * s - tw;
+      if (overflow > 0) cssX = Math.round(Math.max(0, Math.min(100, cropLeft * s / overflow * 100)));
     } else if (cx !== null && sw / sh < tw / th) {
       // Source taller than target: crop height using center vertical (not cy — avoids zoom)
       const cropH = Math.round(sw * (th / tw));
       const cropTop = Math.max(0, Math.min(Math.round(sh / 2 - cropH / 2), sh - cropH));
       pipeline = pipeline.extract({ left: 0, top: cropTop, width: sw, height: cropH });
+      // Compute CSS-equivalent object-position Y
+      const s = tw / sw; // scale factor (fit width)
+      const overflow = sh * s - th;
+      if (overflow > 0) cssY = Math.round(Math.max(0, Math.min(100, cropTop * s / overflow * 100)));
     }
     const resizedBuffer = await pipeline
       .resize(tw, th, { fit: "cover", position: cx === null ? "attention" : "centre" })
@@ -147,6 +157,7 @@ export async function renderAd(
       .toBuffer();
     imageBase64 = `data:image/jpeg;base64,${resizedBuffer.toString("base64")}`;
     imageBase64Cache.set(cacheKey, imageBase64);
+    cssSubjectPosCache.set(cacheKey, `${cssX}% ${cssY}%`);
     lap("image-resize (uncached)", t1);
   } else {
     console.log("[renderAd] image-resize: 0ms (cached)");
@@ -237,7 +248,7 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
     const renderResultId = newId("rr");
     const jpegUrl = await save("generated", `${renderResultId}.jpg`, Buffer.from(jpegBuffer));
     lap("TOTAL", t0);
-    return { pngUrl: jpegUrl, renderResultId };
+    return { pngUrl: jpegUrl, renderResultId, cssSubjectPos: cssSubjectPosCache.get(cacheKey) ?? "50% 50%" };
   } catch (err) {
     browserInstance = null;
     throw err;

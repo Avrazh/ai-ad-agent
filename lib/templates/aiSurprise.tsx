@@ -194,14 +194,22 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     // TODO: blend with dynamic safeZones in a future pass
     const TEXT_X      = Math.round(w * 0.0926);   // ~100px at 1080w
     const TEXT_W      = Math.round(w * 0.8148);   // ~880px at 1080w
-    const TEXT_Y      = Math.round(h * 0.2005);   // ~385px at 1920h
+    const TEXT_Y      = Math.round(h * 0.1484);   // top of 4:5 zone within 9:16
     const TEXT_MAX_Y  = Math.round(h * 0.7995);   // ~1535px at 1920h
     const TEXT_ZONE_H = TEXT_MAX_Y - TEXT_Y;
-    // Place headline at top unless nails start in the upper 40% of the image — then push to bottom
-    const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
-    const useBottom = avoidTopY < 0.4;
-    const textPos = useBottom ? `bottom:${h - TEXT_MAX_Y}px` : `top:${TEXT_Y}px`;
-    const hSize  = clamp(Math.round(TEXT_W * 0.12), 48, 130);
+    // Headline position: use explicit override if set, otherwise auto top/bottom from avoidRegion
+    const override = spec.surpriseSpec?.headlineYOverride;
+    let textPos: string;
+    if (override !== undefined) {
+      const yPx = Math.round(h * Math.max(0.1484, Math.min(0.7995, override)));
+      textPos = `top:${yPx}px`;
+    } else {
+      const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
+      const useBottom = avoidTopY < 0.4;
+      textPos = useBottom ? `bottom:${h - TEXT_MAX_Y}px` : `top:${TEXT_Y}px`;
+    }
+    const fontScaleOverride = spec.surpriseSpec?.headlineFontScale ?? 1.0;
+    const hSize  = clamp(Math.round(TEXT_W * 0.12 * fontScaleOverride), 48, 180);
     const sSize  = clamp(Math.round(hSize * 0.28), 13, 28);
     // Smart crop: center on subject so hands/face stay in frame
     let subjectPos = "50% 50%";
@@ -209,8 +217,12 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       const r = safeZones.avoidRegions[0];
       subjectPos = `${Math.round((r.x + r.w / 2) * 100)}% ${Math.round((r.y + r.h / 2) * 100)}%`;
     }
+    const brandFontSize = Math.round(36 * (spec.brandNameFontScale ?? 1.0));
+    const brandTopPx = spec.brandNameY !== undefined
+      ? Math.round(h * spec.brandNameY)
+      : Math.round(h * 0.78);
     const brandHTML = spec.showBrand
-      ? `<div style="position:absolute;bottom:${Math.round(h * 0.2005)}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:${spec.brandColor ?? textColor};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
+      ? `<div style="position:absolute;top:${brandTopPx}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:${brandFontSize}px;font-weight:700;color:${spec.brandColor ?? textColor};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
       : "";
     return `<div style="width:${w}px;height:${h}px;display:flex;position:relative;">
       <img src="${imageBase64}" style="position:absolute;width:${w}px;height:${h}px;object-fit:cover;object-position:${subjectPos};opacity:${imageOpacity};" />

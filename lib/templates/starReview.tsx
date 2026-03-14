@@ -49,10 +49,17 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   const cardY     = Math.round(h * 0.2005);   // ~385px at 1920h
   const cardW     = Math.round(w * 0.8148);   // ~880px at 1080w
   const maxCardH  = Math.round(h * 0.7995) - cardY; // zone height ~1150px
-  // Place card at top unless nails start in the upper 40% of the image — then push to bottom
-  const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
-  const useBottom = avoidTopY < 0.4;
-  const cardPos = useBottom ? `bottom:${h - (cardY + maxCardH)}px` : `top:${cardY}px`;
+  // Card position: use explicit override if set, otherwise auto top/bottom from avoidRegion
+  const override = spec.headlineYOverride;
+  let cardPos: string;
+  if (override !== undefined) {
+    const yPx = Math.round(h * Math.max(0.2005, Math.min(0.7995, override)));
+    cardPos = `top:${yPx}px`;
+  } else {
+    const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
+    const useBottom = avoidTopY < 0.4;
+    cardPos = useBottom ? `bottom:${h - (cardY + maxCardH)}px` : `top:${cardY}px`;
+  }
 
   return `
 <div style="width:${w}px;height:${h}px;position:relative;overflow:hidden;">
@@ -87,7 +94,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       </div>
     </div>
   </div>
-  ${spec.showBrand ? `<div style="position:absolute;bottom:${Math.round(h * 0.2005)}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:36px;font-weight:700;color:${spec.brandColor ?? theme.color};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>` : ""}
+  ${spec.showBrand ? (() => { const bfs = Math.round(36 * (spec.brandNameFontScale ?? 1.0)); const btp = spec.brandNameY !== undefined ? Math.round(h * spec.brandNameY) : Math.round(h * 0.78); return `<div style="position:absolute;top:${btp}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:${bfs}px;font-weight:700;color:${spec.brandColor ?? theme.color};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`; })() : ""}
 </div>`;
 }
 

@@ -2,6 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
+import { HeadlineDragOverlay } from "@/app/components/HeadlineDragOverlay";
+import { LiveAdCanvas } from "@/app/components/LiveAdCanvas";
+import { StarCardPreview } from "@/app/components/StarCardPreview";
+import { BRAND_NAME } from "@/lib/customerConfig";
 
 type RenderResultItem = {
   id: string;
@@ -14,6 +18,13 @@ type RenderResultItem = {
   pngUrl: string;
   approved: boolean;
   createdAt: string;
+  headlineText?: string;
+  headlineFontScale?: number;
+  subjectPos?: string;
+  headlineYOverride?: number;
+  attribution?: string;
+  brandNameY?: number;
+  brandNameFontScale?: number;
 };
 
 type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
@@ -35,6 +46,7 @@ type SurpriseSpec = {
   headlineScale: "small" | "medium" | "large" | "huge";
   accent: "line" | "bar" | "dot" | "circle" | "none";
   preferredHeadlineLength?: "short" | "medium" | "long";
+  headlineYOverride?: number;
   en: { headline: string; subtext: string };
   de: { headline: string; subtext: string };
 };
@@ -68,7 +80,7 @@ const LAYOUT_PREVIEWS: { layout: SurpriseLayout; label: string; spec: SurpriseSp
   },
   {
     layout: "clean_headline", label: "Headline",
-    spec: { layout: "clean_headline", bgColor: "#000000", textColor: "#1a1a1a", accentColor: "#1a1a1a", overlayOpacity: 0, font: "serif", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "center", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "" }, de: { headline: "Vorschau", subtext: "" } },
+    spec: { layout: "clean_headline", bgColor: "#000000", textColor: "#ffffff", accentColor: "#ffffff", overlayOpacity: 0, font: "serif", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "center", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "" }, de: { headline: "Vorschau", subtext: "" } },
   },
 
 ];
@@ -204,6 +216,7 @@ export default function Home() {
 
   const usedStyleIdsRef = useRef<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const adImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refFileInputRef = useRef<HTMLInputElement>(null);
   // Mirror queue + selectedItemId in refs so callbacks can read latest values
@@ -583,7 +596,7 @@ export default function Home() {
         const data = await res.json();
         const switched = data.results?.[0];
         if (switched?.result) {
-          updateItem(item.id, { result: switched.result, approved: false, lang });
+          updateItem(item.id, { result: { ...item.result, ...switched.result }, approved: false, lang });
         }
       } catch (err) {
         console.error("Switch error:", err);
@@ -640,7 +653,8 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: data.result, approved: false });
+        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
+              attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
       } catch (err) {
         console.error("New headline error:", err);
       } finally {
@@ -666,7 +680,8 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: data.result, approved: false });
+        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
+              attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
         setToneByImage(prev => ({ ...prev, [item.id]: angle }));
       } catch (err) {
         console.error("Tone headline error:", err);
@@ -695,7 +710,8 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: data.result, approved: false });
+        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
+              attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
         setToneByImage(prev => ({ ...prev, [item.id]: "own" }));
       } catch (err) {
         console.error("Own headline error:", err);
@@ -723,7 +739,7 @@ export default function Home() {
     [updateItem]
   );
 
-  // ── Download ────────────────────────────────────────────
+    // ── Download ────────────────────────────────────────────
   const handleDownload = useCallback(async (pngUrl: string, id: string) => {
     try {
       const res = await fetch(pngUrl);
@@ -797,6 +813,46 @@ export default function Home() {
       : null;
 
   const isSVGSurprise = selectedItem?.result?.templateId === "ai_surprise_svg";
+
+  const isCleanHeadline =
+    !!selectedItem?.result &&
+    selectedItem.usedSurpriseSpec?.layout === "clean_headline";
+
+  const isStarReview =
+    !!selectedItem?.result &&
+    selectedItem.result.templateId === "star_review";
+
+  const isHeadlineDraggable =
+    !!selectedItem?.result &&
+    (selectedItem.usedSurpriseSpec?.layout === "clean_headline" ||
+     selectedItem.result.templateId === "star_review");
+
+  const initialHeadlineY = selectedItem?.result
+    ? (selectedItem.result.headlineYOverride
+        ?? selectedItem.usedSurpriseSpec?.headlineYOverride
+        ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : 0.1484))
+    : 0.1484;
+
+  // ── Reposition headline ───────────────────────────────────
+  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number) => {
+    if (!selectedItem?.result || detailLoading) return;
+    setDetailLoading(true);
+    try {
+      const res = await fetch("/api/reposition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}) }),
+      });
+      if (!res.ok) throw new Error("Reposition failed");
+      const data = await res.json();
+      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: false });
+    } catch (err) {
+      console.error("[reposition]", err);
+    } finally {
+      setDetailLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItem, detailLoading, updateItem]);
 
   const pillActive =
     "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.12)]";
@@ -1145,7 +1201,7 @@ export default function Home() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Brand</span>
                   <div className="flex items-center">
                     <div
-                      onClick={() => { const next = !showBrand; if (selectedItemId) setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); if (selectedItem?.result) handleSwitch(selectedItem, selectedLangRef.current, selectedFormatRef.current, next); }}
+                      onClick={() => { const next = !showBrand; if (selectedItemId) setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); }}
                       className={"w-12 h-6 rounded-full flex items-center px-0.5 transition-colors cursor-pointer " + (showBrand ? "bg-indigo-600" : "bg-white/10")}
                     >
                       <div className={"w-5 h-5 rounded-full bg-white shadow transition-transform " + (showBrand ? "translate-x-6" : "translate-x-0")} />
@@ -1381,11 +1437,54 @@ export default function Home() {
                 {/* Ad image — full width, fills all remaining space */}
                 <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
                   {selectedItem.result ? (
-                    <img
-                      src={selectedItem.result.pngUrl}
-                      alt="Generated ad"
-                      className={"max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl transition-opacity duration-200 " + (detailLoading ? "opacity-30" : "opacity-100")}
-                    />
+                    <div className="relative h-full flex items-center justify-center">
+                      {isCleanHeadline ? (
+                        <LiveAdCanvas
+                          imageUrl={selectedItem.imageUrl ?? selectedItem.result.pngUrl}
+                          subjectPos={selectedItem.result.subjectPos}
+                          headline={selectedItem.result.headlineText ?? selectedItem.usedSurpriseSpec?.en?.headline ?? ""}
+                          subtext={selectedItem.usedSurpriseSpec?.en?.subtext}
+                          spec={selectedItem.usedSurpriseSpec ?? {}}
+                          format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
+                          initialY={initialHeadlineY}
+                          initialFontScale={selectedItem.result.headlineFontScale ?? 1.0}
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.result?.brandNameFontScale}
+                        />
+                      ) : isStarReview ? (
+                        <LiveAdCanvas
+                          imageUrl={selectedItem.imageUrl ?? selectedItem.result.pngUrl}
+                          subjectPos={selectedItem.result.subjectPos}
+                          headline=""
+                          spec={{}}
+                          format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
+                          initialY={initialHeadlineY}
+                          disableResize
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.result?.brandNameFontScale}
+                          renderOverlay={(cw) => (
+                            <StarCardPreview
+                              quote={selectedItem.result!.headlineText ?? ""}
+                              attribution={selectedItem.result!.attribution ?? ""}
+                              containerW={cw}
+                            />
+                          )}
+                        />
+                      ) : (
+                        <img
+                          ref={adImgRef}
+                          src={selectedItem.result.pngUrl}
+                          alt="Generated ad"
+                          className={"max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl transition-opacity duration-200 " + (detailLoading ? "opacity-30" : "opacity-100")}
+                        />
+                      )}
+                    </div>
                   ) : (
                     <img
                       src={selectedItem.previewUrl}
