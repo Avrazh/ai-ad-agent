@@ -134,10 +134,11 @@ async function migrate(): Promise<void> {
     `CREATE TABLE IF NOT EXISTS persona_headlines (
   image_id   TEXT NOT NULL,
   persona_id TEXT NOT NULL,
+  tone       TEXT NOT NULL,
   headline   TEXT NOT NULL,
   language   TEXT NOT NULL DEFAULT 'en',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  PRIMARY KEY (image_id, persona_id, language),
+  PRIMARY KEY (image_id, persona_id, tone, language),
   FOREIGN KEY (image_id)   REFERENCES images(id),
   FOREIGN KEY (persona_id) REFERENCES personas(id)
 )`,
@@ -170,6 +171,29 @@ async function migrate(): Promise<void> {
     );
   } catch {
     // Column already exists — ignore
+  }
+
+  // Migrate persona_headlines to include tone column (v2 schema)
+  try {
+    await client.execute(`SELECT tone FROM persona_headlines LIMIT 1`);
+  } catch {
+    // tone column missing — drop and recreate with correct schema
+    try {
+      await client.execute(`DROP TABLE IF EXISTS persona_headlines`);
+      await client.execute(`CREATE TABLE persona_headlines (
+  image_id   TEXT NOT NULL,
+  persona_id TEXT NOT NULL,
+  tone       TEXT NOT NULL,
+  headline   TEXT NOT NULL,
+  language   TEXT NOT NULL DEFAULT 'en',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (image_id, persona_id, tone, language),
+  FOREIGN KEY (image_id)   REFERENCES images(id),
+  FOREIGN KEY (persona_id) REFERENCES personas(id)
+)`);
+    } catch {
+      // ignore
+    }
   }
 
   // Seed default saved AI style if table is empty
@@ -248,15 +272,15 @@ export async function upsertImageTags(imageId: string, tags: Record<string, stri
 
 // ── Persona Headlines queries ───────────────────────────────
 export async function upsertPersonaHeadlines(
-  rows: { imageId: string; personaId: string; headline: string; language: string }[]
+  rows: { imageId: string; personaId: string; tone: string; headline: string; language: string }[]
 ): Promise<void> {
   await ensureMigrated();
   const client = getClient();
   for (const r of rows) {
     await client.execute({
-      sql: `INSERT OR REPLACE INTO persona_headlines (image_id, persona_id, headline, language)
-            VALUES (?, ?, ?, ?)`,
-      args: [r.imageId, r.personaId, r.headline, r.language],
+      sql: `INSERT OR REPLACE INTO persona_headlines (image_id, persona_id, tone, headline, language)
+            VALUES (?, ?, ?, ?, ?)`,
+      args: [r.imageId, r.personaId, r.tone, r.headline, r.language],
     });
   }
 }
@@ -264,16 +288,19 @@ export async function upsertPersonaHeadlines(
 export async function getPersonaHeadlines(
   imageId: string,
   language = "en"
-): Promise<Record<string, string>> {
+): Promise<Record<string, Record<string, string>>> {
   await ensureMigrated();
   const client = getClient();
   const result = await client.execute({
-    sql: `SELECT persona_id, headline FROM persona_headlines WHERE image_id = ? AND language = ?`,
+    sql: `SELECT persona_id, tone, headline FROM persona_headlines WHERE image_id = ? AND language = ?`,
     args: [imageId, language],
   });
-  const map: Record<string, string> = {};
+  const map: Record<string, Record<string, string>> = {};
   for (const row of result.rows) {
-    map[row.persona_id as string] = row.headline as string;
+    const pid = row.persona_id as string;
+    const tone = row.tone as string;
+    if (!map[pid]) map[pid] = {};
+    map[pid][tone] = row.headline as string;
   }
   return map;
 }
