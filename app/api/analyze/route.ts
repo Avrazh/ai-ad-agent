@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { analyzeSafeZones } from "@/lib/ai/analyze";
 import { generateCopyPool } from "@/lib/ai/copy";
 import { extractImageTags } from "@/lib/ai/tags";
+import { generatePersonaHeadlines } from "@/lib/ai/personaHeadlines";
 import {
   getImage,
   insertImage,
@@ -10,6 +11,8 @@ import {
   getCopyPool,
   upsertCopyPool,
   upsertImageTags,
+  hasPersonaHeadlines,
+  upsertPersonaHeadlines,
 } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -61,6 +64,18 @@ export async function POST(req: NextRequest) {
     if (!freshImage?.tags) {
       const tags = await extractImageTags(imageId);
       await upsertImageTags(imageId, tags);
+    }
+
+    // Persona headlines — one Haiku text call per image, cached forever
+    if (!(await hasPersonaHeadlines(imageId, "en"))) {
+      const generated = await generatePersonaHeadlines(imageId);
+      const rows = Object.entries(generated).map(([personaId, headline]) => ({
+        imageId,
+        personaId,
+        headline,
+        language: "en",
+      }));
+      await upsertPersonaHeadlines(rows);
     }
 
     return NextResponse.json({ ok: true });
