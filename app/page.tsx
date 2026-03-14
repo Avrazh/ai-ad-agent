@@ -692,9 +692,33 @@ export default function Home() {
   // ── Tone-specific headline (from stage bar Tone buttons) ────
   const handleNewHeadlineWithTone = useCallback(
     async (item: QueueItem, angle: string) => {
-      if (!item.result || detailLoading) return;
+      if (!item.result || !item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
+        // If active persona has this tone, use persona headline
+        const activePersonaId = personaByImage[item.id];
+        const activePersona = activePersonaId ? personas.find((p) => p.id === activePersonaId) : undefined;
+        if (activePersona?.tones.includes(angle)) {
+          const res = await fetch(`/api/persona-headlines?imageId=${encodeURIComponent(item.imageId)}`);
+          if (res.ok) {
+            const headlines: Record<string, Record<string, string>> = await res.json();
+            const headline = headlines[activePersonaId]?.[angle];
+            if (headline) {
+              const regenRes = await fetch("/api/regenerate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ resultId: item.result.id, mode: "headline", angle: "own", customHeadline: headline }),
+              });
+              if (regenRes.ok) {
+                const data = await regenRes.json();
+                updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+                setToneByImage(prev => ({ ...prev, [item.id]: angle }));
+                return;
+              }
+            }
+          }
+        }
+        // Fall back to copy pool
         const res = await fetch("/api/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -705,8 +729,7 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
-              attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
         setToneByImage(prev => ({ ...prev, [item.id]: angle }));
       } catch (err) {
         console.error("Tone headline error:", err);
@@ -714,7 +737,7 @@ export default function Home() {
         setDetailLoading(false);
       }
     },
-    [detailLoading, updateItem]
+    [detailLoading, updateItem, personaByImage, personas]
   );
 
   // ── Persona headline ─────────────────────────────────────
@@ -723,10 +746,13 @@ export default function Home() {
       if (!item.result || !item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
+        const persona = personas.find((p) => p.id === personaId);
+        const firstTone = persona?.tones[0] ?? "";
+
         const res = await fetch(`/api/persona-headlines?imageId=${encodeURIComponent(item.imageId)}`);
         if (!res.ok) throw new Error("Could not fetch persona headlines");
-        const headlines: Record<string, string> = await res.json();
-        const headline = headlines[personaId];
+        const headlines: Record<string, Record<string, string>> = await res.json();
+        const headline = headlines[personaId]?.[firstTone] ?? Object.values(headlines[personaId] ?? {})[0];
         if (!headline) return;
 
         const regenRes = await fetch("/api/regenerate", {
@@ -752,13 +778,14 @@ export default function Home() {
           },
           approved: false,
         });
+        if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
       } catch (err) {
         console.error("Persona headline error:", err);
       } finally {
         setDetailLoading(false);
       }
     },
-    [detailLoading, updateItem]
+    [detailLoading, updateItem, personas]
   );
 
   // ── Own headline (user-typed) ─────────────────────────────
