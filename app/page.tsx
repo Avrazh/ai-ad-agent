@@ -138,12 +138,12 @@ interface Persona {
 }
 
 const SEGMENT_LABELS: Record<string, string> = {
-  seg_trend: "Trendy",
-  seg_busy:  "Busy",
-  seg_occ:   "Occasion",
-  seg_bud:   "Budget",
-  seg_nat:   "Natural",
-  seg_new:   "New",
+  seg_trend:    "Trendy",
+  seg_busy:     "Busy",
+  seg_occasion: "Occasion",
+  seg_budget:   "Budget",
+  seg_natural:  "Natural",
+  seg_new:      "New",
 };
 
 let _itemCounter = 0;
