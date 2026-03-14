@@ -717,6 +717,50 @@ export default function Home() {
     [detailLoading, updateItem]
   );
 
+  // ── Persona headline ─────────────────────────────────────
+  const handlePersonaHeadline = useCallback(
+    async (item: QueueItem, personaId: string) => {
+      if (!item.result || !item.imageId || detailLoading) return;
+      setDetailLoading(true);
+      try {
+        const res = await fetch(`/api/persona-headlines?imageId=${encodeURIComponent(item.imageId)}`);
+        if (!res.ok) throw new Error("Could not fetch persona headlines");
+        const headlines: Record<string, string> = await res.json();
+        const headline = headlines[personaId];
+        if (!headline) return;
+
+        const regenRes = await fetch("/api/regenerate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resultId: item.result.id,
+            mode: "headline",
+            angle: "own",
+            customHeadline: headline,
+          }),
+        });
+        if (!regenRes.ok) {
+          const d = await regenRes.json();
+          throw new Error(d.error || "Regeneration failed");
+        }
+        const data = await regenRes.json();
+        updateItem(item.id, {
+          result: {
+            ...data.result,
+            subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
+            attribution: data.result.attribution ?? item.result?.attribution,
+          },
+          approved: false,
+        });
+      } catch (err) {
+        console.error("Persona headline error:", err);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [detailLoading, updateItem]
+  );
+
   // ── Own headline (user-typed) ─────────────────────────────
   const handleOwnHeadline = useCallback(
     async (item: QueueItem, text: string) => {
@@ -1251,7 +1295,7 @@ export default function Home() {
                       const persona = personas.find((p) => p.id === e.target.value);
                       if (!persona || !selectedItem || !selectedItemId) return;
                       setPersonaByImage((prev) => ({ ...prev, [selectedItemId]: persona.id }));
-                      handleNewHeadlineWithTone(selectedItem, persona.tones[0]);
+                      handlePersonaHeadline(selectedItem, persona.id);
                     }}
                     className="w-52 rounded-md px-2 py-1.5 text-sm bg-[#0d1117] border border-white/[0.08] text-gray-200 disabled:opacity-30 focus:outline-none focus:border-white/30"
                   >
