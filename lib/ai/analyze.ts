@@ -59,15 +59,15 @@ export async function analyzeSafeZones(imageId: string): Promise<SafeZones> {
             },
             {
               type: "text",
-              text: `This is a product image for SWITCH NAILS, a press-on nail brand. The nails on the fingertips are the hero product — they must never be covered by text.
+              text: `This is a product image for SWITCH NAILS, a press-on nail brand. The hand, fingers, and nails are the hero subject — they must never be covered by text.
 
 Analyze the image and return a JSON object (no markdown, no explanation, just raw JSON) with:
 
-1. "avoidRegions": 1–2 normalized rects (0-1) that tightly cover the NAILS and fingertips (not the full hand/wrist unless necessary). The nails are the most important area to protect — draw the rect(s) snugly around where the painted nails appear, not loosely around the whole arm.
-2. "zones": exactly 3 objects, each with "id" ("A", "B", or "C") and "rect" (normalized 0-1). Safe areas for text that do NOT overlap the nails or fingers:
-   - A: top-left area (clear of nails)
-   - B: bottom strip (below the nails, or a clear strip at the bottom)
-   - C: top-right area (clear of nails)
+1. "avoidRegions": 1–2 normalized rects (0-1) that generously cover the ENTIRE hand, fingers, and nails — err on the side of covering too much rather than missing any part of the hand. Include the wrist if visible.
+2. "zones": exactly 3 objects, each with "id" ("A", "B", or "C") and "rect" (normalized 0-1). Safe areas for text that do NOT overlap the hand or nails:
+   - A: top-left area (clear of hand/nails)
+   - B: bottom strip (below the hand/nails, or a clear strip at the bottom)
+   - C: top-right area (clear of hand/nails)
 
 Each rect: { "x": number, "y": number, "w": number, "h": number }
 All values between 0 and 1. x+w ≤ 1, y+h ≤ 1.
