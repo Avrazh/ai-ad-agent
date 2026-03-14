@@ -49,10 +49,17 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   const cardY     = Math.round(h * 0.2005);   // ~385px at 1920h
   const cardW     = Math.round(w * 0.8148);   // ~880px at 1080w
   const maxCardH  = Math.round(h * 0.7995) - cardY; // zone height ~1150px
-  // Place card at top unless nails start in the upper 40% of the image — then push to bottom
-  const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
-  const useBottom = avoidTopY < 0.4;
-  const cardPos = useBottom ? `bottom:${h - (cardY + maxCardH)}px` : `top:${cardY}px`;
+  // Card position: use explicit override if set, otherwise auto top/bottom from avoidRegion
+  const override = spec.headlineYOverride;
+  let cardPos: string;
+  if (override !== undefined) {
+    const yPx = Math.round(h * Math.max(0.2005, Math.min(0.7995, override)));
+    cardPos = `top:${yPx}px`;
+  } else {
+    const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
+    const useBottom = avoidTopY < 0.4;
+    cardPos = useBottom ? `bottom:${h - (cardY + maxCardH)}px` : `top:${cardY}px`;
+  }
 
   return `
 <div style="width:${w}px;height:${h}px;position:relative;overflow:hidden;">

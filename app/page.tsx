@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import Link from "next/link";
+import { HeadlineDragOverlay } from "@/app/components/HeadlineDragOverlay";
 
 type RenderResultItem = {
   id: string;
@@ -35,6 +36,7 @@ type SurpriseSpec = {
   headlineScale: "small" | "medium" | "large" | "huge";
   accent: "line" | "bar" | "dot" | "circle" | "none";
   preferredHeadlineLength?: "short" | "medium" | "long";
+  headlineYOverride?: number;
   en: { headline: string; subtext: string };
   de: { headline: string; subtext: string };
 };
@@ -204,6 +206,7 @@ export default function Home() {
 
   const usedStyleIdsRef = useRef<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const adImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const refFileInputRef = useRef<HTMLInputElement>(null);
   // Mirror queue + selectedItemId in refs so callbacks can read latest values
@@ -723,7 +726,7 @@ export default function Home() {
     [updateItem]
   );
 
-  // ── Download ────────────────────────────────────────────
+    // ── Download ────────────────────────────────────────────
   const handleDownload = useCallback(async (pngUrl: string, id: string) => {
     try {
       const res = await fetch(pngUrl);
@@ -797,6 +800,36 @@ export default function Home() {
       : null;
 
   const isSVGSurprise = selectedItem?.result?.templateId === "ai_surprise_svg";
+
+  const isHeadlineDraggable =
+    !!selectedItem?.result &&
+    (selectedItem.usedSurpriseSpec?.layout === "clean_headline" ||
+     selectedItem.result.templateId === "star_review");
+
+  const initialHeadlineY = selectedItem?.result
+    ? (selectedItem.usedSurpriseSpec?.headlineYOverride ?? 0.2005)
+    : 0.2005;
+
+  // ── Reposition headline ───────────────────────────────────
+  const handleReposition = useCallback(async (normalizedY: number) => {
+    if (!selectedItem?.result || detailLoading) return;
+    setDetailLoading(true);
+    try {
+      const res = await fetch("/api/reposition", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY }),
+      });
+      if (!res.ok) throw new Error("Reposition failed");
+      const data = await res.json();
+      updateItem(selectedItem.id, { result: data.result, approved: false });
+    } catch (err) {
+      console.error("[reposition]", err);
+    } finally {
+      setDetailLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItem, detailLoading, updateItem]);
 
   const pillActive =
     "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.12)]";
@@ -1381,11 +1414,22 @@ export default function Home() {
                 {/* Ad image — full width, fills all remaining space */}
                 <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
                   {selectedItem.result ? (
-                    <img
-                      src={selectedItem.result.pngUrl}
-                      alt="Generated ad"
-                      className={"max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl transition-opacity duration-200 " + (detailLoading ? "opacity-30" : "opacity-100")}
-                    />
+                    <div className="relative inline-flex">
+                      <img
+                        ref={adImgRef}
+                        src={selectedItem.result.pngUrl}
+                        alt="Generated ad"
+                        className={"max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl transition-opacity duration-200 " + (detailLoading ? "opacity-30" : "opacity-100")}
+                      />
+                      {isHeadlineDraggable && (
+                        <HeadlineDragOverlay
+                          imgRef={adImgRef}
+                          initialY={initialHeadlineY}
+                          onApply={handleReposition}
+                          disabled={detailLoading}
+                        />
+                      )}
+                    </div>
                   ) : (
                     <img
                       src={selectedItem.previewUrl}

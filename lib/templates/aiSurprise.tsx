@@ -197,10 +197,17 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     const TEXT_Y      = Math.round(h * 0.2005);   // ~385px at 1920h
     const TEXT_MAX_Y  = Math.round(h * 0.7995);   // ~1535px at 1920h
     const TEXT_ZONE_H = TEXT_MAX_Y - TEXT_Y;
-    // Place headline at top unless nails start in the upper 40% of the image — then push to bottom
-    const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
-    const useBottom = avoidTopY < 0.4;
-    const textPos = useBottom ? `bottom:${h - TEXT_MAX_Y}px` : `top:${TEXT_Y}px`;
+    // Headline position: use explicit override if set, otherwise auto top/bottom from avoidRegion
+    const override = spec.surpriseSpec?.headlineYOverride;
+    let textPos: string;
+    if (override !== undefined) {
+      const yPx = Math.round(h * Math.max(0.2005, Math.min(0.7995, override)));
+      textPos = `top:${yPx}px`;
+    } else {
+      const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
+      const useBottom = avoidTopY < 0.4;
+      textPos = useBottom ? `bottom:${h - TEXT_MAX_Y}px` : `top:${TEXT_Y}px`;
+    }
     const hSize  = clamp(Math.round(TEXT_W * 0.12), 48, 130);
     const sSize  = clamp(Math.round(hSize * 0.28), 13, 28);
     // Smart crop: center on subject so hands/face stay in frame

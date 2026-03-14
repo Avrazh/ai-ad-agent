@@ -146,6 +146,7 @@ export async function POST(req: NextRequest) {
         brandColor: showBrand !== undefined
           ? (showBrand ? (await sampleBrandZoneBrightness(oldSpec.imageId) <= 128 ? '#FFFFFF' : '#1a1a1a') : undefined)
           : oldSpec.brandColor,
+        ...(oldSpec.headlineYOverride !== undefined ? { headlineYOverride: oldSpec.headlineYOverride } : {}),
       };
 
       // 6. Store + render + link

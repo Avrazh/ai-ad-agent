@@ -144,6 +144,7 @@ export type AdSpec = {
   surpriseSpec?: SurpriseSpec; // only present on ai_surprise renders
   showBrand?: boolean;         // show brand name overlay
   brandColor?: string;          // auto-detected text color for brand name overlay
+  headlineYOverride?: number;  // 0–1 normalized canvas Y for headline top; used by star_review
 };
 
 // ── AI Style Pool ────────────────────────────────────────────
@@ -226,6 +227,7 @@ export type SurpriseSpec = {
   en: { headline: string; subtext: string };
   de: { headline: string; subtext: string };
   preferredHeadlineLength?: "short" | "medium" | "long"; // for length-aware slot matching
+  headlineYOverride?: number;  // 0–1 normalized canvas Y for headline top; overrides auto top/bottom logic
 };
 
 // ── Render result ───────────────────────────────────────────
