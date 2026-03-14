@@ -130,6 +130,22 @@ const TONES: { angle: string; label: string }[] = [
   { angle: "contrast",     label: "Contrast"   },
 ];
 
+interface Persona {
+  id: string;
+  segmentId: string;
+  name: string;
+  tones: string[];
+}
+
+const SEGMENT_LABELS: Record<string, string> = {
+  seg_trend: "Trendy",
+  seg_busy:  "Busy",
+  seg_occ:   "Occasion",
+  seg_bud:   "Budget",
+  seg_nat:   "Natural",
+  seg_new:   "New",
+};
+
 let _itemCounter = 0;
 function newItemId() {
   return `qi-${++_itemCounter}`;
@@ -212,6 +228,8 @@ export default function Home() {
   const [surprisePanelOpen, setSurprisePanelOpen] = useState(false);
   const [ownHeadlineOpen, setOwnHeadlineOpen] = useState(false);
   const [ownHeadlineInput, setOwnHeadlineInput] = useState("");
+  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [personaByImage, setPersonaByImage] = useState<Record<string, string>>({});
   const [toneByImage, setToneByImage] = useState<Record<string, string>>({});
 
   const usedStyleIdsRef = useRef<string[]>([]);
@@ -238,6 +256,13 @@ export default function Home() {
   // Uses selectedItemIdRef (not state) to avoid stale closure — selectedItemId is
   // intentionally omitted from deps, but the ref always holds the latest value.
   const statusKey = queue.map((i) => i.status).join(",");
+  useEffect(() => {
+    fetch("/api/personas")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setPersonas(data); })
+      .catch(() => { /* leave personas as [] — select stays disabled */ });
+  }, []);
+
   useEffect(() => {
     const currentSelection = selectedItemIdRef.current;
     setQueue((prev) => {
@@ -813,6 +838,13 @@ export default function Home() {
       : null;
 
   const isSVGSurprise = selectedItem?.result?.templateId === "ai_surprise_svg";
+
+  const activePersona = personas.find(
+    (p) => p.id === (personaByImage[selectedItemId ?? ""] ?? personas[0]?.id)
+  );
+  const activeTones = activePersona
+    ? TONES.filter((t) => activePersona.tones.includes(t.angle))
+    : TONES;
 
   const isCleanHeadline =
     !!selectedItem?.result &&
