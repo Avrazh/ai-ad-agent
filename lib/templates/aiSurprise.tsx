@@ -197,6 +197,12 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     const TEXT_Y      = Math.round(h * 0.2005);   // ~385px at 1920h
     const TEXT_MAX_Y  = Math.round(h * 0.7995);   // ~1535px at 1920h
     const TEXT_ZONE_H = TEXT_MAX_Y - TEXT_Y;
+    // Place headline at top unless nails occupy the top half — then push to bottom
+    const avoidCY = safeZones?.avoidRegions?.[0]
+      ? safeZones.avoidRegions[0].y + safeZones.avoidRegions[0].h / 2
+      : 1;
+    const useBottom = avoidCY < 0.5;
+    const textPos = useBottom ? `bottom:${h - TEXT_MAX_Y}px` : `top:${TEXT_Y}px`;
     const hSize  = clamp(Math.round(TEXT_W * 0.12), 48, 130);
     const sSize  = clamp(Math.round(hSize * 0.28), 13, 28);
     // Smart crop: center on subject so hands/face stay in frame
@@ -210,7 +216,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       : "";
     return `<div style="width:${w}px;height:${h}px;display:flex;position:relative;">
       <img src="${imageBase64}" style="position:absolute;width:${w}px;height:${h}px;object-fit:cover;object-position:${subjectPos};opacity:${imageOpacity};" />
-      <div style="position:absolute;left:${TEXT_X}px;top:${TEXT_Y}px;width:${TEXT_W}px;max-height:${TEXT_ZONE_H}px;overflow:hidden;display:flex;flex-direction:column;align-items:${alignItems};">
+      <div style="position:absolute;left:${TEXT_X}px;${textPos};width:${TEXT_W}px;max-height:${TEXT_ZONE_H}px;overflow:hidden;display:flex;flex-direction:column;align-items:${alignItems};">
         ${headlineHTML(hSize, TEXT_W)}
         ${subtextHTML(sSize)}
       </div>
