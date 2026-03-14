@@ -1241,11 +1241,41 @@ export default function Home() {
                   </div>
                 </div>
 
+                {/* Stage: Persona */}
+                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Persona</span>
+                  <select
+                    disabled={isSVGSurprise || detailLoading || personas.length === 0 || !selectedItem?.result}
+                    value={personaByImage[selectedItemId ?? ""] ?? personas[0]?.id ?? ""}
+                    onChange={(e) => {
+                      const persona = personas.find((p) => p.id === e.target.value);
+                      if (!persona || !selectedItem || !selectedItemId) return;
+                      setPersonaByImage((prev) => ({ ...prev, [selectedItemId]: persona.id }));
+                      handleNewHeadlineWithTone(selectedItem, persona.tones[0]);
+                    }}
+                    className="w-52 rounded-md px-2 py-1.5 text-sm bg-[#0d1117] border border-white/[0.08] text-gray-200 disabled:opacity-30 focus:outline-none focus:border-white/30"
+                  >
+                    {personas.length === 0 ? (
+                      <option disabled value="">Loading…</option>
+                    ) : (
+                      Object.entries(SEGMENT_LABELS).map(([segId, segLabel]) => (
+                        <optgroup key={segId} label={segLabel}>
+                          {personas
+                            .filter((p) => p.segmentId === segId)
+                            .map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </optgroup>
+                      ))
+                    )}
+                  </select>
+                </div>
+
                 {/* Stage: Headline Tone — disabled (not hidden) for final SVG surprise */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Headline Tone</span>
                   <div className="flex items-center gap-1.5">
-                    {TONES.map(({ angle, label }) => (
+                    {activeTones.map(({ angle, label }) => (
                       <button
                         key={angle}
                         onClick={() => selectedItem.result && handleNewHeadlineWithTone(selectedItem, angle)}
