@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAllImages, getCopyPool } from "@/lib/db";
+import { getAllImages, getCopyPool, getPersonaHeadlines, getAllPersonas } from "@/lib/db";
 import type { CopyPool, CopySlot } from "@/lib/types";
 
 const ANGLE_COLOR: Record<string, string> = {
@@ -36,6 +36,7 @@ export async function GET() {
   const images = await getAllImages();
   const cards: string[] = [];
 
+  const allPersonas = await getAllPersonas();
   for (const img of images) {
     const raw = await getCopyPool(img.id);
     if (!raw) {
@@ -82,6 +83,32 @@ export async function GET() {
           </div>
         </div>
         ${langSections}
+        ${await (async () => {
+          const ph = await getPersonaHeadlines(img.id, "en");
+          const entries = Object.entries(ph);
+          if (entries.length === 0) return '<p style="color:#6b7280;font-size:12px;margin:12px 0 0">No persona headlines yet</p>';
+          const rows = allPersonas.map(p => {
+            const h = ph[p.id] ?? '<em style="color:#6b7280">missing</em>';
+            return `<tr style="background:#111827">
+              <td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap">${p.id}</td>
+              <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap">${p.name}</td>
+              <td style="padding:5px 10px;color:#f1f5f9;font-size:13px">${h}</td>
+            </tr>`;
+          }).join("");
+          return `<div style="margin-top:20px">
+            <p style="color:#6b7280;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px">PERSONA HEADLINES (EN) — ${entries.length} / ${allPersonas.length}</p>
+            <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden">
+              <thead>
+                <tr style="background:#0f172a">
+                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">ID</th>
+                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Persona</th>
+                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Headline</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
+        })()}
       </div>`);
   }
 
