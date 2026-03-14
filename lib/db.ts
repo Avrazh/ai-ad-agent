@@ -246,6 +246,51 @@ export async function upsertImageTags(imageId: string, tags: Record<string, stri
   });
 }
 
+// ── Persona Headlines queries ───────────────────────────────
+export async function upsertPersonaHeadlines(
+  rows: { imageId: string; personaId: string; headline: string; language: string }[]
+): Promise<void> {
+  await ensureMigrated();
+  const client = getClient();
+  for (const r of rows) {
+    await client.execute({
+      sql: `INSERT OR REPLACE INTO persona_headlines (image_id, persona_id, headline, language)
+            VALUES (?, ?, ?, ?)`,
+      args: [r.imageId, r.personaId, r.headline, r.language],
+    });
+  }
+}
+
+export async function getPersonaHeadlines(
+  imageId: string,
+  language = "en"
+): Promise<Record<string, string>> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT persona_id, headline FROM persona_headlines WHERE image_id = ? AND language = ?`,
+    args: [imageId, language],
+  });
+  const map: Record<string, string> = {};
+  for (const row of result.rows) {
+    map[row.persona_id as string] = row.headline as string;
+  }
+  return map;
+}
+
+export async function hasPersonaHeadlines(
+  imageId: string,
+  language = "en"
+): Promise<boolean> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute({
+    sql: `SELECT COUNT(*) as n FROM persona_headlines WHERE image_id = ? AND language = ?`,
+    args: [imageId, language],
+  });
+  return ((result.rows[0]?.n as number) ?? 0) > 0;
+}
+
 // ── SafeZones queries ───────────────────────────────────────
 export async function upsertSafeZones(imageId: string, data: string) {
   await ensureMigrated();
