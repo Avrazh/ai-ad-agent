@@ -87,13 +87,20 @@ export async function GET() {
           const ph = await getPersonaHeadlines(img.id, "en");
           const entries = Object.entries(ph);
           if (entries.length === 0) return '<p style="color:#6b7280;font-size:12px;margin:12px 0 0">No persona headlines yet</p>';
-          const rows = allPersonas.map(p => {
-            const h = ph[p.id] ?? '<em style="color:#6b7280">missing</em>';
-            return `<tr style="background:#111827">
+          const rows = allPersonas.flatMap(p => {
+            const toneMap = ph[p.id];
+            if (!toneMap) return [`<tr style="background:#111827">
               <td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap">${p.id}</td>
               <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap">${p.name}</td>
-              <td style="padding:5px 10px;color:#f1f5f9;font-size:13px">${h}</td>
-            </tr>`;
+              <td style="padding:5px 10px;color:#6b7280;font-size:11px"><em>missing</em></td>
+              <td style="padding:5px 10px"></td>
+            </tr>`];
+            return p.tones.map((tone, i) => `<tr style="background:#111827">
+              ${i === 0 ? `<td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${p.tones.length}">${p.id}</td>
+              <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap;vertical-align:top" rowspan="${p.tones.length}">${p.name}</td>` : ''}
+              <td style="padding:5px 10px;font-size:11px;white-space:nowrap"><span style="color:#6366f1;background:#1e1b4b;border-radius:4px;padding:1px 6px">${tone}</span></td>
+              <td style="padding:5px 10px;color:#f1f5f9;font-size:13px">${toneMap[tone] ?? '<em style="color:#6b7280">missing</em>'}</td>
+            </tr>`);
           }).join("");
           return `<div style="margin-top:20px">
             <p style="color:#6b7280;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.08em;margin:0 0 6px">PERSONA HEADLINES (EN) — ${entries.length} / ${allPersonas.length}</p>
@@ -102,6 +109,7 @@ export async function GET() {
                 <tr style="background:#0f172a">
                   <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">ID</th>
                   <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Persona</th>
+                  <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Tone</th>
                   <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Headline</th>
                 </tr>
               </thead>
