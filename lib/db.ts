@@ -131,6 +131,16 @@ async function migrate(): Promise<void> {
   FOREIGN KEY (image_id)   REFERENCES images(id),
   FOREIGN KEY (persona_id) REFERENCES personas(id)
 )`,
+    `CREATE TABLE IF NOT EXISTS persona_headlines (
+  image_id   TEXT NOT NULL,
+  persona_id TEXT NOT NULL,
+  headline   TEXT NOT NULL,
+  language   TEXT NOT NULL DEFAULT 'en',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (image_id, persona_id, language),
+  FOREIGN KEY (image_id)   REFERENCES images(id),
+  FOREIGN KEY (persona_id) REFERENCES personas(id)
+)`,
     ],
     "write"
   );
