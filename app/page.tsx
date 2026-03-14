@@ -1414,7 +1414,7 @@ export default function Home() {
                 {/* Ad image — full width, fills all remaining space */}
                 <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
                   {selectedItem.result ? (
-                    <div className="relative inline-flex">
+                    <div className="relative max-h-full max-w-full flex items-center justify-center">
                       <img
                         ref={adImgRef}
                         src={selectedItem.result.pngUrl}
