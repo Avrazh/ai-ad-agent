@@ -197,11 +197,9 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     const TEXT_Y      = Math.round(h * 0.2005);   // ~385px at 1920h
     const TEXT_MAX_Y  = Math.round(h * 0.7995);   // ~1535px at 1920h
     const TEXT_ZONE_H = TEXT_MAX_Y - TEXT_Y;
-    // Place headline at top unless nails occupy the top half — then push to bottom
-    const avoidCY = safeZones?.avoidRegions?.[0]
-      ? safeZones.avoidRegions[0].y + safeZones.avoidRegions[0].h / 2
-      : 1;
-    const useBottom = avoidCY < 0.5;
+    // Place headline at top unless nails start in the upper 40% of the image — then push to bottom
+    const avoidTopY = safeZones?.avoidRegions?.[0]?.y ?? 1;
+    const useBottom = avoidTopY < 0.4;
     const textPos = useBottom ? `bottom:${h - TEXT_MAX_Y}px` : `top:${TEXT_Y}px`;
     const hSize  = clamp(Math.round(TEXT_W * 0.12), 48, 130);
     const sSize  = clamp(Math.round(hSize * 0.28), 13, 28);
