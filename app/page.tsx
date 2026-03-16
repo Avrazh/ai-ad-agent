@@ -144,6 +144,7 @@ interface Persona {
   segmentId: string;
   name: string;
   tones: string[];
+  isCustom?: boolean;
 }
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -153,6 +154,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   seg_short:  "Short Nails",
   seg_new:    "Newbies",
   seg_luxury: "Luxury",
+  seg_custom: "My Personas",
 };
 
 let _itemCounter = 0;
@@ -237,6 +239,10 @@ export default function Home() {
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const personaBtnRef = useRef<HTMLButtonElement>(null);
+  const [addPersonaOpen, setAddPersonaOpen] = useState(false);
+  const [addPersonaName, setAddPersonaName] = useState("");
+  const [addPersonaDesc, setAddPersonaDesc] = useState("");
+  const [addPersonaLoading, setAddPersonaLoading] = useState(false);
   const [surprisePanelOpen, setSurprisePanelOpen] = useState(false);
   const [ownHeadlineOpen, setOwnHeadlineOpen] = useState(false);
   const [ownHeadlineInput, setOwnHeadlineInput] = useState("");
@@ -1034,6 +1040,37 @@ export default function Home() {
       : 0.1484);
 
   // ── Reposition headline ───────────────────────────────────
+
+  const handleAddPersona = async (name: string, desc: string) => {
+    setAddPersonaLoading(true);
+    try {
+      const res = await fetch("/api/personas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description: desc }),
+      });
+      if (!res.ok) throw new Error("Failed to create persona");
+      const newPersona: Persona = await res.json();
+      setPersonas((prev) => [...prev, newPersona]);
+      // Fetch updated headlines for the new persona
+      const hlRes = await fetch("/api/persona-headlines");
+      if (hlRes.ok) setPersonaHeadlineMap(await hlRes.json());
+      // Auto-select the new persona for the current image
+      if (selectedItemId && selectedItem) {
+        setPersonaByImage((prev) => ({ ...prev, [selectedItemId]: newPersona.id }));
+        handlePersonaHeadline(selectedItem, newPersona.id);
+      }
+      setAddPersonaOpen(false);
+      setAddPersonaName("");
+      setAddPersonaDesc("");
+      setPersonaDropdownOpen(false);
+    } catch (err) {
+      console.error("[add-persona]", err);
+    } finally {
+      setAddPersonaLoading(false);
+    }
+  };
+
   const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number) => {
     if (!selectedItem?.result || detailLoading) return;
     setDetailLoading(true);
@@ -1484,6 +1521,54 @@ export default function Home() {
                             })}
                           </div>
                         ))}
+                      </div>
+                      {/* Add your own persona */}
+                      <div className="mt-3 pt-3 border-t border-white/[0.08]">
+                        {!addPersonaOpen ? (
+                          <button
+                            onClick={() => setAddPersonaOpen(true)}
+                            className="w-full text-left text-xs px-2 py-1 rounded-md text-gray-500 hover:bg-white/[0.06] hover:text-gray-300 transition-colors flex items-center gap-1.5"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M6 2v8M2 6h8"/></svg>
+                            Add your own
+                          </button>
+                        ) : (
+                          <form
+                            onSubmit={(e) => { e.preventDefault(); if (addPersonaName.trim() && addPersonaDesc.trim()) handleAddPersona(addPersonaName, addPersonaDesc); }}
+                            className="flex flex-col gap-2"
+                          >
+                            <input
+                              autoFocus
+                              value={addPersonaName}
+                              onChange={(e) => setAddPersonaName(e.target.value)}
+                              placeholder="Name (e.g. The Minimalist)"
+                              className="rounded-md px-2 py-1 text-xs bg-white/[0.06] border border-white/20 text-white placeholder-gray-500 focus:outline-none focus:border-white/40"
+                            />
+                            <textarea
+                              value={addPersonaDesc}
+                              onChange={(e) => setAddPersonaDesc(e.target.value)}
+                              placeholder="Description — who are they, what do they want?"
+                              rows={2}
+                              className="rounded-md px-2 py-1 text-xs bg-white/[0.06] border border-white/20 text-white placeholder-gray-500 focus:outline-none focus:border-white/40 resize-none"
+                            />
+                            <div className="flex gap-1.5">
+                              <button
+                                type="submit"
+                                disabled={addPersonaLoading || !addPersonaName.trim() || !addPersonaDesc.trim()}
+                                className="flex-1 rounded-md px-2 py-1 text-xs font-medium bg-indigo-600 text-white disabled:opacity-40 hover:bg-indigo-500 transition"
+                              >
+                                {addPersonaLoading ? "Creating…" : "Create"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setAddPersonaOpen(false); setAddPersonaName(""); setAddPersonaDesc(""); }}
+                                className="rounded-md px-2 py-1 text-xs text-gray-500 hover:text-gray-300 transition"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </form>
+                        )}
                       </div>
                     </div>
                     </>

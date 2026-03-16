@@ -98,6 +98,7 @@ async function migrate(): Promise<void> {
         ad_formats       TEXT NOT NULL,
         what_not_to_show TEXT NOT NULL,
         tones            TEXT NOT NULL,
+        is_custom        INTEGER NOT NULL DEFAULT 0,
         created_at       TEXT NOT NULL DEFAULT (datetime('now')),
         FOREIGN KEY (segment_id) REFERENCES segments(id)
       )`,
@@ -195,6 +196,12 @@ async function migrate(): Promise<void> {
   } catch {
     // Ignore — table may not exist yet on very old DBs
   }
+
+
+  // Migrate personas: add is_custom column if missing
+  try {
+    await client.execute(`ALTER TABLE personas ADD COLUMN is_custom INTEGER NOT NULL DEFAULT 0`);
+  } catch { /* already exists */ }
 
   // Global persona headlines — generated once, no image dependency
   await client.execute(`CREATE TABLE IF NOT EXISTS global_persona_headlines (
@@ -696,6 +703,7 @@ export async function getAllPersonas() {
     adFormats: row.ad_formats as string,
     whatNotToShow: row.what_not_to_show as string,
     tones: JSON.parse(row.tones as string) as string[],
+    isCustom: !!(row.is_custom as number),
     createdAt: row.created_at as string,
   }));
 }
@@ -752,6 +760,24 @@ export async function getPersona(id: string) {
     tones: JSON.parse(row.tones as string) as string[],
     createdAt: row.created_at as string,
   };
+}
+
+
+export async function insertCustomPersona(name: string, description: string): Promise<string> {
+  await ensureMigrated();
+  const client = getClient();
+  // Ensure custom segment exists
+  await client.execute({
+    sql: `INSERT OR IGNORE INTO segments (id, name, description, age_focus) VALUES ('seg_custom', 'My Personas', 'User-created custom personas', 'all')`,
+    args: [],
+  });
+  const { newId } = await import('@/lib/ids');
+  const id = newId('per');
+  await client.execute({
+    sql: `INSERT INTO personas (id, segment_id, name, age, motivation, pain_point, objection, nail_preference, trigger_message, creative_angle, visual_world, ad_formats, what_not_to_show, tones, is_custom) VALUES (?, 'seg_custom', ?, 'all ages', ?, '', '', '', ?, ?, '', '', '', ?, 1)`,
+    args: [id, name, description, description, description, JSON.stringify(['aspirational', 'benefit', 'emotional'])],
+  });
+  return id;
 }
 
 // -- Seed segments & personas (idempotent) ---------------------

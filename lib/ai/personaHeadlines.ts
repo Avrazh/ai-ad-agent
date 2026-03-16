@@ -96,3 +96,51 @@ Angle: ${p.creativeAngle}`
     return makeFallback();
   }
 }
+
+/**
+ * Generates headlines for a single persona (used when a custom persona is created).
+ */
+export async function generateHeadlinesForPersona(persona: {
+  id: string;
+  name: string;
+  motivation: string;
+  triggerMessage: string;
+  creativeAngle: string;
+  tones: string[];
+}): Promise<Record<string, string[]>> {
+  const fallback = Object.fromEntries(
+    persona.tones.map((t) => [t, [FALLBACK_HEADLINE, FALLBACK_HEADLINE]])
+  );
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey || process.env.SKIP_AI === 'true') return fallback;
+
+  const prompt = [
+    'You are an expert ad copywriter for SWITCH NAILS (press-on nails brand).',
+    '',
+    'For the persona below, write TWO punchy English headlines (4-8 words) PER TONE listed.',
+    'Headlines must reflect the persona description and the specific tone.',
+    'Rules: no emojis, no generic phrases, specific to press-on nails. Make the two headlines clearly different.',
+    '',
+    'Return ONLY raw JSON: tone -> [headline1, headline2]',
+    '{ "aspirational": ["...", "..."], "benefit": ["...", "..."] }',
+    '',
+    `Persona name: ${persona.name}`,
+    `Description: ${persona.motivation}`,
+    `Tones: ${persona.tones.join(', ')}`,
+  ].join('\n');
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await withRetry(
+      () => client.messages.create({ model: MODEL, max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
+      'custom-persona-headlines'
+    );
+    const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
+    const text = raw.replace(/^```(?:json)?[\s]*/i, '').replace(/[\s]*```[\s]*$/i, '').trim();
+    return JSON.parse(text) as Record<string, string[]>;
+  } catch (err) {
+    console.error('[custom-persona-headlines] Claude call failed - using fallback:', err);
+    return fallback;
+  }
+}
