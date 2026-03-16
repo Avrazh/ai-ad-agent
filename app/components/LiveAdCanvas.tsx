@@ -37,6 +37,9 @@ interface Props {
   onApply: (y: number, fontScale: number) => void;
   onChange?: (y: number, fontScale: number) => void;
   renderOverlay?: (containerW: number) => React.ReactNode;
+  brandName?: string;
+  initialBrandY?: number;
+  initialBrandFontScale?: number;
 }
 
 function resolveFont(f?: string): string {
