@@ -110,6 +110,7 @@ export async function POST(req: NextRequest) {
       ...(oldSpec.cropX !== undefined ? { cropX: oldSpec.cropX } : {}),
       brandColor: oldSpec.brandColor,
       ...(oldSpec.scenePersonaId ? { scenePersonaId: oldSpec.scenePersonaId } : {}),
+      ...(oldSpec.headlineFont ? { headlineFont: oldSpec.headlineFont } : {}),
     };
 
     // 4. Store new AdSpec

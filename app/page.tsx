@@ -110,6 +110,7 @@ type QueueItem = {
   headlineFontScale?: number; // persisted font scale across image switches
   brandNameY?: number;      // persisted brand name Y position across image switches
   brandNameFontScale?: number; // persisted brand name font scale across image switches
+  headlineFont?: string;        // user-selected headline font family
   error?: string;
 };
 
@@ -1040,7 +1041,7 @@ export default function Home() {
       const res = await fetch("/api/reposition", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}) }),
+        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, showBrand, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}), ...(selectedItem.headlineFont ? { headlineFont: selectedItem.headlineFont } : {}) }),
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
@@ -1540,6 +1541,30 @@ export default function Home() {
                   </div>
                 </div>
 
+
+                {/* Stage: Font */}
+                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Font</span>
+                  <div className="flex items-center gap-1.5">
+                    {([
+                      { key: "Playfair Display", label: "Playfair" },
+                      { key: "Montserrat",        label: "Montserrat" },
+                    ] as { key: string; label: string }[]).map(({ key, label }) => {
+                      const active = (selectedItem?.headlineFont ?? "Playfair Display") === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => selectedItemId && updateItem(selectedItemId, { headlineFont: key })}
+                          disabled={isSVGSurprise || !selectedItem?.result}
+                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (active ? pillActive : pillInactive)}
+                          style={{ fontFamily: `'${key}', sans-serif` }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {/* Stage: Crop */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-l-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Crop</span>
@@ -1772,6 +1797,7 @@ export default function Home() {
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                         />
                       ) : isStarReview ? (
                         <LiveAdCanvas
@@ -1789,6 +1815,7 @@ export default function Home() {
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           renderOverlay={(cw) => (
                             <StarCardPreview
                               quote={selectedItem.result!.headlineText ?? ""}
@@ -1812,6 +1839,7 @@ export default function Home() {
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                         />
                       ) : (
                         <img

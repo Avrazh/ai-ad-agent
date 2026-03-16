@@ -40,6 +40,7 @@ interface Props {
   brandName?: string;
   initialBrandY?: number;
   initialBrandFontScale?: number;
+  headlineFont?: string;
 }
 
 function resolveFont(f?: string): string {
@@ -65,6 +66,7 @@ export function LiveAdCanvas({
   brandName,
   initialBrandY = 0.78,
   initialBrandFontScale = 1.0,
+  headlineFont,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(300);
@@ -107,6 +109,22 @@ export function LiveAdCanvas({
   useEffect(() => { setFScale(initialFontScale); fScaleRef.current = initialFontScale; }, [initialFontScale]);
   useEffect(() => { setBrandY(initialBrandY); brandYRef.current = initialBrandY; }, [initialBrandY]);
   useEffect(() => { setBrandFScale(initialBrandFontScale); brandFScaleRef.current = initialBrandFontScale; }, [initialBrandFontScale]);
+  // Inject Google Fonts link for selected headline font and Krona One (brand name)
+  useEffect(() => {
+    const toLoad: { id: string; url: string }[] = [
+      { id: 'gfont-Krona-One', url: 'https://fonts.googleapis.com/css2?family=Krona+One' },
+    ];
+    if (headlineFont === 'Montserrat')
+      toLoad.push({ id: 'gfont-Montserrat', url: 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700' });
+    for (const { id, url } of toLoad) {
+      if (document.getElementById(id)) continue;
+      const link = document.createElement('link');
+      link.id = id;
+      link.rel = 'stylesheet';
+      link.href = url;
+      document.head.appendChild(link);
+    }
+  }, [headlineFont]);
 
   // Sample image pixels behind text block (skipped when renderOverlay handles its own colors) → pick white or dark text
   useEffect(() => {
@@ -141,7 +159,7 @@ export function LiveAdCanvas({
         let lum = 0;
         for (let i = 0; i < data.length; i += 4)
           lum += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-        setAutoTextColor(lum / (data.length / 4) > 0.55 ? "#1a1a1a" : "#ffffff");
+        setAutoTextColor(lum / (data.length / 4) > 0.72 ? "#1a1a1a" : "#ffffff");
       } catch { /* tainted canvas — keep current color */ }
     };
     img.src = imageUrl;
@@ -242,7 +260,7 @@ export function LiveAdCanvas({
 
   const fontSize = containerW * FONT_SIZE_RATIO * fScale;
   const subtextSize = fontSize * 0.28;
-  const fontFamily = resolveFont(spec.font);
+  const fontFamily = headlineFont ? `'${headlineFont}', sans-serif` : resolveFont(spec.font);
   const fontWeight = spec.fontWeight ?? 400;
   const textColor = autoTextColor;
   const letterSpacing = LETTER_SPACING[spec.letterSpacingKey ?? "normal"] ?? "0";
@@ -455,7 +473,7 @@ export function LiveAdCanvas({
             {/* Brand name text */}
             <p style={{
               margin: 0,
-              fontFamily: "var(--font-playfair), serif",
+              fontFamily: "'Krona One', sans-serif",
               fontSize: `${brandFontSize}px`,
               fontWeight: 700,
               color: autoBrandColor,

@@ -66,6 +66,9 @@ const FONT_DEFS: FontDef[] = [
   { family: "Abril Fatface",    weight: 400, file: "AbrilFatface-Regular.woff",   format: "woff" },
   { family: "Bodoni Moda",      weight: 400, file: "BodoniModa-Regular.woff",     format: "woff" },
   { family: "Bodoni Moda",      weight: 700, file: "BodoniModa-Bold.woff",        format: "woff" },
+  { family: "Montserrat",         weight: 400, file: "Montserrat-Regular.woff2",  format: "woff2" },
+  { family: "Montserrat",         weight: 700, file: "Montserrat-Bold.woff2",     format: "woff2" },
+  { family: "Krona One",          weight: 400, file: "KronaOne-Regular.woff2",    format: "woff2" },
 ];
 
 const fontFamilyCache = new Map<string, string>();
@@ -200,8 +203,9 @@ export async function renderAd(
   // Wrap in a full HTML page with embedded fonts + reset CSS
   // Only embed fonts actually used: Inter (always) + Playfair Display (brand name) + theme headline + Bebas Neue (ai_surprise)
   const t2 = Date.now();
-  const neededFonts = new Set(["Inter", "Playfair Display", spec.theme.fontHeadline]);
+  const neededFonts = new Set(["Inter", "Playfair Display", "Krona One", spec.theme.fontHeadline]);
   if (spec.templateId === "ai_surprise") neededFonts.add("Bebas Neue");
+  if (spec.headlineFont) neededFonts.add(spec.headlineFont);
   const fonts = await getFontCSSForFamilies([...neededFonts]);
   lap("font-css", t2);
   const page_html = `<!DOCTYPE html>

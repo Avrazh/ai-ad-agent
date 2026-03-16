@@ -13,12 +13,14 @@ import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
 
 export async function POST(req: NextRequest) {
   try {
-    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale } = await req.json() as {
+    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand } = await req.json() as {
       resultId: string;
       headlineYOverride: number;
       headlineFontScale?: number;
       brandNameY?: number;
       brandNameFontScale?: number;
+      headlineFont?: string;
+      showBrand?: boolean;
     };
     if (!resultId || headlineYOverride === undefined) {
       return NextResponse.json({ error: "resultId and headlineYOverride required" }, { status: 400 });
@@ -38,6 +40,9 @@ export async function POST(req: NextRequest) {
       headlineYOverride,
       ...(brandNameY !== undefined ? { brandNameY } : {}),
       ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}),
+      ...(showBrand !== undefined ? { showBrand } : {}),
+      ...(headlineFont !== undefined ? { headlineFont } : {}),
+      ...(headlineFont === undefined && oldSpec.headlineFont ? { headlineFont: oldSpec.headlineFont } : {}),
       ...(oldSpec.surpriseSpec ? {
         surpriseSpec: {
           ...oldSpec.surpriseSpec,

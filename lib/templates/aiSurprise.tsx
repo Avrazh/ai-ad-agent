@@ -56,7 +56,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   const bgColor        = s?.bgColor           ?? theme.bg;
   const textColor      = s?.textColor         ?? theme.color;
   const accentColor    = s?.accentColor       ?? textColor;
-  const fontFamily     = resolveFont(s?.font);
+  const fontFamily     = spec.headlineFont ?? resolveFont(s?.font);
   const subtextFamily  = resolveFont(s?.subtextFont ?? "sans");
   const fontWeight     = s?.fontWeight        ?? 700;
   const letterSpacing  = LETTER_SPACING_VAL[s?.letterSpacingKey ?? "normal"] ?? "0";
@@ -216,7 +216,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       ? Math.round(h * spec.brandNameY)
       : Math.round(h * 0.78);
     const brandHTML = spec.showBrand
-      ? `<div style="position:absolute;top:${brandTopPx}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:${brandFontSize}px;font-weight:700;color:${spec.brandColor ?? textColor};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
+      ? `<div style="position:absolute;top:${brandTopPx}px;left:0;width:100%;text-align:center;"><span style="font-family:'Krona One',sans-serif;font-size:${brandFontSize}px;font-weight:400;color:${spec.brandColor ?? textColor};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
       : "";
     return `<div style="width:${w}px;height:${h}px;display:flex;position:relative;">
       <img src="${imageBase64}" style="position:absolute;width:${w}px;height:${h}px;object-fit:fill;opacity:${imageOpacity};" />

@@ -151,6 +151,7 @@ export type AdSpec = {
   scenePersonaId?: string;     // scene image ID for split_scene template
   personaId?: string;          // active persona when the ad was generated
   cropX?: number;               // user-chosen horizontal crop center (0-1); overrides auto-detect
+  headlineFont?: string;        // user-selected headline font family (e.g. "Montserrat", "Playfair Display")
 };
 
 // ── AI Style Pool ────────────────────────────────────────────
