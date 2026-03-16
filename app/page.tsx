@@ -891,13 +891,20 @@ export default function Home() {
 
     // ── Download ────────────────────────────────────────────
   const LAYOUT_SHORT: Record<string, string> = {
+    // ai_surprise layout pill variants (from usedSurpriseSpec.layout)
     clean_headline: "headline",
+    split_right: "splitright",
+    full_overlay: "overlay",
+    bottom_bar: "bottombar",
+    frame_overlay: "frameoverlay",
+    postcard: "postcard",
+    vertical_text: "vertical",
+    // named templates
     star_review: "stars",
     split_scene: "split",
     quote_card: "quote",
     luxury_editorial_left: "editorial",
     luxury_soft_frame_open: "frame",
-    ai_surprise: "ai",
     ai_surprise_svg: "ai",
   };
 
@@ -905,7 +912,11 @@ export default function Home() {
     const lang = (item.result?.lang ?? item.lang ?? selectedLang).toUpperCase();
     const templateId = item.result?.templateId ?? "";
     const isAI = templateId === "ai_surprise_svg";
-    const layoutShort = LAYOUT_SHORT[templateId] ?? templateId.replace(/_/g, "");
+    // For ai_surprise layout pills, use the actual layout name from the spec
+    const layoutKey = (templateId === "ai_surprise" && item.usedSurpriseSpec?.layout)
+      ? item.usedSurpriseSpec.layout
+      : templateId;
+    const layoutShort = LAYOUT_SHORT[layoutKey] ?? layoutKey.replace(/_/g, "");
     if (isAI) return `${lang}_${layoutShort}`;
     const personaId = personaByImage[item.id] ?? personas[0]?.id;
     const personaName = personas.find(p => p.id === personaId)?.name ?? "";
