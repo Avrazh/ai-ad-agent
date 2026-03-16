@@ -273,7 +273,7 @@ export async function POST(req: NextRequest) {
     const results = [];
     for (const spec of specs) {
       await insertAdSpec(spec.id, spec.imageId, JSON.stringify(spec));
-      const { pngUrl, renderResultId } = await renderAd(spec);
+      const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(spec);
       await insertRenderResult({
         id: renderResultId,
         adSpecId: spec.id,
@@ -299,6 +299,7 @@ export async function POST(req: NextRequest) {
         headlineFontScale: spec.surpriseSpec?.headlineFontScale ?? 1.0,
         headlineYOverride: spec.headlineYOverride,
         attribution: spec.copy.attribution,
+        subjectPos: cssSubjectPos,
       });
     }
 
