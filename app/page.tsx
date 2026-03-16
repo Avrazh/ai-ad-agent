@@ -712,6 +712,9 @@ export default function Home() {
         if (activePersona?.tones.includes(angle)) {
           const headline = personaHeadlineMap[activePersonaId]?.[angle];
           if (headline) {
+            // Optimistic update — show headline immediately
+            updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false });
+            setToneByImage(prev => ({ ...prev, [item.id]: angle }));
             const regenRes = await fetch("/api/regenerate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -720,9 +723,8 @@ export default function Home() {
             if (regenRes.ok) {
               const data = await regenRes.json();
               updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
-              setToneByImage(prev => ({ ...prev, [item.id]: angle }));
-              return;
             }
+            return;
           }
         }
         // Fall back to copy pool
@@ -759,6 +761,10 @@ export default function Home() {
         const headline = personaHeadlineMap[personaId]?.[firstTone] ?? Object.values(personaHeadlineMap[personaId] ?? {})[0];
         if (!headline) return;
 
+        // Optimistic update — show headline immediately before API responds
+        updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false });
+        if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
+
         const regenRes = await fetch("/api/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -782,7 +788,6 @@ export default function Home() {
           },
           approved: false,
         });
-        if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
       } catch (err) {
         console.error("Persona headline error:", err);
       } finally {
@@ -1494,20 +1499,23 @@ export default function Home() {
                         </button>
                       </form>
                     )}
-                    {/* Reposition button — moved into tone bar */}
-                    <div className="ml-1 pl-3 border-l border-white/[0.08]">
-                      <button
-                        onClick={() => setCropEditorItemId(cropEditorItemId === selectedItemId ? null : (selectedItemId ?? null))}
-                        disabled={!selectedItem?.imageId || detailLoading}
-                        className={"flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (cropEditorItemId === selectedItemId ? pillActive : pillInactive)}
-                        title="Reposition crop"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 21H3v-4M21 3h-4M3 7V3h4M17 3h4v4M3 17v4h4M21 17v4h-4" />
-                        </svg>
-                        <span>Reposition</span>
-                      </button>
-                    </div>
+                  </div>
+                </div>
+
+                {/* Stage: Crop */}
+                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-l-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Crop</span>
+                  <div className="flex items-center">
+                    <button
+                      onClick={() => setCropEditorItemId(cropEditorItemId === selectedItemId ? null : (selectedItemId ?? null))}
+                      disabled={!selectedItem?.imageId || detailLoading}
+                      className={"flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (cropEditorItemId === selectedItemId ? pillActive : pillInactive)}
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M7 21H3v-4M21 3h-4M3 7V3h4M17 3h4v4M3 17v4h4M21 17v4h-4" />
+                      </svg>
+                      <span>Reposition</span>
+                    </button>
                   </div>
                 </div>
 
