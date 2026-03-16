@@ -890,7 +890,30 @@ export default function Home() {
   );
 
     // ── Download ────────────────────────────────────────────
-  const handleDownload = useCallback(async (pngUrl: string, id: string) => {
+  const LAYOUT_SHORT: Record<string, string> = {
+    clean_headline: "headline",
+    star_review: "stars",
+    split_scene: "split",
+    quote_card: "quote",
+    luxury_editorial_left: "editorial",
+    luxury_soft_frame_open: "frame",
+    ai_surprise: "ai",
+    ai_surprise_svg: "ai",
+  };
+
+  function buildFilename(item: QueueItem): string {
+    const lang = (item.result?.lang ?? item.lang ?? selectedLang).toUpperCase();
+    const templateId = item.result?.templateId ?? "";
+    const isAI = templateId === "ai_surprise_svg";
+    const layoutShort = LAYOUT_SHORT[templateId] ?? templateId.replace(/_/g, "");
+    if (isAI) return `${lang}_${layoutShort}`;
+    const personaId = personaByImage[item.id] ?? personas[0]?.id;
+    const personaName = personas.find(p => p.id === personaId)?.name ?? "";
+    const personaSlug = personaName.toLowerCase().replace(/\s+/g, "");
+    return personaSlug ? `${lang}_${personaSlug}_${layoutShort}` : `${lang}_${layoutShort}`;
+  }
+
+  const handleDownload = useCallback(async (pngUrl: string, item: QueueItem) => {
     try {
       const res = await fetch(pngUrl);
       if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -898,7 +921,8 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `ad-${id}.png`;
+      const ext = pngUrl.endsWith(".jpg") || pngUrl.includes(".jpg?") ? "jpg" : "png";
+      a.download = `${buildFilename(item)}.${ext}`;
       // Must be in the DOM for Firefox/Safari to trigger the download
       document.body.appendChild(a);
       a.click();
@@ -908,14 +932,14 @@ export default function Home() {
     } catch (err) {
       console.error("Download failed:", err);
     }
-  }, []);
+  }, [personas, personaByImage, selectedLang]);
 
   const handleDownloadAll = useCallback(async () => {
     const approved = queue.filter((item) => item.approved && item.result);
     for (let i = 0; i < approved.length; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 200));
       const item = approved[i];
-      if (item.result) handleDownload(item.result.pngUrl, item.result.id);
+      if (item.result) handleDownload(item.result.pngUrl, item);
     }
   }, [queue, handleDownload]);
 
@@ -1852,7 +1876,7 @@ export default function Home() {
                       {selectedItem.approved ? "Approved" : "Approve"}
                     </button>
                     <button
-                      onClick={() => handleDownload(selectedItem.result!.pngUrl, selectedItem.result!.id)}
+                      onClick={() => handleDownload(selectedItem.result!.pngUrl, selectedItem)}
                       className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-3 text-sm text-gray-400 hover:bg-white/[0.08] hover:text-white transition flex items-center justify-center gap-2"
                     >
                       <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
