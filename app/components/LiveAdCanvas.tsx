@@ -35,7 +35,7 @@ interface Props {
   disabled?: boolean;
   disableResize?: boolean;
   onApply: (y: number, fontScale: number) => void;
-  onChange?: (y: number, fontScale: number) => void;
+  onChange?: (y: number, fontScale: number, brandY?: number, brandFScale?: number) => void;
   renderOverlay?: (containerW: number) => React.ReactNode;
   brandName?: string;
   initialBrandY?: number;
@@ -77,9 +77,11 @@ export function LiveAdCanvas({
   const dragRef = useRef({ mouseY: 0, startY: 0 });
   const scaleRef = useRef({ mouseY: 0, startScale: 1.0 });
 
-  // Refs to capture current y/fScale inside event handlers (state is stale in closures)
+  // Refs to capture current y/fScale/brandY/brandFScale inside event handlers (state is stale in closures)
   const yRef = useRef(initialY);
   const fScaleRef = useRef(initialFontScale);
+  const brandYRef = useRef(initialBrandY);
+  const brandFScaleRef = useRef(initialBrandFontScale);
 
   const hasContent = !!(headline || renderOverlay);
 
@@ -103,8 +105,8 @@ export function LiveAdCanvas({
   // Reset when a different image is selected
   useEffect(() => { setY(initialY); yRef.current = initialY; }, [initialY]);
   useEffect(() => { setFScale(initialFontScale); fScaleRef.current = initialFontScale; }, [initialFontScale]);
-  useEffect(() => { setBrandY(initialBrandY); }, [initialBrandY]);
-  useEffect(() => { setBrandFScale(initialBrandFontScale); }, [initialBrandFontScale]);
+  useEffect(() => { setBrandY(initialBrandY); brandYRef.current = initialBrandY; }, [initialBrandY]);
+  useEffect(() => { setBrandFScale(initialBrandFontScale); brandFScaleRef.current = initialBrandFontScale; }, [initialBrandFontScale]);
 
   // Sample image pixels behind text block (skipped when renderOverlay handles its own colors) → pick white or dark text
   useEffect(() => {
@@ -191,12 +193,20 @@ export function LiveAdCanvas({
     const onMove = (e: MouseEvent) => {
       if (isBrandDragging) {
         const dy = (e.clientY - brandDragRef.current.mouseY) / containerH;
-        setBrandY(cur => Math.max(ZONE_TOP, Math.min(ZONE_BOTTOM - 0.04, cur + dy)));
+        setBrandY(cur => {
+          const next = Math.max(ZONE_TOP, Math.min(ZONE_BOTTOM - 0.04, cur + dy));
+          brandYRef.current = next;
+          return next;
+        });
         brandDragRef.current.mouseY = e.clientY;
       }
       if (isBrandScaling) {
         const dy = (brandScaleRef.current.mouseY - e.clientY) / containerH;
-        setBrandFScale(cur => Math.max(0.4, Math.min(2.5, cur + dy * 4)));
+        setBrandFScale(cur => {
+          const next = Math.max(0.4, Math.min(2.5, cur + dy * 4));
+          brandFScaleRef.current = next;
+          return next;
+        });
         brandScaleRef.current.mouseY = e.clientY;
       }
       if (isDragging) {
@@ -223,7 +233,7 @@ export function LiveAdCanvas({
       setIsScaling(false);
       setIsBrandDragging(false);
       setIsBrandScaling(false);
-      onChange?.(yRef.current, fScaleRef.current);
+      onChange?.(yRef.current, fScaleRef.current, brandName ? brandYRef.current : undefined, brandName ? brandFScaleRef.current : undefined);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);

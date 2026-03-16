@@ -107,6 +107,8 @@ type QueueItem = {
   defaultHeadline?: string; // pre-fetched headline shown in CropEditor before first render
   headlineY?: number;       // persisted headline Y position across image switches
   headlineFontScale?: number; // persisted font scale across image switches
+  brandNameY?: number;      // persisted brand name Y position across image switches
+  brandNameFontScale?: number; // persisted brand name font scale across image switches
   error?: string;
 };
 
@@ -1765,10 +1767,10 @@ export default function Home() {
                           initialFontScale={selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0}
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale })}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
                           brandName={showBrand ? BRAND_NAME : undefined}
-                          initialBrandY={selectedItem.result?.brandNameY}
-                          initialBrandFontScale={selectedItem.result?.brandNameFontScale}
+                          initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                         />
                       ) : isStarReview ? (
                         <LiveAdCanvas
@@ -1782,10 +1784,10 @@ export default function Home() {
                           disableResize
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale })}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
                           brandName={showBrand ? BRAND_NAME : undefined}
-                          initialBrandY={selectedItem.result?.brandNameY}
-                          initialBrandFontScale={selectedItem.result?.brandNameFontScale}
+                          initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           renderOverlay={(cw) => (
                             <StarCardPreview
                               quote={selectedItem.result!.headlineText ?? ""}
@@ -1805,10 +1807,10 @@ export default function Home() {
                           initialY={initialHeadlineY}
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale })}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
                           brandName={showBrand ? BRAND_NAME : undefined}
-                          initialBrandY={selectedItem.result?.brandNameY}
-                          initialBrandFontScale={selectedItem.result?.brandNameFontScale}
+                          initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                         />
                       ) : (
                         <img
@@ -1872,7 +1874,9 @@ export default function Home() {
                           // Auto-render with current headline position, then approve
                           const y = selectedItem.headlineY ?? initialHeadlineY;
                           const scale = selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0;
-                          const newId = await handleReposition(y, scale);
+                          const bY = selectedItem.brandNameY ?? selectedItem.result.brandNameY;
+                          const bScale = selectedItem.brandNameFontScale ?? selectedItem.result.brandNameFontScale;
+                          const newId = await handleReposition(y, scale, bY, bScale);
                           await handleApprove(selectedItem.id, newId ?? selectedItem.result.id, true);
                         } else {
                           await handleApprove(selectedItem.id, selectedItem.result.id, false);
