@@ -356,7 +356,7 @@ async function sampleZoneBrightness(imageId: string): Promise<number> {
 /**
  * Sample brightness at the brand name zone (bottom of safe zone, y 78-86%).
  */
-export async function sampleBrandZoneBrightness(imageId: string): Promise<number> {
+export async function sampleBrandZoneBrightness(imageId: string, yFraction = 0.78): Promise<number> {
   try {
     const img = await getImage(imageId);
     if (!img) return 255;
@@ -365,9 +365,9 @@ export async function sampleBrandZoneBrightness(imageId: string): Promise<number
     const iw = meta.width ?? 1080;
     const ih = meta.height ?? 1920;
     const left   = Math.round(iw * 0.05);
-    const top    = Math.round(ih * 0.78);
+    const top    = Math.round(ih * Math.max(0, Math.min(0.95, yFraction)));
     const width  = Math.round(iw * 0.90);
-    const height = Math.round(ih * 0.08);
+    const height = Math.round(ih * 0.05);
     const { data } = await sharp(buf)
       .extract({ left, top, width, height })
       .resize(64, 16, { fit: 'fill' })

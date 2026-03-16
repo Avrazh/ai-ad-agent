@@ -26,6 +26,7 @@ type RenderResultItem = {
   attribution?: string;
   brandNameY?: number;
   brandNameFontScale?: number;
+  lang?: string;
 };
 
 type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";

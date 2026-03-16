@@ -9,6 +9,7 @@ import {
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
 import type { AdSpec } from "@/lib/types";
+import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
 
 export async function POST(req: NextRequest) {
   try {
@@ -45,6 +46,12 @@ export async function POST(req: NextRequest) {
         },
       } : {}),
     };
+
+    // Re-sample brand color at the actual dragged Y position
+    if (brandNameY !== undefined && newSpec.showBrand) {
+      const brightness = await sampleBrandZoneBrightness(newSpec.imageId, brandNameY);
+      newSpec.brandColor = brightness <= 128 ? '#FFFFFF' : '#1a1a1a';
+    }
 
     await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
     const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec);
