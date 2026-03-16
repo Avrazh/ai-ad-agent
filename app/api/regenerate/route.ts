@@ -3,21 +3,19 @@
 // If this file ever imports from 'lib/ai/', it's a bug.
 
 import { NextRequest, NextResponse } from "next/server";
-import { pickBestZone } from "@/app/api/generate/route";
 import {
   getRenderResult,
   getAdSpec,
-  getSafeZones,
-  getCopyPool,
+  getGlobalPersonaHeadlines,
   insertAdSpec,
   insertRenderResult,
   markReplaced,
 } from "@/lib/db";
 import "@/lib/templates"; // ensure templates + families registered
 import { getTemplate, pickDifferentStyle } from "@/lib/templates";
-import { renderAd } from "@/lib/render/renderAd";
+import { renderAd, getCachedSubjectPos } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { AdSpec, SafeZones, CopyPool, CopySlot } from "@/lib/types";
+import type { AdSpec } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -48,20 +46,11 @@ export async function POST(req: NextRequest) {
     }
     const oldSpec: AdSpec = JSON.parse(oldSpecRow.data);
 
-    // 2. Load STORED CopyPool + SafeZones (never generate new ones)
-    const safeZonesJson = await getSafeZones(oldSpec.imageId);
-    const copyPoolJson = await getCopyPool(oldSpec.imageId);
-    if (!safeZonesJson || !copyPoolJson) {
-      return NextResponse.json(
-        { error: "No stored AI data found — generate first" },
-        { status: 400 }
-      );
-    }
-    const safeZones: SafeZones = JSON.parse(safeZonesJson);
-    const copyPool: CopyPool = JSON.parse(copyPoolJson);
-
+    // 2. Load persona headlines
     const lang = oldSpec.lang ?? "en";
-    const langSlots = copyPool.slots.filter((s: CopySlot) => s.lang === lang);
+    const personaHls = oldSpec.personaId
+      ? await getGlobalPersonaHeadlines(oldSpec.personaId, lang)
+      : [];
 
     // 3. Build new spec based on mode
     let newTemplateId = oldSpec.templateId;
@@ -70,112 +59,33 @@ export async function POST(req: NextRequest) {
     let newCopy = { ...oldSpec.copy };
 
     if (mode === "style") {
-      // Pick a different style within the same family, keep copy if slot types match
       const newStyle = pickDifferentStyle(oldSpec.familyId, oldSpec.templateId);
       newTemplateId = newStyle.id;
-      newZoneId = pickBestZone(safeZones, newStyle.supportedZones, oldSpec.zoneId);
-
-      // Rebuild copy for the new template's slot types
-      newCopy = {};
+      newZoneId = "A";
       newPrimarySlotId = oldSpec.primarySlotId;
-      let primarySlot: CopySlot | undefined;
-
-      for (let i = 0; i < newStyle.copySlots.length; i++) {
-        const slotType = newStyle.copySlots[i];
-        const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
-
-        if (i === 0) {
-          // Keep same primary slot if its type matches; otherwise pick new one
-          const existing = typeSlots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
-          const slot = existing ?? typeSlots[0];
-          if (slot) {
-            newPrimarySlotId = slot.id;
-            primarySlot = slot;
-            newCopy[slotType] = slot.text;
-            if (slot.attribution) newCopy.attribution = slot.attribution;
-          }
-        } else {
-          // Secondary slots — match primary slot's angle for tonal consistency
-          const targetAngle = primarySlot?.angle;
-          const slot = (targetAngle
-            ? typeSlots.find((s: CopySlot) => s.angle === targetAngle)
-            : null) ?? typeSlots[0];
-          if (slot) {
-            newCopy[slotType] = slot.text;
-            if (slot.attribution) newCopy.attribution = slot.attribution;
-          }
-        }
-      }
+      newCopy = { ...oldSpec.copy };
     }
 
     if (mode === "headline") {
-      // Pick a different primary slot in the same language
       const currentTemplate = getTemplate(oldSpec.templateId);
       const primarySlotType = currentTemplate.copySlots[0] ?? "headline";
-      const langPrimarySlots = langSlots.filter(
-        (s: CopySlot) => s.slotType === primarySlotType
-      );
 
-      // "Your own" headline: user supplied text — bypass slot picker
       if (angle === "own" && customHeadline) {
         newPrimarySlotId = "own";
         newCopy = { ...oldSpec.copy, [primarySlotType]: customHeadline };
         delete newCopy.subtext;
       } else {
-      let newPrimary: CopySlot | undefined;
-      if (angle) {
-        // Tone stage: user requested a specific angle — pick a slot of that angle,
-        // prefer one different from current; wrap around if all used.
-        const angleSlots = langPrimarySlots.filter((s: CopySlot) => s.angle === angle);
-        const different = angleSlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
-        if (angleSlots.length === 0) {
-          console.warn("[regenerate] No slots found for angle '" + angle + "' — keeping current slot");
-        } else {
-          newPrimary =
-            different.length > 0
-              ? different[Math.floor(Math.random() * different.length)]
-              : angleSlots[Math.floor(Math.random() * angleSlots.length)];
+        const currentTone = oldSpec.primarySlotId?.split(":")[1];
+        const nextRow = personaHls.find((r) => r.tone !== currentTone) ?? personaHls[0];
+        if (nextRow) {
+          newPrimarySlotId = oldSpec.personaId
+            ? (oldSpec.personaId + ":" + nextRow.tone)
+            : "default";
+          newCopy = { ...oldSpec.copy, [primarySlotType]: nextRow.headline };
+          delete newCopy.subtext;
         }
-      } else {
-        // Default "New Headline": prefer a different angle from current
-        const candidates = langPrimarySlots.filter((s: CopySlot) => s.id !== oldSpec.primarySlotId);
-        if (candidates.length > 0) {
-          const currentSlot = langPrimarySlots.find((s: CopySlot) => s.id === oldSpec.primarySlotId);
-          const currentAngle = currentSlot?.angle;
-          const differentAngle = candidates.filter((s: CopySlot) => s.angle !== currentAngle);
-          newPrimary =
-            differentAngle.length > 0
-              ? differentAngle[Math.floor(Math.random() * differentAngle.length)]
-              : candidates[Math.floor(Math.random() * candidates.length)];
-        } else {
-          console.warn("[regenerate] Only 1 slot available for this lang — keeping current slot");
-        }
+        newZoneId = "A";
       }
-
-      if (newPrimary) {
-        newPrimarySlotId = newPrimary.id;
-        newCopy = { ...oldSpec.copy, [primarySlotType]: newPrimary.text };
-        if (newPrimary.attribution) newCopy.attribution = newPrimary.attribution;
-        else delete newCopy.attribution;
-
-        // Re-pick secondary slots to match the new primary's angle
-        for (let i = 1; i < currentTemplate.copySlots.length; i++) {
-          const slotType = currentTemplate.copySlots[i];
-          const typeSlots = langSlots.filter((s: CopySlot) => s.slotType === slotType);
-          const targetAngle = newPrimary.angle;
-          const slot = (targetAngle
-            ? typeSlots.find((s: CopySlot) => s.angle === targetAngle)
-            : null) ?? typeSlots[0];
-          if (slot) {
-            newCopy[slotType] = slot.text;
-            if (slot.attribution) newCopy.attribution = slot.attribution;
-          }
-        }
-      }
-
-      // Pick best zone (keep same style, prefer different from current)
-        newZoneId = pickBestZone(safeZones, currentTemplate.supportedZones, oldSpec.zoneId);
-      } // end else (not "own")
     }
 
     const newTemplate = getTemplate(newTemplateId);
@@ -197,14 +107,29 @@ export async function POST(req: NextRequest) {
         : {}),
       renderMeta: oldSpec.renderMeta,
       showBrand: oldSpec.showBrand,
+      ...(oldSpec.cropX !== undefined ? { cropX: oldSpec.cropX } : {}),
       brandColor: oldSpec.brandColor,
+      ...(oldSpec.scenePersonaId ? { scenePersonaId: oldSpec.scenePersonaId } : {}),
     };
 
     // 4. Store new AdSpec
     await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
 
-    // 5. Render new PNG
-    const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec, safeZones);
+    // 5. For headline-only changes: skip Puppeteer re-render — headline is rendered
+    // as a CSS overlay by LiveAdCanvas, so the PNG is not needed for the UI preview.
+    // Reuse the existing PNG; style changes still trigger a full re-render.
+    const renderResultId = newId("rr");
+    let pngUrl: string;
+    let subjectPos: string;
+
+    if (mode === "headline") {
+      pngUrl = oldResult.png_url;
+      subjectPos = getCachedSubjectPos(newSpec.imageId, newSpec.renderMeta.w, newSpec.renderMeta.h, newSpec.cropX) ?? "50% 50%";
+    } else {
+      const rendered = await renderAd(newSpec);
+      pngUrl = rendered.pngUrl;
+      subjectPos = rendered.cssSubjectPos;
+    }
 
     // 6. Store new result, mark old as replaced
     await insertRenderResult({
@@ -217,8 +142,6 @@ export async function POST(req: NextRequest) {
       pngUrl,
     });
     await markReplaced(resultId, renderResultId);
-
-    const subjectPos = cssSubjectPos;
 
     return NextResponse.json({
       result: {

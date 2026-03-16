@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getRenderResult,
   getAdSpec,
-  getSafeZones,
   insertAdSpec,
   insertRenderResult,
   markReplaced,
 } from "@/lib/db";
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
-import type { AdSpec, SafeZones } from "@/lib/types";
+import type { AdSpec } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,10 +29,6 @@ export async function POST(req: NextRequest) {
     if (!oldSpecRow) return NextResponse.json({ error: "AdSpec not found" }, { status: 404 });
     const oldSpec: AdSpec = JSON.parse(oldSpecRow.data);
 
-    const zonesJson = await getSafeZones(oldSpec.imageId);
-    if (!zonesJson) return NextResponse.json({ error: "Safe zones not found" }, { status: 404 });
-    const safeZones: SafeZones = JSON.parse(zonesJson);
-
     const fontScale = headlineFontScale ?? oldSpec.surpriseSpec?.headlineFontScale ?? 1.0;
     const newSpecId = newId("sp");
     const newSpec: AdSpec = {
@@ -52,7 +47,7 @@ export async function POST(req: NextRequest) {
     };
 
     await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));
-    const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec, safeZones);
+    const { pngUrl, renderResultId, cssSubjectPos } = await renderAd(newSpec);
     await insertRenderResult({
       id: renderResultId,
       adSpecId: newSpec.id,

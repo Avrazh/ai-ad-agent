@@ -4,7 +4,8 @@ export type TemplateBuildFn = (
   spec: AdSpec,
   imageBase64: string,
   zonePx: PixelRect,
-  safeZones?: SafeZones
+  safeZones?: SafeZones,
+  context?: { sceneBase64?: string }
 ) => string;
 
 export type RegisteredTemplate = TemplateDefinition & {

@@ -211,12 +211,6 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     const fontScaleOverride = spec.surpriseSpec?.headlineFontScale ?? 1.0;
     const hSize  = clamp(Math.round(TEXT_W * 0.12 * fontScaleOverride), 48, 180);
     const sSize  = clamp(Math.round(hSize * 0.28), 13, 28);
-    // Smart crop: center on subject so hands/face stay in frame
-    let subjectPos = "50% 50%";
-    if (safeZones?.avoidRegions?.length) {
-      const r = safeZones.avoidRegions[0];
-      subjectPos = `${Math.round((r.x + r.w / 2) * 100)}% ${Math.round((r.y + r.h / 2) * 100)}%`;
-    }
     const brandFontSize = Math.round(36 * (spec.brandNameFontScale ?? 1.0));
     const brandTopPx = spec.brandNameY !== undefined
       ? Math.round(h * spec.brandNameY)
@@ -225,7 +219,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       ? `<div style="position:absolute;top:${brandTopPx}px;left:0;width:100%;text-align:center;"><span style="font-family:'Playfair Display',serif;font-size:${brandFontSize}px;font-weight:700;color:${spec.brandColor ?? textColor};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
       : "";
     return `<div style="width:${w}px;height:${h}px;display:flex;position:relative;">
-      <img src="${imageBase64}" style="position:absolute;width:${w}px;height:${h}px;object-fit:cover;object-position:${subjectPos};opacity:${imageOpacity};" />
+      <img src="${imageBase64}" style="position:absolute;width:${w}px;height:${h}px;object-fit:fill;opacity:${imageOpacity};" />
       <div style="position:absolute;left:${TEXT_X}px;${textPos};width:${TEXT_W}px;max-height:${TEXT_ZONE_H}px;overflow:hidden;display:flex;flex-direction:column;align-items:${alignItems};">
         ${headlineHTML(hSize, TEXT_W)}
         ${subtextHTML(sSize)}

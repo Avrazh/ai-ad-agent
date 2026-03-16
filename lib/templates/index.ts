@@ -29,6 +29,7 @@ import "./luxuryEditorialLeft";
 import "./luxurySoftFrameOpen";
 import "./gridSwitchLayout";
 import "./aiSurprise";
+import "./splitScene";
 
 export { getTemplate, getAllTemplates, getTemplateIds, getStylesForFamily } from "./registry";
 export { registerFamily, getFamily, getAllFamilies, pickRandomStyle, pickDifferentStyle } from "./familyRegistry";

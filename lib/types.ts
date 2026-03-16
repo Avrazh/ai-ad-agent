@@ -28,7 +28,7 @@ export type ImageAsset = {
 export type ZoneId = "A" | "B" | "C";
 
 export type SafeZones = {
-  imageId: string;
+  imageId?: string;
   avoidRegions: NormRect[];
   zones: { id: ZoneId; rect: NormRect }[];
 };
@@ -99,7 +99,8 @@ export type TemplateId =
   | "quote_card" | "star_review"
   | "luxury_editorial_left" | "luxury_soft_frame_open"
   | "switch_grid_3x2_no_text"
-  | "ai_surprise";
+  | "ai_surprise"
+  | "split_scene";
 
 export type TemplateTheme = {
   fontHeadline: string;
@@ -147,6 +148,9 @@ export type AdSpec = {
   headlineYOverride?: number;  // 0–1 normalized canvas Y for headline top; used by star_review
   brandNameY?: number;         // 0–1 normalized canvas Y for brand name overlay
   brandNameFontScale?: number; // font scale multiplier for brand name; 1.0 = default
+  scenePersonaId?: string;     // scene image ID for split_scene template
+  personaId?: string;          // active persona when the ad was generated
+  cropX?: number;               // user-chosen horizontal crop center (0-1); overrides auto-detect
 };
 
 // ── AI Style Pool ────────────────────────────────────────────

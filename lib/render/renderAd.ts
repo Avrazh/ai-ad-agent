@@ -2,7 +2,6 @@ import { readFile } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import type { AdSpec, SafeZones } from "@/lib/types";
-import { toPixels } from "@/lib/types";
 import { getTemplate } from "@/lib/templates";
 import { read as readStorage, save } from "@/lib/storage";
 import { newId } from "@/lib/ids";
@@ -97,23 +96,32 @@ async function getFontCSSForFamilies(families: string[]): Promise<string> {
 const imageBase64Cache = new Map<string, string>();
 const cssSubjectPosCache = new Map<string, string>();
 
+export async function warmBrowser(): Promise<void> {
+  await getBrowser();
+}
+
+export function getCachedSubjectPos(imageId: string, w: number, h: number, cropX?: number): string | null {
+  const key = `${imageId}:${w}x${h}${cropX !== undefined ? `:cx${Math.round(cropX * 10000)}` : ""}`;
+  return cssSubjectPosCache.get(key) ?? null;
+}
+
 // ── renderAd ───────────────────────────────────────────────────────────────
+const EMPTY_SAFE_ZONES: SafeZones = { zones: [], avoidRegions: [] };
+
 export async function renderAd(
   spec: AdSpec,
-  safeZones: SafeZones
+  safeZones: SafeZones = EMPTY_SAFE_ZONES
 ): Promise<{ pngUrl: string; renderResultId: string; cssSubjectPos: string }> {
   const t0 = Date.now();
   const lap = (label: string, since = t0) => console.log(`[renderAd] ${label}: ${Date.now() - since}ms`);
 
   const template = getTemplate(spec.templateId);
 
-  const zone = safeZones.zones.find((z) => z.id === spec.zoneId);
-  if (!zone) throw new Error(`Zone "${spec.zoneId}" not found in SafeZones`);
-
-  const zonePx = toPixels(zone.rect, spec.renderMeta.w, spec.renderMeta.h);
+  // Zone is no longer used for positioning — user controls crop and headline position
+  const zonePx = { x: 0, y: 0, w: spec.renderMeta.w, h: spec.renderMeta.h };
 
   // Load + resize source image with smart focal-point crop, cache per imageId+canvas size
-  const cacheKey = `${spec.imageId}:${spec.renderMeta.w}x${spec.renderMeta.h}`;
+  const cacheKey = `${spec.imageId}:${spec.renderMeta.w}x${spec.renderMeta.h}${spec.cropX !== undefined ? `:cx${Math.round(spec.cropX * 10000)}` : ""}`;
   let imageBase64 = imageBase64Cache.get(cacheKey);
   if (!imageBase64) {
     const t1 = Date.now();
@@ -128,7 +136,9 @@ export async function renderAd(
     const th = spec.renderMeta.h;
     const region = safeZones.avoidRegions[0];
     const CX_BIAS = -0.10; // shift crop left — tune if hands appear off-center
-    const cx = region ? Math.max(0, Math.min(1, region.x + region.w / 2 + CX_BIAS)) : null;
+    const cx = spec.cropX !== undefined
+      ? spec.cropX
+      : (region ? Math.max(0, Math.min(1, region.x + region.w / 2 + CX_BIAS)) : null);
 
     let pipeline = sharp(rawBuffer);
     let cssX = 50, cssY = 50;
@@ -163,8 +173,29 @@ export async function renderAd(
     console.log("[renderAd] image-resize: 0ms (cached)");
   }
 
+  // Load scene image for split_scene template
+  let buildContext: { sceneBase64?: string } | undefined;
+  if (spec.scenePersonaId) {
+    const exts = ["jpg", "jpeg", "png", "webp"];
+    for (const ext of exts) {
+      const scenePath = path.join(process.cwd(), "public", "scenes", `${spec.scenePersonaId}.${ext}`);
+      try {
+        const sceneBuffer = await readFile(scenePath);
+        const mimeMap: Record<string, string> = {
+          jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp",
+        };
+        buildContext = { sceneBase64: `data:${mimeMap[ext]};base64,${sceneBuffer.toString("base64")}` };
+        break;
+      } catch {
+        // try next extension
+      }
+    }
+    if (!buildContext) {
+      console.warn(`[renderAd] scene image not found for persona: ${spec.scenePersonaId}`);
+    }
+  }
   // Build template → HTML string
-  const html = template.build(spec, imageBase64, zonePx, safeZones);
+  const html = template.build(spec, imageBase64, zonePx, safeZones, buildContext);
 
   // Wrap in a full HTML page with embedded fonts + reset CSS
   // Only embed fonts actually used: Inter (always) + Playfair Display (brand name) + theme headline + Bebas Neue (ai_surprise)

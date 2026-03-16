@@ -35,16 +35,6 @@ async function migrate(): Promise<void> {
         height     INTEGER NOT NULL,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
-      `CREATE TABLE IF NOT EXISTS safe_zones (
-        image_id TEXT PRIMARY KEY,
-        data     TEXT NOT NULL,
-        FOREIGN KEY (image_id) REFERENCES images(id)
-      )`,
-      `CREATE TABLE IF NOT EXISTS copy_pools (
-        image_id TEXT PRIMARY KEY,
-        data     TEXT NOT NULL,
-        FOREIGN KEY (image_id) REFERENCES images(id)
-      )`,
       `CREATE TABLE IF NOT EXISTS ad_specs (
         id         TEXT PRIMARY KEY,
         image_id   TEXT NOT NULL,
@@ -205,6 +195,17 @@ async function migrate(): Promise<void> {
   } catch {
     // Ignore — table may not exist yet on very old DBs
   }
+
+  // Global persona headlines — generated once, no image dependency
+  await client.execute(`CREATE TABLE IF NOT EXISTS global_persona_headlines (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  persona_id TEXT NOT NULL,
+  tone       TEXT NOT NULL,
+  headline   TEXT NOT NULL,
+  language   TEXT NOT NULL DEFAULT 'en',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+
 }
 
 // ── Image queries ───────────────────────────────────────────
@@ -305,6 +306,50 @@ export async function getPersonaHeadlines(
   return map;
 }
 
+export async function getPersonaHeadlinesForPersona(
+  imageId: string,
+  personaId: string,
+  lang = "en"
+): Promise<{ tone: string; headline: string }[]> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT tone, headline FROM persona_headlines WHERE image_id = ? AND persona_id = ? AND language = ? ORDER BY tone`,
+    args: [imageId, personaId, lang],
+  });
+  return rows.rows.map((r) => ({
+    tone: r.tone as string,
+    headline: r.headline as string,
+  }));
+}
+
+export async function getRandomPersonaHeadline(
+  personaId: string,
+  lang = "en"
+): Promise<string | null> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT headline FROM persona_headlines WHERE persona_id = ? AND language = ? ORDER BY RANDOM() LIMIT 1`,
+    args: [personaId, lang],
+  });
+  return rows.rows[0]?.headline as string ?? null;
+}
+
+export async function getPersonaHeadlineByTone(
+  personaId: string,
+  tone: string,
+  lang = "en"
+): Promise<string | null> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT headline FROM persona_headlines WHERE persona_id = ? AND tone = ? AND language = ? ORDER BY ROWID DESC LIMIT 1`,
+    args: [personaId, tone, lang],
+  });
+  return rows.rows[0]?.headline as string ?? null;
+}
+
 export async function hasPersonaHeadlines(
   imageId: string,
   language = "en"
@@ -318,47 +363,90 @@ export async function hasPersonaHeadlines(
   return ((result.rows[0]?.n as number) ?? 0) > 0;
 }
 
+// ── Global Persona Headlines queries ────────────────────────
+export async function upsertGlobalPersonaHeadlines(
+  rows: { personaId: string; tone: string; headline: string; language: string }[]
+): Promise<void> {
+  await ensureMigrated();
+  const client = getClient();
+  const personaIds = [...new Set(rows.map((r) => r.personaId))];
+  for (const pid of personaIds) {
+    await client.execute({
+      sql: `DELETE FROM global_persona_headlines WHERE persona_id = ?`,
+      args: [pid],
+    });
+  }
+  for (const r of rows) {
+    await client.execute({
+      sql: `INSERT INTO global_persona_headlines (persona_id, tone, headline, language) VALUES (?, ?, ?, ?)`,
+      args: [r.personaId, r.tone, r.headline, r.language],
+    });
+  }
+}
+
+export async function getGlobalPersonaHeadlines(
+  personaId: string,
+  lang = "en"
+): Promise<{ tone: string; headline: string }[]> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT tone, headline FROM global_persona_headlines WHERE persona_id = ? AND language = ? ORDER BY tone, id`,
+    args: [personaId, lang],
+  });
+  return rows.rows.map((r) => ({
+    tone: r.tone as string,
+    headline: r.headline as string,
+  }));
+}
+
+export async function hasGlobalPersonaHeadlines(): Promise<boolean> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute(
+    `SELECT COUNT(*) as n FROM global_persona_headlines`
+  );
+  return ((result.rows[0]?.n as number) ?? 0) > 0;
+}
+
+export async function getGlobalPersonaHeadlinesByTone(
+  personaId: string,
+  tone: string,
+  lang = "en"
+): Promise<string[]> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT headline FROM global_persona_headlines WHERE persona_id = ? AND tone = ? AND language = ? ORDER BY id`,
+    args: [personaId, tone, lang],
+  });
+  return rows.rows.map((r) => r.headline as string);
+}
+
+export async function getAllGlobalPersonaHeadlines(
+  lang = "en"
+): Promise<Record<string, Record<string, string[]>>> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT persona_id, tone, headline FROM global_persona_headlines WHERE language = ? ORDER BY persona_id, tone, id`,
+    args: [lang],
+  });
+  const map: Record<string, Record<string, string[]>> = {};
+  for (const row of rows.rows) {
+    const pid = row.persona_id as string;
+    const tone = row.tone as string;
+    if (!map[pid]) map[pid] = {};
+    if (!map[pid][tone]) map[pid][tone] = [];
+    map[pid][tone].push(row.headline as string);
+  }
+  return map;
+}
+
 // ── SafeZones queries ───────────────────────────────────────
-export async function upsertSafeZones(imageId: string, data: string) {
-  await ensureMigrated();
-  const client = getClient();
-  await client.execute({
-    sql: `INSERT OR REPLACE INTO safe_zones (image_id, data) VALUES (?, ?)`,
-    args: [imageId, data],
-  });
-}
 
-export async function getSafeZones(imageId: string): Promise<string | undefined> {
-  await ensureMigrated();
-  const client = getClient();
-  const result = await client.execute({
-    sql: `SELECT data FROM safe_zones WHERE image_id = ?`,
-    args: [imageId],
-  });
-  const row = result.rows[0];
-  return row ? (row.data as string) : undefined;
-}
 
-// ── CopyPool queries ────────────────────────────────────────
-export async function upsertCopyPool(imageId: string, data: string) {
-  await ensureMigrated();
-  const client = getClient();
-  await client.execute({
-    sql: `INSERT OR REPLACE INTO copy_pools (image_id, data) VALUES (?, ?)`,
-    args: [imageId, data],
-  });
-}
 
-export async function getCopyPool(imageId: string): Promise<string | undefined> {
-  await ensureMigrated();
-  const client = getClient();
-  const result = await client.execute({
-    sql: `SELECT data FROM copy_pools WHERE image_id = ?`,
-    args: [imageId],
-  });
-  const row = result.rows[0];
-  return row ? (row.data as string) : undefined;
-}
 
 // ── AdSpec queries ──────────────────────────────────────────
 export async function insertAdSpec(id: string, imageId: string, data: string) {
@@ -480,11 +568,13 @@ export async function clearAll() {
   const client = getClient();
   await client.batch(
     [
+      // Delete children before parents to satisfy FK constraints
       `DELETE FROM render_results`,
       `DELETE FROM ad_specs`,
-      `DELETE FROM copy_pools`,
-      `DELETE FROM safe_zones`,
       `DELETE FROM ai_style_pools`,
+      `DELETE FROM persona_headlines`,
+      `DELETE FROM persona_image_fit`,
+      `DELETE FROM copy_slots`,
       `DELETE FROM images`,
       // saved_ai_styles intentionally NOT cleared — user preferences persist
     ],

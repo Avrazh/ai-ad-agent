@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { save, removeBlobUrl } from "@/lib/storage";
-import { insertImage, getAllImages } from "@/lib/db";
+import { insertImage, getAllImages, hasGlobalPersonaHeadlines, upsertGlobalPersonaHeadlines } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import path from "path";
 
@@ -37,6 +37,30 @@ export async function POST(req: NextRequest) {
     const { width, height } = readDimensions(buffer, file.type);
 
     await insertImage({ id, filename, url, width, height });
+
+    // Fire-and-forget: warm up Puppeteer so first render is fast
+    import("@/lib/render/renderAd").then(({ warmBrowser }) => warmBrowser()).catch(() => {});
+
+    // Fire-and-forget: generate global persona headlines once (first cold start only)
+    hasGlobalPersonaHeadlines().then(async (has) => {
+      if (!has) {
+        try {
+          const { generateGlobalPersonaHeadlines } = await import("@/lib/ai/personaHeadlines");
+          const generated = await generateGlobalPersonaHeadlines();
+          const rows: { personaId: string; tone: string; headline: string; language: string }[] = [];
+          for (const [pid, tones] of Object.entries(generated)) {
+            for (const [tone, headlines] of Object.entries(tones)) {
+              for (const headline of headlines) {
+                rows.push({ personaId: pid, tone, headline, language: "en" });
+              }
+            }
+          }
+          await upsertGlobalPersonaHeadlines(rows);
+        } catch (err) {
+          console.warn("[upload] Failed to generate global persona headlines:", err);
+        }
+      }
+    }).catch(() => {});
 
     return NextResponse.json({ imageId: id, url, width, height });
   } catch (err) {

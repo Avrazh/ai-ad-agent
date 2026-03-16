@@ -34,15 +34,6 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   // Everything after the comma is the role label e.g. "Verified Buyer" or "Verifierad kund"
   const roleLabel = rawAttrib.includes(",") ? rawAttrib.split(",").slice(1).join(",").trim() : "Verifierad kund";
 
-  // Smart image crop: center on the avoidRegion (hands/face) so it stays in frame
-  let subjectPos = "50% 50%";
-  if (safeZones?.avoidRegions?.length) {
-    const r = safeZones.avoidRegions[0];
-    const cx = Math.round((r.x + r.w / 2) * 100);
-    const cy = Math.round((r.y + r.h / 2) * 100);
-    subjectPos = `${cx}% ${cy}%`;
-  }
-
   // Fixed text zone — same proportions as clean_headline (100–980 x, 385–1535 y)
   // TODO: blend with dynamic safeZones in a future pass
   const cardX     = Math.round(w * 0.0926);   // ~100px at 1080w
@@ -63,7 +54,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
 
   return `
 <div style="width:${w}px;height:${h}px;position:relative;overflow:hidden;">
-  <img src="${imageBase64}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:${subjectPos};" />
+  <img src="${imageBase64}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:fill;" />
   <div style="
     position:absolute;
     left:${cardX}px;${cardPos};

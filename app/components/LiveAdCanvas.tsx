@@ -35,6 +35,7 @@ interface Props {
   disabled?: boolean;
   disableResize?: boolean;
   onApply: (y: number, fontScale: number) => void;
+  onChange?: (y: number, fontScale: number) => void;
   renderOverlay?: (containerW: number) => React.ReactNode;
 }
 
@@ -56,6 +57,7 @@ export function LiveAdCanvas({
   disabled,
   disableResize = false,
   onApply,
+  onChange,
   renderOverlay,
   brandName,
   initialBrandY = 0.78,
@@ -71,6 +73,10 @@ export function LiveAdCanvas({
   const [autoBrandColor, setAutoBrandColor] = useState<string>("#ffffff");
   const dragRef = useRef({ mouseY: 0, startY: 0 });
   const scaleRef = useRef({ mouseY: 0, startScale: 1.0 });
+
+  // Refs to capture current y/fScale inside event handlers (state is stale in closures)
+  const yRef = useRef(initialY);
+  const fScaleRef = useRef(initialFontScale);
 
   const hasContent = !!(headline || renderOverlay);
 
@@ -92,8 +98,8 @@ export function LiveAdCanvas({
   }, []);
 
   // Reset when a different image is selected
-  useEffect(() => { setY(initialY); }, [initialY]);
-  useEffect(() => { setFScale(initialFontScale); }, [initialFontScale]);
+  useEffect(() => { setY(initialY); yRef.current = initialY; }, [initialY]);
+  useEffect(() => { setFScale(initialFontScale); fScaleRef.current = initialFontScale; }, [initialFontScale]);
   useEffect(() => { setBrandY(initialBrandY); }, [initialBrandY]);
   useEffect(() => { setBrandFScale(initialBrandFontScale); }, [initialBrandFontScale]);
 
@@ -192,20 +198,34 @@ export function LiveAdCanvas({
       }
       if (isDragging) {
         const dy = (e.clientY - dragRef.current.mouseY) / containerH;
-        setY(cur => Math.max(ZONE_TOP, Math.min(ZONE_BOTTOM - 0.12, cur + dy)));
+        setY(cur => {
+          const next = Math.max(ZONE_TOP, Math.min(ZONE_BOTTOM - 0.12, cur + dy));
+          yRef.current = next;
+          return next;
+        });
         dragRef.current.mouseY = e.clientY;
       }
       if (isScaling) {
         const dy = (scaleRef.current.mouseY - e.clientY) / containerH;
-        setFScale(cur => Math.max(0.4, Math.min(2.5, cur + dy * 4)));
+        setFScale(cur => {
+          const next = Math.max(0.4, Math.min(2.5, cur + dy * 4));
+          fScaleRef.current = next;
+          return next;
+        });
         scaleRef.current.mouseY = e.clientY;
       }
     };
-    const onUp = () => { setIsDragging(false); setIsScaling(false); setIsBrandDragging(false); setIsBrandScaling(false); };
+    const onUp = () => {
+      setIsDragging(false);
+      setIsScaling(false);
+      setIsBrandDragging(false);
+      setIsBrandScaling(false);
+      onChange?.(yRef.current, fScaleRef.current);
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [isDragging, isScaling, isBrandDragging, isBrandScaling]);
+  }, [isDragging, isScaling, isBrandDragging, isBrandScaling, onChange]);
 
   const fontSize = containerW * FONT_SIZE_RATIO * fScale;
   const subtextSize = fontSize * 0.28;
@@ -442,19 +462,6 @@ export function LiveAdCanvas({
         )}
       </div>
 
-      {/* Controls outside canvas */}
-      <div className="absolute bottom-3 right-3 flex items-center gap-2">
-        <span className="text-[10px] text-white/40 pointer-events-none">
-          {disableResize ? (renderOverlay ? "Drag card to reposition" : "Drag bar to reposition") : "Drag text · ↕ handle to resize"}
-        </span>
-        <button
-          onClick={() => onApply(y, fScale, brandName ? brandY : undefined, brandName ? brandFScale : undefined)}
-          disabled={disabled}
-          className="flex items-center gap-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 px-3 py-1.5 text-xs font-semibold text-white transition shadow-lg"
-        >
-          Render & Save
-        </button>
-      </div>
     </div>
   );
 }

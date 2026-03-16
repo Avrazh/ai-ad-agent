@@ -6,6 +6,7 @@ import { HeadlineDragOverlay } from "@/app/components/HeadlineDragOverlay";
 import { LiveAdCanvas } from "@/app/components/LiveAdCanvas";
 import { StarCardPreview } from "@/app/components/StarCardPreview";
 import { BRAND_NAME } from "@/lib/customerConfig";
+import { CropEditor } from "@/app/components/CropEditor";
 
 type RenderResultItem = {
   id: string;
@@ -85,7 +86,7 @@ const LAYOUT_PREVIEWS: { layout: SurpriseLayout; label: string; spec: SurpriseSp
 
 ];
 type Language = "en" | "de" | "fr" | "es";
-type Format = "4:5" | "1:1" | "9:16";
+type Format = "9:16";
 
 
 type QueueItem = {
@@ -96,12 +97,16 @@ type QueueItem = {
   imageUrl?: string;
   imageWidth?: number;
   imageHeight?: number;
-  status: "idle" | "uploading" | "analyzing" | "analyzed" | "generating" | "done" | "error";
+  status: "idle" | "uploading" | "analyzed" | "generating" | "done" | "error";
   result?: RenderResultItem;
   usedFamilyId?: FamilyId;
   usedSurpriseSpec?: SurpriseSpec;
   lang?: Language;
   approved: boolean;
+  cropX: number;          // user-chosen horizontal crop center (0-1), default 0.5
+  defaultHeadline?: string; // pre-fetched headline shown in CropEditor before first render
+  headlineY?: number;       // persisted headline Y position across image switches
+  headlineFontScale?: number; // persisted font scale across image switches
   error?: string;
 };
 
@@ -138,12 +143,12 @@ interface Persona {
 }
 
 const SEGMENT_LABELS: Record<string, string> = {
-  seg_trend:    "Trendy",
-  seg_busy:     "Busy",
-  seg_occasion: "Occasion",
-  seg_budget:   "Budget",
-  seg_natural:  "Natural",
-  seg_new:      "New",
+  seg_busy:   "Busy",
+  seg_trend:  "Trend",
+  seg_budget: "Budget",
+  seg_short:  "Short Nails",
+  seg_new:    "Newbies",
+  seg_luxury: "Luxury",
 };
 
 let _itemCounter = 0;
@@ -196,7 +201,7 @@ function StatusIcon({ status }: { status: QueueItem["status"] }) {
         <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
       </svg>
     );
-  if (status === "uploading" || status === "analyzing" || status === "generating")
+  if (status === "uploading" || status === "generating")
     return <div className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />;
   if (status === "analyzed")
     return <div className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-indigo-400/60" />;
@@ -225,10 +230,14 @@ export default function Home() {
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
+  const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
+  const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
+  const personaBtnRef = useRef<HTMLButtonElement>(null);
   const [surprisePanelOpen, setSurprisePanelOpen] = useState(false);
   const [ownHeadlineOpen, setOwnHeadlineOpen] = useState(false);
   const [ownHeadlineInput, setOwnHeadlineInput] = useState("");
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [personaHeadlineMap, setPersonaHeadlineMap] = useState<Record<string, Record<string, string>>>({});
   const [personaByImage, setPersonaByImage] = useState<Record<string, string>>({});
   const [toneByImage, setToneByImage] = useState<Record<string, string>>({});
 
@@ -261,6 +270,25 @@ export default function Home() {
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setPersonas(data); })
       .catch(() => { /* leave personas as [] — select stays disabled */ });
+    // Poll until persona headlines are available.
+    // On cold start they are generated in the background during first upload,
+    // so the initial fetch may return empty — retry every 2s until populated.
+    let cancelled = false;
+    (async () => {
+      for (let i = 0; i < 15; i++) {
+        if (cancelled) return;
+        try {
+          const r = await fetch("/api/persona-headlines");
+          const data = await r.json();
+          if (data && typeof data === "object" && Object.keys(data).length > 0) {
+            setPersonaHeadlineMap(data);
+            return;
+          }
+        } catch { /* ignore */ }
+        await new Promise((res) => setTimeout(res, 2000));
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -310,6 +338,7 @@ export default function Home() {
         previewUrl: URL.createObjectURL(file),
         status: "idle",
         approved: false,
+        cropX: 0.5,
       }))
     );
   }, [clearServerData]);
@@ -350,36 +379,25 @@ export default function Home() {
         }
         const uploaded = await uploadRes.json();
 
-        // Step 2 — AI analysis (safe zones + copy pool, no rendering)
+        // Step 2 — mark as analyzed; pick default headline from already-loaded map
+        const activePersonaId = personaByImage[item.id] ?? personas[0]?.id;
+        const firstHeadline = activePersonaId
+          ? Object.values(personaHeadlineMap[activePersonaId] ?? {})[0]
+          : undefined;
         updateItem(item.id, {
-          status: "analyzing",
+          status: "analyzed",
           imageId: uploaded.imageId,
           imageUrl: uploaded.url,
           imageWidth: uploaded.width,
           imageHeight: uploaded.height,
+          ...(firstHeadline ? { defaultHeadline: firstHeadline } : {}),
         });
 
-        const analyzeRes = await fetch("/api/analyze", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageId: uploaded.imageId,
-            imageUrl: uploaded.url,
-            imageWidth: uploaded.width,
-            imageHeight: uploaded.height,
-          }),
-        });
-        if (!analyzeRes.ok) {
-          const d = await analyzeRes.json();
-          throw new Error(d.error || "Analysis failed");
-        }
-
-        updateItem(item.id, { status: "analyzed" });
-
-        // Auto-render with clean_headline (9:16) so the image is immediately shown in the
-        // correct format and format/lang controls work without picking a layout first.
+        // Step 3 — auto-render with clean_headline layout, center crop, default headline position
+        updateItem(item.id, { status: "generating" });
         try {
-          const defaultSpec = LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec;
+          const defaultSpec = LAYOUT_PREVIEWS.find((p) => p.layout === "clean_headline")!.spec;
+          const autoSpec = { ...defaultSpec, headlineYOverride: 0.1484, headlineFontScale: 1.0 };
           const autoRes = await fetch("/api/generate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -388,20 +406,33 @@ export default function Home() {
               imageUrl: uploaded.url,
               imageWidth: uploaded.width,
               imageHeight: uploaded.height,
-              forceSurpriseSpec: defaultSpec,
-              showBrand,
+              forceSurpriseSpec: autoSpec,
               lang: selectedLangRef.current,
-              format: "9:16",
+              format: selectedFormatRef.current,
+              showBrand: false,
+              cropX: 0.5,
+              headline: firstHeadline,
             }),
           });
           if (autoRes.ok) {
             const autoData = await autoRes.json();
             const autoResult: RenderResultItem = autoData.results[0];
-            updateItem(item.id, { result: autoResult, status: "done", usedFamilyId: "ai" as FamilyId, lang: selectedLangRef.current, usedSurpriseSpec: defaultSpec });
+            updateItem(item.id, {
+              status: "done",
+              result: autoResult,
+              approved: false,
+              usedFamilyId: "ai" as FamilyId,
+              usedSurpriseSpec: autoSpec,
+              cropX: 0.5,
+            });
+
+          } else {
+            updateItem(item.id, { status: "analyzed" });
           }
         } catch {
-          // Auto-render failed — leave item in "analyzed" so user can still pick a layout manually
+          updateItem(item.id, { status: "analyzed" });
         }
+
       } catch (err) {
         updateItem(item.id, {
           status: "error",
@@ -441,6 +472,10 @@ export default function Home() {
             lang,
             format,
             showBrand: showBrandOverride !== undefined ? showBrandOverride : showBrand,
+            personaId: personaByImage[item.id] ?? personas[0]?.id,
+            cropX: item.cropX ?? 0.5,
+            headline: item.result?.headlineText ?? item.defaultHeadline ?? undefined,
+            headlineYOverride: item.result?.headlineYOverride ?? item.usedSurpriseSpec?.headlineYOverride,
           }),
         });
         if (!res.ok) {
@@ -579,6 +614,9 @@ export default function Home() {
             lang: langOverride ?? selectedLangRef.current,
             format: formatOverride ?? selectedFormatRef.current,
             showBrand: showBrandOverride !== undefined ? showBrandOverride : showBrand,
+            personaId: personaByImage[item.id] ?? personas[0]?.id,
+            cropX: item.cropX ?? 0.5,
+            headline: item.result?.headlineText ?? undefined,
           }),
         });
         if (!res.ok) {
@@ -662,33 +700,6 @@ export default function Home() {
     [handleSwitch, handlePreviewLayout]
   );
 
-  // ── New headline ────────────────────────────────────────
-  const handleNewHeadline = useCallback(
-    async (item: QueueItem) => {
-      if (!item.result || detailLoading) return;
-      setDetailLoading(true);
-      try {
-        const res = await fetch("/api/regenerate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId: item.result.id, mode: "headline" }),
-        });
-        if (!res.ok) {
-          const d = await res.json();
-          throw new Error(d.error || "Regeneration failed");
-        }
-        const data = await res.json();
-        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
-              attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
-      } catch (err) {
-        console.error("New headline error:", err);
-      } finally {
-        setDetailLoading(false);
-      }
-    },
-    [detailLoading, updateItem]
-  );
-
   // ── Tone-specific headline (from stage bar Tone buttons) ────
   const handleNewHeadlineWithTone = useCallback(
     async (item: QueueItem, angle: string) => {
@@ -696,25 +707,21 @@ export default function Home() {
       setDetailLoading(true);
       try {
         // If active persona has this tone, use persona headline
-        const activePersonaId = personaByImage[item.id];
+        const activePersonaId = personaByImage[item.id] ?? personas[0]?.id;
         const activePersona = activePersonaId ? personas.find((p) => p.id === activePersonaId) : undefined;
         if (activePersona?.tones.includes(angle)) {
-          const res = await fetch(`/api/persona-headlines?imageId=${encodeURIComponent(item.imageId)}`);
-          if (res.ok) {
-            const headlines: Record<string, Record<string, string>> = await res.json();
-            const headline = headlines[activePersonaId]?.[angle];
-            if (headline) {
-              const regenRes = await fetch("/api/regenerate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ resultId: item.result.id, mode: "headline", angle: "own", customHeadline: headline }),
-              });
-              if (regenRes.ok) {
-                const data = await regenRes.json();
-                updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
-                setToneByImage(prev => ({ ...prev, [item.id]: angle }));
-                return;
-              }
+          const headline = personaHeadlineMap[activePersonaId]?.[angle];
+          if (headline) {
+            const regenRes = await fetch("/api/regenerate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ resultId: item.result.id, mode: "headline", angle: "own", customHeadline: headline }),
+            });
+            if (regenRes.ok) {
+              const data = await regenRes.json();
+              updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+              setToneByImage(prev => ({ ...prev, [item.id]: angle }));
+              return;
             }
           }
         }
@@ -729,7 +736,7 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+        updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
         setToneByImage(prev => ({ ...prev, [item.id]: angle }));
       } catch (err) {
         console.error("Tone headline error:", err);
@@ -737,7 +744,7 @@ export default function Home() {
         setDetailLoading(false);
       }
     },
-    [detailLoading, updateItem, personaByImage, personas]
+    [detailLoading, updateItem, personaByImage, personas, personaHeadlineMap]
   );
 
   // ── Persona headline ─────────────────────────────────────
@@ -749,10 +756,7 @@ export default function Home() {
         const persona = personas.find((p) => p.id === personaId);
         const firstTone = persona?.tones[0] ?? "";
 
-        const res = await fetch(`/api/persona-headlines?imageId=${encodeURIComponent(item.imageId)}`);
-        if (!res.ok) throw new Error("Could not fetch persona headlines");
-        const headlines: Record<string, Record<string, string>> = await res.json();
-        const headline = headlines[personaId]?.[firstTone] ?? Object.values(headlines[personaId] ?? {})[0];
+        const headline = personaHeadlineMap[personaId]?.[firstTone] ?? Object.values(personaHeadlineMap[personaId] ?? {})[0];
         if (!headline) return;
 
         const regenRes = await fetch("/api/regenerate", {
@@ -773,7 +777,7 @@ export default function Home() {
         updateItem(item.id, {
           result: {
             ...data.result,
-            subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
+            subjectPos: item.result.subjectPos,
             attribution: data.result.attribution ?? item.result?.attribution,
           },
           approved: false,
@@ -785,7 +789,7 @@ export default function Home() {
         setDetailLoading(false);
       }
     },
-    [detailLoading, updateItem, personas]
+    [detailLoading, updateItem, personas, personaHeadlineMap]
   );
 
   // ── Own headline (user-typed) ─────────────────────────────
@@ -817,6 +821,51 @@ export default function Home() {
     },
     [detailLoading, updateItem]
   );
+
+  // ── Split Scene ──────────────────────────────────────────
+  const handleSplitScene = useCallback(async () => {
+    const currentId = selectedItemIdRef.current;
+    const item = queueRef.current.find((q) => q.id === currentId);
+    if (!item || !currentId) return;
+    const activePersonaId = personaByImage[currentId] ?? personas[0]?.id;
+    if (!activePersonaId) return;
+    const PERSONA_SCENE: Record<string, string> = {
+      per_busy_1:  "per_1", per_busy_2:  "per_1", per_busy_3:  "per_1",
+      per_trend_1: "per_2", per_trend_2: "per_2", per_trend_3: "per_2",
+      per_bud_1:   "per_3", per_bud_2:   "per_3", per_bud_3:   "per_3",
+      per_short_1: "per_4", per_short_2: "per_4", per_short_3: "per_4",
+      per_new_1:   "per_5", per_new_2:   "per_5", per_new_3:   "per_5",
+      per_lux_1:   "per_6", per_lux_2:   "per_6", per_lux_3:   "per_6",
+    };
+    const sceneFile = PERSONA_SCENE[activePersonaId] ?? "per_1";
+    const queueId = item.id;
+    setQueue((prev) => prev.map((q) => q.id === queueId ? { ...q, status: "generating" } : q));
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId: item.imageId,
+          forceTemplateId: "split_scene",
+          scenePersonaId: sceneFile,
+          lang: selectedLangRef.current,
+          format: selectedFormatRef.current,
+          personaId: activePersonaId ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.results?.[0]) {
+        setQueue((prev) => prev.map((q) =>
+          q.id === queueId
+            ? { ...q, status: "done", result: data.results[0], usedSurpriseSpec: undefined }
+            : q
+        ));
+      }
+    } catch (err) {
+      console.error("[handleSplitScene]", err);
+      setQueue((prev) => prev.map((q) => q.id === queueId ? { ...q, status: "error" } : q));
+    }
+  }, [personaByImage, personas, setQueue]);
 
   // ── Approve ─────────────────────────────────────────────
   const handleApprove = useCallback(
@@ -893,7 +942,7 @@ export default function Home() {
   const approvedCount = queue.filter((item) => item.approved).length;
   const idleCount = queue.filter((item) => item.status === "idle").length;
   const activeIndex = queue.findIndex(
-    (item) => item.status === "uploading" || item.status === "analyzing" || item.status === "generating"
+    (item) => item.status === "uploading" || item.status === "generating"
   );
   // Only show rows that have started processing (hide idle ones)
   const visibleQueueItems = queue.filter((item) => item.status !== "idle");
@@ -917,6 +966,8 @@ export default function Home() {
     ? TONES.filter((t) => activePersona.tones.includes(t.angle))
     : TONES;
 
+  const isSplitScene = selectedItem?.result?.templateId === "split_scene";
+
   const isCleanHeadline =
     !!selectedItem?.result &&
     selectedItem.usedSurpriseSpec?.layout === "clean_headline";
@@ -928,13 +979,15 @@ export default function Home() {
   const isHeadlineDraggable =
     !!selectedItem?.result &&
     (selectedItem.usedSurpriseSpec?.layout === "clean_headline" ||
-     selectedItem.result.templateId === "star_review");
+     selectedItem.result.templateId === "star_review" ||
+     selectedItem.result.templateId === "split_scene");
 
-  const initialHeadlineY = selectedItem?.result
-    ? (selectedItem.result.headlineYOverride
-        ?? selectedItem.usedSurpriseSpec?.headlineYOverride
-        ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : 0.1484))
-    : 0.1484;
+  const initialHeadlineY = selectedItem?.headlineY
+    ?? (selectedItem?.result
+      ? (selectedItem.result.headlineYOverride
+          ?? selectedItem.usedSurpriseSpec?.headlineYOverride
+          ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : selectedItem.result.templateId === "split_scene" ? 0.82 : 0.1484))
+      : 0.1484);
 
   // ── Reposition headline ───────────────────────────────────
   const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number) => {
@@ -949,6 +1002,7 @@ export default function Home() {
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
       updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: false });
+      return data.result.id as string;
     } catch (err) {
       console.error("[reposition]", err);
     } finally {
@@ -957,6 +1011,64 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItem, detailLoading, updateItem]);
 
+  // ── Crop render (from CropEditor) ──────────────────────
+  const handleCropRender = useCallback(
+    async (cropX: number, headlineY: number, fontScale: number) => {
+      // CropEditor can be shown automatically (analyzed state) or via Reposition button
+      const itemId = cropEditorItemId ?? selectedItemIdRef.current;
+      const item = queueRef.current.find((i) => i.id === itemId);
+      if (!item || !item.imageId || detailLoading) return;
+      setDetailLoading(true);
+      try {
+        const defaultSpec = LAYOUT_PREVIEWS.find((p) => p.layout === "clean_headline")!.spec;
+        const specWithHeadline = {
+          ...defaultSpec,
+          headlineYOverride: headlineY,
+          headlineFontScale: fontScale,
+        };
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageId: item.imageId,
+            imageUrl: item.imageUrl,
+            imageWidth: item.imageWidth,
+            imageHeight: item.imageHeight,
+            forceSurpriseSpec: specWithHeadline,
+            lang: selectedLangRef.current,
+            format: selectedFormatRef.current,
+            showBrand: brandByImage[item.id] ?? false,
+            cropX,
+            headline: item.result?.headlineText ?? undefined,
+          }),
+        });
+        if (!res.ok) {
+          const d = await res.json();
+          throw new Error(d.error || "Crop render failed");
+        }
+        const data = await res.json();
+        const result: RenderResultItem = data.results[0];
+        // Store cropX on item so subsequent layout switches preserve it
+        updateItem(item.id, {
+          status: "done",
+          result,
+          approved: false,
+          usedFamilyId: "ai" as FamilyId,
+          lang: selectedLangRef.current,
+          usedSurpriseSpec: specWithHeadline,
+          cropX,
+        });
+        setCropEditorItemId(null);
+      } catch (err) {
+        console.error("Crop render error:", err);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cropEditorItemId, detailLoading, updateItem, brandByImage]
+  );
+
   const pillActive =
     "bg-indigo-500/20 text-indigo-300 border-indigo-500/40 shadow-[0_0_8px_rgba(99,102,241,0.12)]";
   const pillInactive =
@@ -964,7 +1076,7 @@ export default function Home() {
 
   // Close layout panel whenever the selected image changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setLayoutPanelOpen(false); setOwnHeadlineOpen(false); setOwnHeadlineInput(""); }, [selectedItemId]);
+  useEffect(() => { setLayoutPanelOpen(false); setOwnHeadlineOpen(false); setOwnHeadlineInput(""); setCropEditorItemId(null); }, [selectedItemId]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -995,13 +1107,7 @@ export default function Home() {
         <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06]">
           <div className="flex items-center justify-between">
             <h1 className="text-base font-bold text-white tracking-tight">AI Ad Agent</h1>
-            <Link
-              href="/agent"
-              className="flex items-center gap-1.5 text-[11px] font-medium text-gray-600 hover:text-indigo-400 border border-white/[0.06] hover:border-indigo-500/30 rounded-lg px-2.5 py-1 transition"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-600 group-hover:bg-indigo-400" />
-              Agent
-            </Link>
+
           </div>
           <p className="text-[11px] text-gray-600 mt-0.5">
             AI picks best template · visual diversity guaranteed
@@ -1162,9 +1268,7 @@ export default function Home() {
                       {item.status === "uploading" && (
                         <span className="text-indigo-400">Uploading...</span>
                       )}
-                      {item.status === "analyzing" && (
-                        <span className="text-indigo-400">Analyzing...</span>
-                      )}
+
                       {item.status === "generating" && (
                         <span className="text-indigo-400">Generating...</span>
                       )}
@@ -1260,23 +1364,6 @@ export default function Home() {
             {(selectedItem.status === "done" || selectedItem.status === "analyzed") && selectedItem.imageId && (
               <div className="shrink-0 flex items-stretch border-b-2 border-white/[0.08] bg-[#0a0d12] overflow-x-auto pt-2" style={{ minHeight: 72 }}>
 
-                {/* Stage: Format */}
-                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Format</span>
-                  <div className="flex items-center gap-1.5">
-                    {(["4:5", "1:1", "9:16"] as Format[]).map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => handleFormatChange(f)}
-                        disabled={isSVGSurprise || detailLoading}
-                        className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (selectedFormat === f ? pillActive : pillInactive)}
-                      >
-                        {f}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Stage: Layout */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Layout</span>
@@ -1313,33 +1400,50 @@ export default function Home() {
                 </div>
 
                 {/* Stage: Persona */}
-                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
+                <div className="relative flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Persona</span>
-                  <select
+                  <button
+                    ref={personaBtnRef}
                     disabled={isSVGSurprise || detailLoading || personas.length === 0 || !selectedItem?.result}
-                    value={personaByImage[selectedItemId ?? ""] ?? personas[0]?.id ?? ""}
-                    onChange={(e) => {
-                      const persona = personas.find((p) => p.id === e.target.value);
-                      if (!persona || !selectedItem || !selectedItemId) return;
-                      setPersonaByImage((prev) => ({ ...prev, [selectedItemId]: persona.id }));
-                      handlePersonaHeadline(selectedItem, persona.id);
-                    }}
-                    className="w-52 rounded-md px-2 py-1.5 text-sm bg-[#0d1117] border border-white/[0.08] text-gray-200 disabled:opacity-30 focus:outline-none focus:border-white/30"
+                    onClick={() => setPersonaDropdownOpen((o) => !o)}
+                    className="w-52 rounded-md px-2 py-1.5 text-sm bg-[#0d1117] border border-white/[0.08] text-gray-200 disabled:opacity-30 text-left flex items-center justify-between gap-2 hover:border-white/20 transition-colors"
                   >
-                    {personas.length === 0 ? (
-                      <option disabled value="">Loading…</option>
-                    ) : (
-                      Object.entries(SEGMENT_LABELS).map(([segId, segLabel]) => (
-                        <optgroup key={segId} label={segLabel}>
-                          {personas
-                            .filter((p) => p.segmentId === segId)
-                            .map((p) => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </optgroup>
-                      ))
-                    )}
-                  </select>
+                    <span className="truncate">
+                      {personas.find((p) => p.id === (personaByImage[selectedItemId ?? ""] ?? personas[0]?.id))?.name ?? "Select persona"}
+                    </span>
+                    <svg className="w-3 h-3 shrink-0 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                  </button>
+                  {personaDropdownOpen && (
+                    <>
+                    <div className="fixed inset-0 z-40" onClick={() => setPersonaDropdownOpen(false)} />
+                    <div style={(() => { const r = personaBtnRef.current?.getBoundingClientRect(); return r ? { position: "fixed" as const, top: r.bottom + 6, left: r.left, zIndex: 9999 } : { display: "none" }; })()} className="bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-[560px]">
+                      <div className="grid grid-cols-3 gap-x-4 gap-y-0">
+                        {Object.entries(SEGMENT_LABELS).map(([segId, segLabel]) => (
+                          <div key={segId}>
+                            <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1 mt-1">{segLabel}</div>
+                            {personas.filter((p) => p.segmentId === segId).map((p) => {
+                              const isActive = p.id === (personaByImage[selectedItemId ?? ""] ?? personas[0]?.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  onClick={() => {
+                                    if (!selectedItem || !selectedItemId) return;
+                                    setPersonaByImage((prev) => ({ ...prev, [selectedItemId]: p.id }));
+                                    handlePersonaHeadline(selectedItem, p.id);
+                                    setPersonaDropdownOpen(false);
+                                  }}
+                                  className={"w-full text-left text-xs px-2 py-1 rounded-md transition-colors mb-0.5 " + (isActive ? "bg-indigo-600/25 text-indigo-300" : "text-gray-300 hover:bg-white/[0.06]")}
+                                >
+                                  {p.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Stage: Headline Tone — disabled (not hidden) for final SVG surprise */}
@@ -1390,23 +1494,20 @@ export default function Home() {
                         </button>
                       </form>
                     )}
-                  </div>
-                </div>
-
-                {/* Stage: Language */}
-                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Language</span>
-                  <div className="flex items-center gap-1.5">
-                    {(["en", "de"] as Language[]).map((l) => (
-                        <button
-                          key={l}
-                          onClick={() => handleLangChange(l)}
-                          disabled={isSVGSurprise || detailLoading}
-                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (selectedLang === l ? pillActive : pillInactive)}
-                        >
-                          {l.toUpperCase()}
-                        </button>
-                      ))}
+                    {/* Reposition button — moved into tone bar */}
+                    <div className="ml-1 pl-3 border-l border-white/[0.08]">
+                      <button
+                        onClick={() => setCropEditorItemId(cropEditorItemId === selectedItemId ? null : (selectedItemId ?? null))}
+                        disabled={!selectedItem?.imageId || detailLoading}
+                        className={"flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (cropEditorItemId === selectedItemId ? pillActive : pillInactive)}
+                        title="Reposition crop"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M7 21H3v-4M21 3h-4M3 7V3h4M17 3h4v4M3 17v4h4M21 17v4h-4" />
+                        </svg>
+                        <span>Reposition</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1536,7 +1637,7 @@ export default function Home() {
                     return (
                       <button
                         key={p.layout}
-                        onClick={() => { handlePreviewLayout(selectedItem, p.spec); setLayoutPanelOpen(false); }}
+                        onClick={() => { const currentY = selectedItem.result?.headlineYOverride ?? selectedItem.usedSurpriseSpec?.headlineYOverride; handlePreviewLayout(selectedItem, { ...p.spec, ...(currentY !== undefined ? { headlineYOverride: currentY } : {}) }); setLayoutPanelOpen(false); }}
                         disabled={detailLoading}
                         className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-white/[0.08] hover:border-white/25 bg-white/[0.02]")}
                       >
@@ -1549,6 +1650,28 @@ export default function Home() {
                       </button>
                     );
                   })}
+
+                  {/* Split Scene pill */}
+                  {(() => {
+                    const isActive = selectedItem.result?.templateId === "split_scene";
+                    return (
+                      <button
+                        key="split_scene"
+                        onClick={() => { handleSplitScene(); setLayoutPanelOpen(false); }}
+                        disabled={detailLoading || !selectedItem.imageId}
+                        className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-white/[0.08] hover:border-white/25 bg-white/[0.02]")}
+                      >
+                        <div className="w-[80px] h-[100px] rounded-lg overflow-hidden bg-white/[0.04] flex items-center justify-center">
+                          <div className="w-full h-full flex" style={{ background: "#1a1a2e" }}>
+                            <div className="flex-1 h-full" style={{ background: "#2a2a3e" }} />
+                            <div className="w-px h-full" style={{ background: "rgba(255,255,255,0.2)" }} />
+                            <div className="flex-1 h-full" style={{ background: "#1a1a2e" }} />
+                          </div>
+                        </div>
+                        <span className={"text-[10px] shrink-0 " + (isActive ? "text-indigo-300" : "text-gray-500")}>Split Scene</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -1563,16 +1686,32 @@ export default function Home() {
               </div>
             )}
 
+
             {/* ── MAIN CONTENT ─────────────────────────────── */}
             {(selectedItem.status === "done" || selectedItem.status === "analyzed") && selectedItem.imageId ? (
               <div className="flex-1 flex flex-col overflow-hidden">
 
-                {/* Ad image — full width, fills all remaining space */}
+                {/* Crop Editor: shown when user clicks Reposition */}
+                {cropEditorItemId === selectedItemId && selectedItem.imageUrl ? (
+                  <CropEditor
+                    imageUrl={selectedItem.imageUrl}
+                    imageNaturalW={selectedItem.imageWidth ?? 1080}
+                    imageNaturalH={selectedItem.imageHeight ?? 1920}
+                    format={selectedFormat}
+                    headline={selectedItem.result?.headlineText ?? selectedItem.usedSurpriseSpec?.en?.headline ?? selectedItem.defaultHeadline ?? ""}
+                    initialCropX={selectedItem.cropX ?? 0.5}
+                    initialHeadlineY={initialHeadlineY}
+                    disabled={detailLoading}
+                    onRender={handleCropRender}
+                  />
+                ) : (
+                <>{/* Ad image — full width, fills all remaining space */}
                 <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
                   {selectedItem.result ? (
                     <div className="relative h-full flex items-center justify-center">
                       {isCleanHeadline ? (
                         <LiveAdCanvas
+                          key={selectedItemId ?? ""}
                           imageUrl={selectedItem.imageUrl ?? selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
                           headline={selectedItem.result.headlineText ?? selectedItem.usedSurpriseSpec?.en?.headline ?? ""}
@@ -1580,15 +1719,17 @@ export default function Home() {
                           spec={selectedItem.usedSurpriseSpec ?? {}}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
-                          initialFontScale={selectedItem.result.headlineFontScale ?? 1.0}
+                          initialFontScale={selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0}
                           disabled={detailLoading}
                           onApply={handleReposition}
+                          onChange={(y, scale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale })}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.result?.brandNameFontScale}
                         />
                       ) : isStarReview ? (
                         <LiveAdCanvas
+                          key={selectedItemId ?? ""}
                           imageUrl={selectedItem.imageUrl ?? selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
                           headline=""
@@ -1598,6 +1739,7 @@ export default function Home() {
                           disableResize
                           disabled={detailLoading}
                           onApply={handleReposition}
+                          onChange={(y, scale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale })}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.result?.brandNameFontScale}
@@ -1608,6 +1750,22 @@ export default function Home() {
                               containerW={cw}
                             />
                           )}
+                        />
+                      ) : isSplitScene ? (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.result.pngUrl}
+                          subjectPos={selectedItem.result.subjectPos}
+                          headline={selectedItem.result.headlineText ?? ""}
+                          spec={{}}
+                          format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
+                          initialY={initialHeadlineY}
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.result?.brandNameFontScale}
                         />
                       ) : (
                         <img
@@ -1623,7 +1781,7 @@ export default function Home() {
                       src={selectedItem.previewUrl}
                       alt=""
                       className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl opacity-40"
-                      style={{ aspectRatio: selectedFormat === "1:1" ? "1/1" : selectedFormat === "9:16" ? "9/16" : "4/5" }}
+                      style={{ aspectRatio: "9/16" }}
                     />
                   )}
                   {!selectedItem.result && selectedItem.status === "analyzed" && !detailLoading && (
@@ -1665,17 +1823,18 @@ export default function Home() {
                 {selectedItem.result && (
                   <div className="shrink-0 border-t border-white/[0.06] px-6 py-3 flex items-center gap-3">
                     <button
-                      onClick={() => handleNewHeadline(selectedItem)}
-                      disabled={isSVGSurprise || detailLoading}
-                      className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-3 text-sm text-gray-300 hover:bg-white/[0.08] hover:text-white transition disabled:opacity-40 flex items-center justify-center gap-2"
-                    >
-                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                      </svg>
-                      New Headline
-                    </button>
-                    <button
-                      onClick={() => handleApprove(selectedItem.id, selectedItem.result!.id, !selectedItem.approved)}
+                      onClick={async () => {
+                        if (!selectedItem.result) return;
+                        if (!selectedItem.approved) {
+                          // Auto-render with current headline position, then approve
+                          const y = selectedItem.headlineY ?? initialHeadlineY;
+                          const scale = selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0;
+                          const newId = await handleReposition(y, scale);
+                          await handleApprove(selectedItem.id, newId ?? selectedItem.result.id, true);
+                        } else {
+                          await handleApprove(selectedItem.id, selectedItem.result.id, false);
+                        }
+                      }}
                       disabled={detailLoading}
                       className={"flex-1 rounded-xl border py-3 text-sm font-medium transition disabled:opacity-40 flex items-center justify-center gap-2 " + (selectedItem.approved ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400" : "border-white/10 bg-white/[0.04] text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")}
                     >
@@ -1695,6 +1854,8 @@ export default function Home() {
                     </button>
                   </div>
                 )}
+              </>
+              )}
               </div>
             ) : selectedItem.status === "error" ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
@@ -1708,7 +1869,6 @@ export default function Home() {
                 <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
                 <p className="text-sm text-gray-600">
                   {selectedItem.status === "uploading" ? "Uploading..."
-                    : selectedItem.status === "analyzing" ? "Analyzing..."
                     : selectedItem.status === "generating" ? "Generating..."
                     : "Waiting to start..."}
                 </p>

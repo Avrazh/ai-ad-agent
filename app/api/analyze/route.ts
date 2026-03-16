@@ -1,18 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { analyzeSafeZones } from "@/lib/ai/analyze";
-import { generateCopyPool } from "@/lib/ai/copy";
-import { extractImageTags } from "@/lib/ai/tags";
-import { generatePersonaHeadlines } from "@/lib/ai/personaHeadlines";
 import {
   getImage,
   insertImage,
-  getSafeZones,
-  upsertSafeZones,
-  getCopyPool,
-  upsertCopyPool,
-  upsertImageTags,
-  hasPersonaHeadlines,
-  upsertPersonaHeadlines,
+  hasGlobalPersonaHeadlines,
+  upsertGlobalPersonaHeadlines,
 } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -29,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "imageId required" }, { status: 400 });
     }
 
-    // Ensure image exists in DB (re-seed on cold start)
+    // Ensure image exists in DB
     let image = await getImage(imageId);
     if (!image) {
       if (!imageUrl) {
@@ -42,41 +33,32 @@ export async function POST(req: NextRequest) {
         width: imageWidth ?? 0,
         height: imageHeight ?? 0,
       });
-      image = await getImage(imageId)!;
     }
 
-    // Safe zones — cached per imageId
-    const cachedZones = await getSafeZones(imageId);
-    if (!cachedZones) {
-      const safeZones = await analyzeSafeZones(imageId);
-      await upsertSafeZones(imageId, JSON.stringify(safeZones));
-    }
+    // Fire-and-forget: warm up Puppeteer browser so first render is faster
+    import("@/lib/render/renderAd").then(({ warmBrowser }) => warmBrowser()).catch(() => {});
 
-    // Copy pool — cached per imageId
-    const cachedCopy = await getCopyPool(imageId);
-    if (!cachedCopy) {
-      const copyPool = await generateCopyPool(imageId);
-      await upsertCopyPool(imageId, JSON.stringify(copyPool));
-    }
-
-    // Image tags — cached in images.tags column, extracted once per image
-    const freshImage = await getImage(imageId);
-    if (!freshImage?.tags) {
-      const tags = await extractImageTags(imageId);
-      await upsertImageTags(imageId, tags);
-    }
-
-    // Persona headlines — one Haiku text call per image, cached forever
-    if (!(await hasPersonaHeadlines(imageId, "en"))) {
-      const generated = await generatePersonaHeadlines(imageId);
-      const rows: { imageId: string; personaId: string; tone: string; headline: string; language: string }[] = [];
-      for (const [personaId, toneMap] of Object.entries(generated)) {
-        for (const [tone, headline] of Object.entries(toneMap)) {
-          rows.push({ imageId, personaId, tone, headline, language: "en" });
+    // Fire-and-forget: generate global persona headlines if not yet done
+    hasGlobalPersonaHeadlines().then(async (has) => {
+      if (!has) {
+        try {
+          const { generateGlobalPersonaHeadlines } = await import("@/lib/ai/personaHeadlines");
+          const generated = await generateGlobalPersonaHeadlines();
+          const rows: { personaId: string; tone: string; headline: string; language: string }[] = [];
+          for (const [pid, tones] of Object.entries(generated)) {
+            for (const [tone, headlines] of Object.entries(tones)) {
+              for (const headline of headlines) {
+                rows.push({ personaId: pid, tone, headline, language: "en" });
+              }
+            }
+          }
+          await upsertGlobalPersonaHeadlines(rows);
+          console.log("[analyze] Global persona headlines generated and stored");
+        } catch (err) {
+          console.warn("[analyze] Failed to generate global persona headlines:", err);
         }
       }
-      await upsertPersonaHeadlines(rows);
-    }
+    }).catch(() => {});
 
     return NextResponse.json({ ok: true });
   } catch (err) {

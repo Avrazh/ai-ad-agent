@@ -55,8 +55,10 @@ export async function read(bucket: Bucket, filenameOrUrl: string): Promise<Buffe
 
 export async function exists(bucket: Bucket, id: string): Promise<boolean> {
   if (id.startsWith("https://")) return true; // blob URLs always assumed to exist
+  // Strip /api/files/<bucket>/ prefix if present (same as read())
+  const filename = id.includes("/") ? path.basename(id) : id;
   try {
-    await fs.access(filePath(bucket, id));
+    await fs.access(filePath(bucket, filename));
     return true;
   } catch {
     return false;
