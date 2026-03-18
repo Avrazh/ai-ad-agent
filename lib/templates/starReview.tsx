@@ -79,8 +79,11 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
           <span style="font-family:'Inter',sans-serif;font-size:14px;font-weight:700;color:#FFFFFF;">${avatarLetter}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:2px;">
-          <span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:700;color:${theme.color};line-height:1.2;">${fullName || "Verified customer"}</span>
-          <span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:400;color:#888888;line-height:1.2;">${roleLabel}</span>
+          ${fullName
+            ? `<span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:700;color:${theme.color};line-height:1.2;">${fullName}</span>
+          <span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:400;color:#888888;line-height:1.2;">${roleLabel}</span>`
+            : `<span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:700;color:${theme.color};line-height:1.2;">${roleLabel}</span>`
+          }
         </div>
       </div>
     </div>

@@ -217,7 +217,6 @@ export async function POST(req: NextRequest) {
     // 2. Get global persona headlines + quote
     const FALLBACK_HEADLINE = "The nails made for you";
     const FALLBACK_QUOTE = "These nails changed my routine.";
-    const FALLBACK_ATTRIBUTION = "— Verified customer";
     const personaHls = personaId
       ? await getGlobalPersonaHeadlines(personaId, lang)
       : [];
@@ -245,7 +244,7 @@ export async function POST(req: NextRequest) {
         for (const slotType of style.copySlots) {
           if (slotType === "quote") {
             copy.quote = personaQuote?.text ?? FALLBACK_QUOTE;
-            copy.attribution = personaQuote?.attribution ?? FALLBACK_ATTRIBUTION;
+            if (personaQuote?.attribution) copy.attribution = personaQuote.attribution;
           } else if (slotType === "headline") {
             copy[slotType] = headline ?? toneRow?.headline ?? FALLBACK_HEADLINE;
           }
