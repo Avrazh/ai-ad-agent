@@ -21,11 +21,12 @@ import type { AdSpec } from "@/lib/types";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { resultId, mode, angle, customHeadline } = body as {
+    const { resultId, mode, angle, customHeadline, personaId: newPersonaId } = body as {
       resultId: string;
       mode: "headline" | "style";
       angle?: string; // specific tone angle requested from the UI Tone stage
       customHeadline?: string; // user-typed headline for angle="own"
+      personaId?: string; // new persona when switching personas on a testimonial ad
     };
 
     if (!resultId || !mode) {
@@ -76,13 +77,15 @@ export async function POST(req: NextRequest) {
         newCopy = { ...oldSpec.copy, [primarySlotType]: customHeadline };
         delete newCopy.subtext;
       } else if (primarySlotType === "quote") {
-        // Testimonial layouts: refresh quote from persona (only 1 per persona, so this keeps it)
-        const refreshedQuote = oldSpec.personaId
-          ? await getPersonaQuote(oldSpec.personaId, lang)
+        // Testimonial layouts: fetch quote for the target persona (new or existing)
+        const effectivePersonaId = newPersonaId ?? oldSpec.personaId;
+        const refreshedQuote = effectivePersonaId
+          ? await getPersonaQuote(effectivePersonaId, lang)
           : null;
         if (refreshedQuote) {
           newCopy = { ...oldSpec.copy, quote: refreshedQuote.text, attribution: refreshedQuote.attribution };
         }
+        if (newPersonaId) newPrimarySlotId = newPersonaId + ":quote";
         newZoneId = "A";
       } else {
         const currentTone = oldSpec.primarySlotId?.split(":")[1];
@@ -121,6 +124,7 @@ export async function POST(req: NextRequest) {
       brandColor: oldSpec.brandColor,
       ...(oldSpec.scenePersonaId ? { scenePersonaId: oldSpec.scenePersonaId } : {}),
       ...(oldSpec.headlineFont ? { headlineFont: oldSpec.headlineFont } : {}),
+      ...((newPersonaId ?? oldSpec.personaId) ? { personaId: newPersonaId ?? oldSpec.personaId } : {}),
     };
 
     // 4. Store new AdSpec

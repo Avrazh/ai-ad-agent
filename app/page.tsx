@@ -838,30 +838,39 @@ export default function Home() {
   );
 
   // ── Persona headline ─────────────────────────────────────
+  const TESTIMONIAL_TEMPLATES = new Set(["quote_card", "star_review"]);
+
   const handlePersonaHeadline = useCallback(
     async (item: QueueItem, personaId: string) => {
       if (!item.result || !item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
-        const persona = personas.find((p) => p.id === personaId);
-        const firstTone = persona?.tones[0] ?? "";
+        const isTestimonial = TESTIMONIAL_TEMPLATES.has(item.result.templateId ?? "");
 
-        const headline = personaHeadlineMap[personaId]?.[firstTone] ?? Object.values(personaHeadlineMap[personaId] ?? {})[0];
-        if (!headline) return;
-
-        // Optimistic update — show headline immediately before API responds
-        updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false });
-        if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
+        if (!isTestimonial) {
+          const persona = personas.find((p) => p.id === personaId);
+          const firstTone = persona?.tones[0] ?? "";
+          const headline = personaHeadlineMap[personaId]?.[firstTone] ?? Object.values(personaHeadlineMap[personaId] ?? {})[0];
+          if (!headline) return;
+          // Optimistic update for non-testimonial layouts
+          updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false });
+          if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
+        }
 
         const regenRes = await fetch("/api/regenerate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resultId: item.result.id,
-            mode: "headline",
-            angle: "own",
-            customHeadline: headline,
-          }),
+          body: JSON.stringify(
+            isTestimonial
+              ? { resultId: item.result.id, mode: "headline", personaId }
+              : {
+                  resultId: item.result.id,
+                  mode: "headline",
+                  angle: "own",
+                  customHeadline: personaHeadlineMap[personaId]?.[personas.find((p) => p.id === personaId)?.tones[0] ?? ""]
+                    ?? Object.values(personaHeadlineMap[personaId] ?? {})[0],
+                }
+          ),
         });
         if (!regenRes.ok) {
           const d = await regenRes.json();
