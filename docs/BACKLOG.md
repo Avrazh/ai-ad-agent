@@ -31,8 +31,6 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 
 | ID | Title | Description | Status | Plan |
 |----|-------|-------------|--------|------|
-| F2 | Text color picker | User can freely change headline and brand name color. Currently auto black/white — open it up to any color. | open | — |
-| F3 | Line break control on headlines | Better headline wrapping. Avoid awkward splits (e.g. 6 words line 1, 2 words line 2). | open | — |
 | F5 | Split screen with own photos | Replace AI-generated scene images. User picks 2 own uploaded photos, or 1 own + 1 AI scene. | open | — |
 | F6 | Auto font variation by persona | Automatically vary fonts across ads based on persona, reducing need for manual font selection. | open | — |
 | TR | Translate approved ads | One-click translation of all approved EN ads into SE, GR, FR, ES. Collapsible language groups in left panel. | open | [plan](superpowers/plans/2026-03-17-translate-approved.md) |
@@ -45,9 +43,11 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 |----|-------|-------|
 | — | Live ad canvas with drag-to-position | Headline drag, brand name overlay, star review card |
 | — | Persona selector | Persona picker with custom persona creation |
+| F2 | Text color picker | Color swatch on headline box (top-left) and brand name box; persists to PNG via reposition |
 | — | Font picker | Playfair Display and Montserrat for headlines; Krona One for brand name |
 | — | Headline persistence and UX improvements | Brand color fix, showBrand fix, auto-color threshold |
 | — | Scene images committed to git | Fix for Vercel not showing split screen images |
 | B1 | Left panel lag / OOM crash | React.memo, lazy loading, blob URL cleanup, LRU image cache, heap size increase |
 | B3 | Own text sometimes doesn't apply | Cannot reproduce — monitor if reported again |
+| F3 | Line break control on headlines | Double-click headline to enter edit mode; arrow keys move cursor; Enter inserts line break; persists to PNG via reposition |
 | F1+F4 | Persona-based testimonial quotes | Testimonial layouts generate real review quotes per persona via Claude Haiku. Shows reviewer name + "Verified customer". Persona switching fetches correct quote. |

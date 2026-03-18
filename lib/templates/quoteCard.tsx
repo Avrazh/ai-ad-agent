@@ -44,7 +44,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
       box-shadow:${shadow};
     ">
       <div style="font-family:'${theme.fontHeadline}',sans-serif;font-size:clamp(48px,12vw,200px);font-weight:700;color:#1AABFB;line-height:0.7;margin-bottom:-12px;">&#x201C;</div>
-      <p data-fit-headline style="font-family:'${theme.fontHeadline}',sans-serif;font-size:clamp(16px,${theme.fontSize}px,${theme.fontSize}px);font-weight:700;color:${theme.color};line-height:1.25;margin:0;word-break:normal;overflow-wrap:normal;">${quote}</p>
+      <p data-fit-headline style="font-family:'${theme.fontHeadline}',sans-serif;font-size:clamp(16px,${theme.fontSize}px,${theme.fontSize}px);font-weight:700;color:${spec.headlineColor ?? theme.color};line-height:1.25;margin:0;word-break:normal;overflow-wrap:normal;">${quote}</p>
       <div style="margin-top:20px;margin-bottom:14px;height:1px;background:#E0E0E0;"></div>
       <div style="font-family:'${theme.fontHeadline}',sans-serif;font-size:clamp(13px,${Math.round(theme.fontSize * 0.72)}px,${Math.round(theme.fontSize * 0.72)}px);font-weight:400;color:#3A3A3A;">${attribution}</div>
     </div>

@@ -13,7 +13,7 @@ import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
 
 export async function POST(req: NextRequest) {
   try {
-    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand } = await req.json() as {
+    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride } = await req.json() as {
       resultId: string;
       headlineYOverride: number;
       headlineFontScale?: number;
@@ -21,6 +21,9 @@ export async function POST(req: NextRequest) {
       brandNameFontScale?: number;
       headlineFont?: string;
       showBrand?: boolean;
+      headlineColor?: string;
+      brandColor?: string;
+      headlineOverride?: string;
     };
     if (!resultId || headlineYOverride === undefined) {
       return NextResponse.json({ error: "resultId and headlineYOverride required" }, { status: 400 });
@@ -50,10 +53,17 @@ export async function POST(req: NextRequest) {
           headlineFontScale: fontScale,
         },
       } : {}),
+      ...(headlineColor !== undefined ? { headlineColor } : {}),
     };
 
-    // Re-sample brand color at the actual dragged Y position
-    if (brandNameY !== undefined && newSpec.showBrand) {
+    if (headlineOverride !== undefined) {
+      newSpec.copy = { ...newSpec.copy, headline: headlineOverride };
+    }
+
+    // Use explicit brand color if provided, otherwise re-sample at the dragged Y position
+    if (brandColor !== undefined) {
+      newSpec.brandColor = brandColor;
+    } else if (brandNameY !== undefined && newSpec.showBrand) {
       const brightness = await sampleBrandZoneBrightness(newSpec.imageId, brandNameY);
       newSpec.brandColor = brightness <= 128 ? '#FFFFFF' : '#1a1a1a';
     }
@@ -88,6 +98,8 @@ export async function POST(req: NextRequest) {
         headlineYOverride: headlineYOverride,
         brandNameY: newSpec.brandNameY,
         brandNameFontScale: newSpec.brandNameFontScale,
+        headlineColor: newSpec.headlineColor,
+        brandColor: newSpec.brandColor,
         subjectPos,
       },
     });

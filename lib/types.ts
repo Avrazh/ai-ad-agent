@@ -152,6 +152,7 @@ export type AdSpec = {
   personaId?: string;          // active persona when the ad was generated
   cropX?: number;               // user-chosen horizontal crop center (0-1); overrides auto-detect
   headlineFont?: string;        // user-selected headline font family (e.g. "Montserrat", "Playfair Display")
+  headlineColor?: string;       // user-set text color for headline overlay (overrides auto-detect)
 };
 
 // ── AI Style Pool ────────────────────────────────────────────

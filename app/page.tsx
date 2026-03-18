@@ -26,6 +26,8 @@ type RenderResultItem = {
   attribution?: string;
   brandNameY?: number;
   brandNameFontScale?: number;
+  headlineColor?: string;
+  brandColor?: string;
   lang?: string;
 };
 
@@ -111,6 +113,9 @@ type QueueItem = {
   brandNameY?: number;      // persisted brand name Y position across image switches
   brandNameFontScale?: number; // persisted brand name font scale across image switches
   headlineFont?: string;        // user-selected headline font family
+  headlineColor?: string;       // user-set headline text color (persisted until approve)
+  brandColor?: string;          // user-set brand name color (persisted until approve)
+  overrideHeadline?: string;    // user-inserted line breaks; cleared on new headline
   error?: string;
 };
 
@@ -798,7 +803,7 @@ export default function Home() {
           const headline = personaHeadlineMap[activePersonaId]?.[angle];
           if (headline) {
             // Optimistic update — show headline immediately
-            updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false });
+            updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false, overrideHeadline: undefined });
             setToneByImage(prev => ({ ...prev, [item.id]: angle }));
             const regenRes = await fetch("/api/regenerate", {
               method: "POST",
@@ -823,7 +828,7 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+        updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false, overrideHeadline: undefined });
         setToneByImage(prev => ({ ...prev, [item.id]: angle }));
       } catch (err) {
         console.error("Tone headline error:", err);
@@ -850,7 +855,7 @@ export default function Home() {
           const headline = personaHeadlineMap[personaId]?.[firstTone] ?? Object.values(personaHeadlineMap[personaId] ?? {})[0];
           if (!headline) return;
           // Optimistic update for non-testimonial layouts
-          updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false });
+          updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false, overrideHeadline: undefined });
           if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
         }
 
@@ -881,6 +886,7 @@ export default function Home() {
             attribution: data.result.attribution ?? item.result?.attribution,
           },
           approved: false,
+          overrideHeadline: undefined,
         });
       } catch (err) {
         console.error("Persona headline error:", err);
@@ -910,7 +916,7 @@ export default function Home() {
         }
         const data = await res.json();
         updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
-              attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+              attribution: data.result.attribution ?? item.result?.attribution }, approved: false, overrideHeadline: undefined });
         setToneByImage(prev => ({ ...prev, [item.id]: "own" }));
       } catch (err) {
         console.error("Own headline error:", err);
@@ -1155,18 +1161,18 @@ export default function Home() {
     }
   };
 
-  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number) => {
+  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string) => {
     if (!selectedItem?.result || detailLoading) return;
     setDetailLoading(true);
     try {
       const res = await fetch("/api/reposition", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, showBrand, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}), ...(selectedItem.headlineFont ? { headlineFont: selectedItem.headlineFont } : {}) }),
+        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, showBrand, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}), ...(selectedItem.headlineFont ? { headlineFont: selectedItem.headlineFont } : {}), ...(headlineColor !== undefined ? { headlineColor } : {}), ...(brandColor !== undefined ? { brandColor } : {}), ...(headlineOverride !== undefined ? { headlineOverride } : {}) }),
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
-      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: false });
+      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: false, overrideHeadline: undefined });
       return data.result.id as string;
     } catch (err) {
       console.error("[reposition]", err);
@@ -1246,6 +1252,7 @@ export default function Home() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLElement && e.target.isContentEditable) return;
       if (e.key === "ArrowLeft"  && prevItem) setSelectedItemId(prevItem.id);
       if (e.key === "ArrowRight" && nextItem) setSelectedItemId(nextItem.id);
     };
@@ -1894,7 +1901,7 @@ export default function Home() {
                           key={selectedItemId ?? ""}
                           imageUrl={selectedItem.imageUrl ?? selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
-                          headline={selectedItem.result.headlineText ?? selectedItem.usedSurpriseSpec?.en?.headline ?? ""}
+                          headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? selectedItem.usedSurpriseSpec?.en?.headline ?? ""}
                           subtext={selectedItem.usedSurpriseSpec?.en?.subtext}
                           spec={selectedItem.usedSurpriseSpec ?? {}}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
@@ -1907,6 +1914,15 @@ export default function Home() {
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
+                          initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
+                          onColorChange={(hColor, bColor) => {
+                            updateItem(selectedItemId!, {
+                              ...(hColor !== null ? { headlineColor: hColor } : {}),
+                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
+                            });
+                          }}
+                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
                         />
                       ) : isStarReview ? (
                         <LiveAdCanvas
@@ -1925,6 +1941,10 @@ export default function Home() {
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
+                          onColorChange={(_hColor, bColor) => {
+                            if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor });
+                          }}
                           renderOverlay={(cw) => (
                             <StarCardPreview
                               quote={selectedItem.result!.headlineText ?? ""}
@@ -1938,7 +1958,7 @@ export default function Home() {
                           key={selectedItemId ?? ""}
                           imageUrl={selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
-                          headline={selectedItem.result.headlineText ?? ""}
+                          headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? ""}
                           spec={{}}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
@@ -1949,6 +1969,15 @@ export default function Home() {
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
+                          initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
+                          onColorChange={(hColor, bColor) => {
+                            updateItem(selectedItemId!, {
+                              ...(hColor !== null ? { headlineColor: hColor } : {}),
+                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
+                            });
+                          }}
+                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
                         />
                       ) : (
                         <img
@@ -2014,7 +2043,7 @@ export default function Home() {
                           const scale = selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0;
                           const bY = selectedItem.brandNameY ?? selectedItem.result.brandNameY;
                           const bScale = selectedItem.brandNameFontScale ?? selectedItem.result.brandNameFontScale;
-                          const newId = await handleReposition(y, scale, bY, bScale);
+                          const newId = await handleReposition(y, scale, bY, bScale, selectedItem.headlineColor ?? selectedItem.result?.headlineColor, selectedItem.brandColor ?? selectedItem.result?.brandColor, selectedItem.overrideHeadline);
                           await handleApprove(selectedItem.id, newId ?? selectedItem.result.id, true);
                         } else {
                           await handleApprove(selectedItem.id, selectedItem.result.id, false);

@@ -54,7 +54,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
 
   const layout         = s?.layout            ?? "top_bottom";
   const bgColor        = s?.bgColor           ?? theme.bg;
-  const textColor      = s?.textColor         ?? theme.color;
+  const textColor      = spec.headlineColor ?? s?.textColor ?? theme.color;
   const accentColor    = s?.accentColor       ?? textColor;
   const fontFamily     = spec.headlineFont ?? resolveFont(s?.font);
   const subtextFamily  = resolveFont(s?.subtextFont ?? "sans");
@@ -74,7 +74,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   const labelRotation  = s?.labelRotation     ?? 0;
   const calloutText    = s?.calloutText;
   const calloutPos     = s?.calloutPosition   ?? "top_right";
-  const headline       = esc(spec.copy.headline ?? "");
+  const headline       = esc(spec.copy.headline ?? "").replace(/\n/g, "<br>");
   const subtext        = spec.copy.subtext ? esc(spec.copy.subtext) : null;
 
   // ── Shared HTML helpers ───────────────────────────────────────

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 
 const FONT_SIZE_RATIO = 0.8148 * 0.12;
 const BRAND_FONT_RATIO = 36 / 1080; // 36px at 1080px canvas width // TEXT_W% * font multiplier ≈ 9.78% of canvas width
@@ -36,11 +36,15 @@ interface Props {
   disableResize?: boolean;
   onApply: (y: number, fontScale: number) => void;
   onChange?: (y: number, fontScale: number, brandY?: number, brandFScale?: number) => void;
+  onColorChange?: (headlineColor: string | null, brandColor: string | null) => void;
+  onHeadlineChange?: (newHeadline: string) => void;
   renderOverlay?: (containerW: number) => React.ReactNode;
   brandName?: string;
   initialBrandY?: number;
   initialBrandFontScale?: number;
   headlineFont?: string;
+  initialHeadlineColor?: string;
+  initialBrandColor?: string;
 }
 
 function resolveFont(f?: string): string {
@@ -62,11 +66,15 @@ export function LiveAdCanvas({
   disableResize = false,
   onApply,
   onChange,
+  onColorChange,
+  onHeadlineChange,
   renderOverlay,
   brandName,
   initialBrandY = 0.78,
   initialBrandFontScale = 1.0,
   headlineFont,
+  initialHeadlineColor,
+  initialBrandColor,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(300);
@@ -76,6 +84,10 @@ export function LiveAdCanvas({
   const [isScaling, setIsScaling] = useState(false);
   const [autoTextColor, setAutoTextColor] = useState<string>("#ffffff");
   const [autoBrandColor, setAutoBrandColor] = useState<string>("#ffffff");
+  const [userHeadlineColor, setUserHeadlineColor] = useState<string | null>(initialHeadlineColor ?? null);
+  const [userBrandColor, setUserBrandColor] = useState<string | null>(initialBrandColor ?? null);
+  const headlineColorInputRef = useRef<HTMLInputElement>(null);
+  const brandColorInputRef = useRef<HTMLInputElement>(null);
   const dragRef = useRef({ mouseY: 0, startY: 0 });
   const scaleRef = useRef({ mouseY: 0, startScale: 1.0 });
 
@@ -94,6 +106,8 @@ export function LiveAdCanvas({
   const [isBrandScaling, setIsBrandScaling] = useState(false);
   const brandDragRef = useRef({ mouseY: 0, startY: 0 });
   const brandScaleRef = useRef({ mouseY: 0, startScale: 1.0 });
+  const [editingHeadline, setEditingHeadline] = useState(false);
+  const editRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -109,6 +123,24 @@ export function LiveAdCanvas({
   useEffect(() => { setFScale(initialFontScale); fScaleRef.current = initialFontScale; }, [initialFontScale]);
   useEffect(() => { setBrandY(initialBrandY); brandYRef.current = initialBrandY; }, [initialBrandY]);
   useEffect(() => { setBrandFScale(initialBrandFontScale); brandFScaleRef.current = initialBrandFontScale; }, [initialBrandFontScale]);
+  useEffect(() => { setUserHeadlineColor(initialHeadlineColor ?? null); }, [initialHeadlineColor]);
+  useEffect(() => { setUserBrandColor(initialBrandColor ?? null); }, [initialBrandColor]);
+
+  // Focus and position cursor at end when entering edit mode
+  useEffect(() => {
+    if (!editingHeadline || !editRef.current) return;
+    const el = editRef.current;
+    el.innerText = headline;
+    el.focus();
+    const range = document.createRange();
+    const sel = window.getSelection();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingHeadline]);
+
   // Inject Google Fonts link for selected headline font and Krona One (brand name)
   useEffect(() => {
     const toLoad: { id: string; url: string }[] = [
@@ -262,7 +294,7 @@ export function LiveAdCanvas({
   const subtextSize = fontSize * 0.28;
   const fontFamily = headlineFont ? `'${headlineFont}', sans-serif` : resolveFont(spec.font);
   const fontWeight = spec.fontWeight ?? 400;
-  const textColor = autoTextColor;
+  const textColor = userHeadlineColor ?? autoTextColor;
   const letterSpacing = LETTER_SPACING[spec.letterSpacingKey ?? "normal"] ?? "0";
   const textTransform = (spec.textTransform === "uppercase" ? "uppercase" : "none") as "uppercase" | "none";
   const textAlign = (spec.textAlign ?? "center") as "left" | "center" | "right";
@@ -290,10 +322,16 @@ export function LiveAdCanvas({
         {/* Draggable text block */}
         <div
           onMouseDown={(e) => {
-            if (disabled) return;
+            if (disabled || editingHeadline) return;
             e.preventDefault();
             dragRef.current = { mouseY: e.clientY, startY: y };
             setIsDragging(true);
+          }}
+          onDoubleClick={(e) => {
+            if (disabled || renderOverlay || !headline) return;
+            e.preventDefault();
+            setIsDragging(false);
+            setEditingHeadline(true);
           }}
           style={{
             position: "absolute",
@@ -345,6 +383,38 @@ export function LiveAdCanvas({
             </div>
           )}
 
+          {/* Color swatch button — top-left of headline outline */}
+          {hasContent && !renderOverlay && (
+            <>
+              <input
+                ref={headlineColorInputRef}
+                type="color"
+                value={userHeadlineColor ?? autoTextColor}
+                style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
+                onChange={(e) => {
+                  setUserHeadlineColor(e.target.value);
+                  onColorChange?.(e.target.value, null);
+                }}
+              />
+              <div
+                title="Change text color"
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.stopPropagation(); headlineColorInputRef.current?.click(); }}
+                style={{
+                  position: "absolute",
+                  top: -14, left: -14,
+                  width: 20, height: 20,
+                  borderRadius: "50%",
+                  background: userHeadlineColor ?? autoTextColor,
+                  border: "2px solid rgba(255,255,255,0.5)",
+                  cursor: "pointer",
+                  zIndex: 10,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+                }}
+              />
+            </>
+          )}
+
           {/* Scale handle — hidden when disableResize */}
           {!disableResize && (
           <div
@@ -381,20 +451,69 @@ export function LiveAdCanvas({
           {/* Content: custom overlay OR headline + subtext */}
           {renderOverlay ? renderOverlay(containerW) : (
             <>
-              <p style={{
-                margin: 0,
-                fontFamily,
-                fontSize: `${fontSize}px`,
-                fontWeight,
-                color: textColor,
-                letterSpacing,
-                textTransform,
-                textAlign,
-                lineHeight: 1.2,
-                wordBreak: "break-word",
-              }}>
-                {headline}
-              </p>
+              {editingHeadline ? (
+                <div
+                  ref={editRef}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const sel = window.getSelection();
+                      if (sel && sel.rangeCount > 0) {
+                        const range = sel.getRangeAt(0);
+                        range.deleteContents();
+                        const nl = document.createTextNode("\n");
+                        range.insertNode(nl);
+                        range.setStartAfter(nl);
+                        range.setEndAfter(nl);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                      }
+                    }
+                    if (e.key === "Escape") {
+                      setEditingHeadline(false);
+                    }
+                  }}
+                  onBlur={() => {
+                    const newText = (editRef.current?.innerText ?? headline).replace(/\n$/, "");
+                    setEditingHeadline(false);
+                    if (newText !== headline) onHeadlineChange?.(newText);
+                  }}
+                  style={{
+                    margin: 0,
+                    fontFamily,
+                    fontSize: `${fontSize}px`,
+                    fontWeight,
+                    color: textColor,
+                    letterSpacing,
+                    textTransform,
+                    textAlign,
+                    lineHeight: 1.2,
+                    wordBreak: "break-word",
+                    whiteSpace: "pre-wrap",
+                    outline: "none",
+                    cursor: "text",
+                    minHeight: `${fontSize * 1.2}px`,
+                  }}
+                />
+              ) : (
+                <p style={{
+                  margin: 0,
+                  fontFamily,
+                  fontSize: `${fontSize}px`,
+                  fontWeight,
+                  color: textColor,
+                  letterSpacing,
+                  textTransform,
+                  textAlign,
+                  lineHeight: 1.2,
+                  wordBreak: "break-word",
+                  whiteSpace: "pre-wrap",
+                }}>
+                  {headline}
+                </p>
+              )}
 
               {subtext && (
                 <p style={{
@@ -443,6 +562,36 @@ export function LiveAdCanvas({
               pointerEvents: "none",
             }} />
 
+            {/* Color swatch button — top-left of brand outline */}
+            <>
+              <input
+                ref={brandColorInputRef}
+                type="color"
+                value={userBrandColor ?? autoBrandColor}
+                style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
+                onChange={(e) => {
+                  setUserBrandColor(e.target.value);
+                  onColorChange?.(null, e.target.value);
+                }}
+              />
+              <div
+                title="Change brand name color"
+                onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onClick={(e) => { e.stopPropagation(); brandColorInputRef.current?.click(); }}
+                style={{
+                  position: "absolute",
+                  top: -14, left: -14,
+                  width: 20, height: 20,
+                  borderRadius: "50%",
+                  background: userBrandColor ?? autoBrandColor,
+                  border: "2px solid rgba(255,255,255,0.5)",
+                  cursor: "pointer",
+                  zIndex: 10,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
+                }}
+              />
+            </>
+
             {/* Scale handle */}
             <div
               title="Drag up/down to resize brand name"
@@ -476,7 +625,7 @@ export function LiveAdCanvas({
               fontFamily: "'Krona One', sans-serif",
               fontSize: `${brandFontSize}px`,
               fontWeight: 700,
-              color: autoBrandColor,
+              color: userBrandColor ?? autoBrandColor,
               letterSpacing: "0.25em",
               textTransform: "uppercase",
               textAlign: "center",

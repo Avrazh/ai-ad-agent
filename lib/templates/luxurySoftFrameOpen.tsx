@@ -26,7 +26,7 @@ const FRAME_STROKE = 1.5;
 function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
   const { w, h } = spec.renderMeta;
   const { theme } = spec;
-  const headline = (spec.copy.headline ?? "").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
+  const headline = (spec.copy.headline ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;").replace(/"/g, "&quot;").replace(/\n/g, "<br>");
 
   const frameW = w - FRAME_INSET * 2;
   const frameH = h - FRAME_INSET * 2;
@@ -60,7 +60,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
       font-family:'${theme.fontHeadline}',serif;
       font-size:clamp(28px,${theme.fontSize}px,${theme.fontSize}px);
       font-weight:700;
-      color:${theme.color};
+      color:${spec.headlineColor ?? theme.color};
       line-height:1.3;
       text-align:center;
       margin:0;
