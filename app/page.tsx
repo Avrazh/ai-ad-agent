@@ -406,23 +406,19 @@ export default function Home() {
     setLimitApplied(allImageFiles.length > IMAGE_LIMIT);
 
     clearServerData();
-    setQueue((prev) => {
-      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      return [];
-    });
     usedStyleIdsRef.current = [];
     setSelectedItemId(null);
-
-    setQueue(
-      imageFiles.map((file) => ({
+    setQueue((prev) => {
+      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return imageFiles.map((file) => ({
         id: newItemId(),
         file,
         previewUrl: URL.createObjectURL(file),
         status: "idle",
         approved: false,
         cropX: 0.5,
-      }))
-    );
+      }));
+    });
   }, [clearServerData]);
 
   const handleDrop = useCallback(
