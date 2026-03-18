@@ -1427,7 +1427,8 @@ export default function Home() {
         </div>
 
         {/* ── Feedback button — pinned to sidebar bottom ─── */}
-        <div className="shrink-0 border-t border-white/[0.06] flex justify-end px-4 py-3">
+        <div className="shrink-0 border-t border-white/[0.06] flex items-center justify-between px-4 py-3">
+          <span className="text-[10px] text-gray-700 font-mono select-none">v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
           <button
             onClick={() => setFeedbackOpen(true)}
             className="flex items-center gap-1.5 text-[11px] text-gray-600 transition hover:text-gray-400"

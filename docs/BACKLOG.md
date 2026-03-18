@@ -6,6 +6,20 @@ Status: `open` · `in progress` · `done`
 
 ---
 
+## Versioning
+
+Current version: **0.2.0** (in `package.json` — single source of truth, displayed in the UI)
+
+| Bump | When |
+|------|------|
+| `PATCH` (0.2.**x**) | Bug fixes only |
+| `MINOR` (0.**x**.0) | One or more features shipped |
+| `MAJOR` (**x**.0.0) | Big redesign, architecture overhaul, or breaking change |
+
+Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer considers it production-stable.
+
+---
+
 ## Bugs
 
 | ID | Title | Description | Status |
