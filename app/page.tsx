@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, memo } from "react";
 import Link from "next/link";
 import { HeadlineDragOverlay } from "@/app/components/HeadlineDragOverlay";
 import { LiveAdCanvas } from "@/app/components/LiveAdCanvas";
@@ -194,6 +194,73 @@ function compressImage(file: File): Promise<Blob> {
   });
 }
 
+
+const FAMILY_LABELS_STATIC: Record<string, string> = {
+  testimonial: "Testimonial",
+  minimal: "Minimal",
+  luxury: "Luxury",
+  ai: "AI Style",
+};
+
+const QueueItemRow = memo(function QueueItemRow({
+  item,
+  isSelected,
+  onSelect,
+}: {
+  item: QueueItem;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(item.id)}
+      className={
+        "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
+        (isSelected
+          ? "bg-indigo-500/[0.08] border-indigo-500/60"
+          : "hover:bg-white/[0.03] border-transparent")
+      }
+    >
+      <StatusIcon status={item.status} />
+      <img
+        src={item.previewUrl}
+        alt=""
+        loading="lazy"
+        className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
+      />
+      <div className="flex-1 min-w-0">
+        <p className="text-[11px]">
+          {item.status === "uploading" && (
+            <span className="text-indigo-400">Uploading...</span>
+          )}
+          {item.status === "generating" && (
+            <span className="text-indigo-400">Generating...</span>
+          )}
+          {item.status === "analyzed" && !item.result && (
+            <span className="text-indigo-300/60">Ready · pick a style</span>
+          )}
+          {item.status === "error" && (
+            <span className="text-red-400 truncate block">
+              {item.error ?? "Error"}
+            </span>
+          )}
+          {(item.status === "done" || item.status === "analyzed") && item.result && (
+            <span className="text-gray-600">
+              {FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId}{" "}
+              · {item.result.format}
+            </span>
+          )}
+        </p>
+      </div>
+      {item.approved && (
+        <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        </svg>
+      )}
+    </button>
+  );
+});
+
 function StatusIcon({ status }: { status: QueueItem["status"] }) {
   if (status === "done")
     return (
@@ -269,6 +336,10 @@ export default function Home() {
 
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
     setQueue((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  }, []);
+
+  const handleSelectItem = useCallback((id: string) => {
+    setSelectedItemId(id);
   }, []);
 
   // Auto-select first done item when nothing is selected.
@@ -1328,73 +1399,12 @@ export default function Home() {
           {visibleQueueItems.length > 0 && (
             <div>
               {visibleQueueItems.map((item) => (
-                <button
+                <QueueItemRow
                   key={item.id}
-                  onClick={() => setSelectedItemId(item.id)}
-                  className={
-                    "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
-                    (selectedItemId === item.id
-                      ? "bg-indigo-500/[0.08] border-indigo-500/60"
-                      : "hover:bg-white/[0.03] border-transparent")
-                  }
-                >
-                  <StatusIcon status={item.status} />
-                  <img
-                    src={item.previewUrl}
-                    alt=""
-                    className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px]">
-                      {item.status === "uploading" && (
-                        <span className="text-indigo-400">Uploading...</span>
-                      )}
-
-                      {item.status === "generating" && (
-                        <span className="text-indigo-400">Generating...</span>
-                      )}
-                      {item.status === "analyzed" && !item.result && (
-                        <span className="text-indigo-300/60">Ready · pick a style</span>
-                      )}
-                      {item.status === "error" && (
-                        <span className="text-red-400 truncate block">
-                          {item.error ?? "Error"}
-                        </span>
-                      )}
-                      {item.status === "done" && item.result && (
-                        <span className="text-gray-600">
-                          {FAMILY_LABELS[
-                            item.usedFamilyId ??
-                              (item.result.familyId as FamilyId)
-                          ] ?? item.result.familyId}{" "}
-                          · {item.result.format}
-                        </span>
-                      )}
-                      {item.status === "analyzed" && item.result && (
-                        <span className="text-gray-600">
-                          {FAMILY_LABELS[
-                            item.usedFamilyId ??
-                              (item.result.familyId as FamilyId)
-                          ] ?? item.result.familyId}{" "}
-                          · {item.result.format}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  {item.approved && (
-                    <svg
-                      className="h-3.5 w-3.5 shrink-0 text-emerald-400"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  )}
-                </button>
+                  item={item}
+                  isSelected={selectedItemId === item.id}
+                  onSelect={handleSelectItem}
+                />
               ))}
             </div>
           )}
