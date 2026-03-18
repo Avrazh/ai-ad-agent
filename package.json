@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_OPTIONS=\"--max-old-space-size=1024\" next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_OPTIONS=\"--max-old-space-size=1024\" next start",
     "lint": "eslint",
     "generate-previews": "node scripts/generate-previews.mjs"
   },

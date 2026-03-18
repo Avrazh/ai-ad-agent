@@ -95,7 +95,13 @@ async function getFontCSSForFamilies(families: string[]): Promise<string> {
   return parts.filter(Boolean).join(" ");
 }
 
-// ── Image cache ────────────────────────────────────────────────────────────
+// ── Image cache (LRU-capped to avoid heap growth with many images) ─────────
+const IMAGE_CACHE_MAX = 40; // ~400KB/entry × 40 ≈ 16 MB max
+function lruSet<T>(map: Map<string, T>, key: string, value: T, max: number): void {
+  map.delete(key); // move to end if exists
+  map.set(key, value);
+  if (map.size > max) map.delete(map.keys().next().value!); // evict oldest
+}
 const imageBase64Cache = new Map<string, string>();
 const cssSubjectPosCache = new Map<string, string>();
 
@@ -169,8 +175,8 @@ export async function renderAd(
       .jpeg({ quality: 85 })
       .toBuffer();
     imageBase64 = `data:image/jpeg;base64,${resizedBuffer.toString("base64")}`;
-    imageBase64Cache.set(cacheKey, imageBase64);
-    cssSubjectPosCache.set(cacheKey, `${cssX}% ${cssY}%`);
+    lruSet(imageBase64Cache, cacheKey, imageBase64, IMAGE_CACHE_MAX);
+    lruSet(cssSubjectPosCache, cacheKey, `${cssX}% ${cssY}%`, IMAGE_CACHE_MAX);
     lap("image-resize (uncached)", t1);
   } else {
     console.log("[renderAd] image-resize: 0ms (cached)");
