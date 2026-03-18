@@ -360,6 +360,7 @@ export default function Home() {
         if (cancelled) return;
         try {
           const r = await fetch("/api/persona-headlines");
+          if (!r.ok) return; // route error or 404 — stop polling, don't spam logs
           const data = await r.json();
           if (data && typeof data === "object" && Object.keys(data).length > 0) {
             setPersonaHeadlineMap(data);
