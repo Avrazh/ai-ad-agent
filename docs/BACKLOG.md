@@ -11,7 +11,7 @@ Status: `open` · `in progress` · `done`
 | ID | Title | Description | Status |
 |----|-------|-------------|--------|
 | B1 | Left panel lag | Scroll and click lag + OOM tab crash with 17+ images. Fixed with React.memo, lazy loading, and freeing blob memory after upload. | done |
-| B3 | Own text sometimes doesn't apply | "Write your own text" function doesn't always work. Needs testing to reproduce. | open |
+| B3 | Own text sometimes doesn't apply | "Write your own text" function doesn't always work. Cannot reproduce — monitor and revisit if customer reports again with steps. | cannot reproduce |
 
 ---
 
