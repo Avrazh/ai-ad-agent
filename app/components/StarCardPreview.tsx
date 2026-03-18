@@ -78,7 +78,7 @@ export function StarCardPreview({ quote, attribution, containerW }: Props) {
         }}>
           <span style={{
             fontFamily: "Inter, sans-serif",
-            fontSize: r(20),
+            fontSize: r(26),
             fontWeight: 700,
             color: "#FFFFFF",
           }}>
