@@ -164,7 +164,7 @@ function newItemId() {
 
 // Resize + re-encode image to JPEG before upload to stay under the
 // Vercel 4.5 MB serverless function payload limit.
-const MAX_UPLOAD_PX = 1920; // longest side in pixels
+const MAX_UPLOAD_PX = 1200; // longest side in pixels — keep low to avoid OOM with many images
 const JPEG_QUALITY = 0.85;
 const IMAGE_LIMIT = 100; // max images per session
 
@@ -459,6 +459,13 @@ export default function Home() {
           throw new Error(d.error || "Upload failed");
         }
         const uploaded = await uploadRes.json();
+
+        // Free browser memory: swap blob URL for server URL, then revoke the blob
+        setQueue((prev) => prev.map((q) => {
+          if (q.id !== item.id) return q;
+          URL.revokeObjectURL(q.previewUrl);
+          return { ...q, previewUrl: uploaded.url };
+        }));
 
         // Step 2 — mark as analyzed; pick default headline from already-loaded map
         const activePersonaId = personaByImage[item.id] ?? personas[0]?.id;
