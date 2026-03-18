@@ -8,7 +8,7 @@ Status: `open` · `in progress` · `done`
 
 ## Versioning
 
-Current version: **0.2.0** (in `package.json` — single source of truth, displayed in the UI)
+Current version: **0.2.1** (in `package.json` — single source of truth, displayed in the UI)
 
 | Bump | When |
 |------|------|
