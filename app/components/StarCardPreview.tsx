@@ -70,7 +70,7 @@ export function StarCardPreview({ quote, attribution, containerW }: Props) {
       {/* Attribution row */}
       <div style={{ display: "flex", alignItems: "center", gap: r(12), flexShrink: 0 }}>
         <div style={{
-          width: r(36), height: r(36),
+          width: r(52), height: r(52),
           borderRadius: "50%",
           background: "#4CAF50",
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -78,7 +78,7 @@ export function StarCardPreview({ quote, attribution, containerW }: Props) {
         }}>
           <span style={{
             fontFamily: "Inter, sans-serif",
-            fontSize: r(14),
+            fontSize: r(20),
             fontWeight: 700,
             color: "#FFFFFF",
           }}>

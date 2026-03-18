@@ -75,8 +75,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
       <p data-fit-headline style="font-family:'${theme.fontHeadline}',sans-serif;font-size:clamp(13px,28px,28px);font-weight:400;color:${theme.color};line-height:1.45;margin:0;word-break:normal;overflow-wrap:normal;">${quote}</p>
       <div style="height:1px;background:#E8E8E8;margin:18px 0 16px;flex-shrink:0;"></div>
       <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
-        <div style="width:36px;height:36px;border-radius:50%;background:#4CAF50;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-          <span style="font-family:'Inter',sans-serif;font-size:14px;font-weight:700;color:#FFFFFF;">${avatarLetter}</span>
+        <div style="width:52px;height:52px;border-radius:50%;background:#4CAF50;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <span style="font-family:'Inter',sans-serif;font-size:20px;font-weight:700;color:#FFFFFF;">${avatarLetter}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:2px;">
           ${fullName
