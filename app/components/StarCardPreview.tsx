@@ -20,7 +20,7 @@ export function StarCardPreview({ quote, attribution, containerW }: Props) {
   const avatarLetter = firstName.charAt(0).toUpperCase() || "V";
   const roleLabel = attribution.includes(",")
     ? attribution.split(",").slice(1).join(",").trim()
-    : "Verified Buyer";
+    : "Verified customer";
 
   const r = (n: number) => Math.round(n * s);
 
