@@ -7,6 +7,7 @@ import {
   insertRenderResult,
   getSavedAIStyles,
   getGlobalPersonaHeadlines,
+  getPersonaQuote,
 } from "@/lib/db";
 import "@/lib/templates"; // ensure templates + families registered
 import { getAllFamilies, getStylesForFamily, getTemplate } from "@/lib/templates";
@@ -213,11 +214,14 @@ export async function POST(req: NextRequest) {
       ? [forcedTemplate.familyId]
       : (familyIds?.length ? familyIds : getAllFamilies().map((f) => f.id));
 
-    // 2. Get global persona headlines
+    // 2. Get global persona headlines + quote
     const FALLBACK_HEADLINE = "The nails made for you";
+    const FALLBACK_QUOTE = "These nails changed my routine.";
+    const FALLBACK_ATTRIBUTION = "— Verified customer";
     const personaHls = personaId
       ? await getGlobalPersonaHeadlines(personaId, lang)
       : [];
+    const personaQuote = personaId ? await getPersonaQuote(personaId, lang) : null;
 
     // 3. Create AdSpecs — 1 per family (random style picked per family)
     const dims = FORMAT_DIMS[format];
@@ -239,7 +243,10 @@ export async function POST(req: NextRequest) {
           : "default";
         const copy: AdSpec["copy"] = {};
         for (const slotType of style.copySlots) {
-          if (slotType === "headline" || slotType === "quote") {
+          if (slotType === "quote") {
+            copy.quote = personaQuote?.text ?? FALLBACK_QUOTE;
+            copy.attribution = personaQuote?.attribution ?? FALLBACK_ATTRIBUTION;
+          } else if (slotType === "headline") {
             copy[slotType] = headline ?? toneRow?.headline ?? FALLBACK_HEADLINE;
           }
         }

@@ -23,7 +23,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
   const { theme } = spec;
   const shadow = theme.shadow ? "0 2px 20px rgba(0,0,0,0.10)" : "none";
   const quote = (spec.copy.quote ?? "").replace(/'/g, "&#39;").replace(/"/g, "&quot;");
-  const attribution = (spec.copy.attribution ?? "\u2014 Verified Review").replace(/'/g, "&#39;");
+  const attribution = (spec.copy.attribution ?? "\u2014 Verified customer").replace(/'/g, "&#39;");
 
   return `
 <div style="width:${w}px;height:${h}px;position:relative;overflow:hidden;">

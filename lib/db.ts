@@ -210,8 +210,14 @@ async function migrate(): Promise<void> {
   tone       TEXT NOT NULL,
   headline   TEXT NOT NULL,
   language   TEXT NOT NULL DEFAULT 'en',
+  slot_type  TEXT NOT NULL DEFAULT 'headline',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+
+  // Migrate: add slot_type column if missing
+  try {
+    await client.execute(`ALTER TABLE global_persona_headlines ADD COLUMN slot_type TEXT NOT NULL DEFAULT 'headline'`);
+  } catch { /* already exists */ }
 
 }
 
@@ -372,21 +378,25 @@ export async function hasPersonaHeadlines(
 
 // ── Global Persona Headlines queries ────────────────────────
 export async function upsertGlobalPersonaHeadlines(
-  rows: { personaId: string; tone: string; headline: string; language: string }[]
+  rows: { personaId: string; tone: string; headline: string; language: string; slotType?: string }[]
 ): Promise<void> {
   await ensureMigrated();
   const client = getClient();
   const personaIds = [...new Set(rows.map((r) => r.personaId))];
   for (const pid of personaIds) {
-    await client.execute({
-      sql: `DELETE FROM global_persona_headlines WHERE persona_id = ?`,
-      args: [pid],
-    });
+    // Only delete rows of the same slot_type as the incoming batch to avoid clobbering other types
+    const slotTypesInBatch = [...new Set(rows.filter((r) => r.personaId === pid).map((r) => r.slotType ?? "headline"))];
+    for (const st of slotTypesInBatch) {
+      await client.execute({
+        sql: `DELETE FROM global_persona_headlines WHERE persona_id = ? AND slot_type = ?`,
+        args: [pid, st],
+      });
+    }
   }
   for (const r of rows) {
     await client.execute({
-      sql: `INSERT INTO global_persona_headlines (persona_id, tone, headline, language) VALUES (?, ?, ?, ?)`,
-      args: [r.personaId, r.tone, r.headline, r.language],
+      sql: `INSERT INTO global_persona_headlines (persona_id, tone, headline, language, slot_type) VALUES (?, ?, ?, ?, ?)`,
+      args: [r.personaId, r.tone, r.headline, r.language, r.slotType ?? "headline"],
     });
   }
 }
@@ -398,7 +408,7 @@ export async function getGlobalPersonaHeadlines(
   await ensureMigrated();
   const client = getClient();
   const rows = await client.execute({
-    sql: `SELECT tone, headline FROM global_persona_headlines WHERE persona_id = ? AND language = ? ORDER BY tone, id`,
+    sql: `SELECT tone, headline FROM global_persona_headlines WHERE persona_id = ? AND language = ? AND slot_type = 'headline' ORDER BY tone, id`,
     args: [personaId, lang],
   });
   return rows.rows.map((r) => ({
@@ -407,11 +417,41 @@ export async function getGlobalPersonaHeadlines(
   }));
 }
 
+export async function getPersonaQuote(
+  personaId: string,
+  lang = "en"
+): Promise<{ text: string; attribution: string } | null> {
+  await ensureMigrated();
+  const client = getClient();
+  const rows = await client.execute({
+    sql: `SELECT headline FROM global_persona_headlines WHERE persona_id = ? AND language = ? AND slot_type = 'quote' ORDER BY id LIMIT 1`,
+    args: [personaId, lang],
+  });
+  if (!rows.rows.length) return null;
+  const raw = rows.rows[0].headline as string;
+  // Format: "Review text. — Sofia M."
+  // Split into quote text and attribution
+  const dashIdx = raw.lastIndexOf(" — ");
+  if (dashIdx !== -1) {
+    return { text: raw.slice(0, dashIdx).trim(), attribution: `— ${raw.slice(dashIdx + 3).trim()}` };
+  }
+  return { text: raw, attribution: "— Verified customer" };
+}
+
 export async function hasGlobalPersonaHeadlines(): Promise<boolean> {
   await ensureMigrated();
   const client = getClient();
   const result = await client.execute(
-    `SELECT COUNT(*) as n FROM global_persona_headlines`
+    `SELECT COUNT(*) as n FROM global_persona_headlines WHERE slot_type = 'headline'`
+  );
+  return ((result.rows[0]?.n as number) ?? 0) > 0;
+}
+
+export async function hasGlobalPersonaQuotes(): Promise<boolean> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute(
+    `SELECT COUNT(*) as n FROM global_persona_headlines WHERE slot_type = 'quote'`
   );
   return ((result.rows[0]?.n as number) ?? 0) > 0;
 }
@@ -424,7 +464,7 @@ export async function getGlobalPersonaHeadlinesByTone(
   await ensureMigrated();
   const client = getClient();
   const rows = await client.execute({
-    sql: `SELECT headline FROM global_persona_headlines WHERE persona_id = ? AND tone = ? AND language = ? ORDER BY id`,
+    sql: `SELECT headline FROM global_persona_headlines WHERE persona_id = ? AND tone = ? AND language = ? AND slot_type = 'headline' ORDER BY id`,
     args: [personaId, tone, lang],
   });
   return rows.rows.map((r) => r.headline as string);

@@ -31,8 +31,8 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   const fullName = nameMatch ? nameMatch[1].trim() : "";
   const firstName = fullName.split(/\s+/)[0] ?? "";
   const avatarLetter = firstName.charAt(0).toUpperCase() || "V";
-  // Everything after the comma is the role label e.g. "Verified Buyer" or "Verifierad kund"
-  const roleLabel = rawAttrib.includes(",") ? rawAttrib.split(",").slice(1).join(",").trim() : "Verifierad kund";
+  // Role label is always "Verified customer" — will be translated when TR feature lands
+  const roleLabel = "Verified customer";
 
   // Fixed text zone — same proportions as clean_headline (100–980 x, 385–1535 y)
   // TODO: blend with dynamic safeZones in a future pass
@@ -79,7 +79,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
           <span style="font-family:'Inter',sans-serif;font-size:14px;font-weight:700;color:#FFFFFF;">${avatarLetter}</span>
         </div>
         <div style="display:flex;flex-direction:column;gap:2px;">
-          <span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:700;color:${theme.color};line-height:1.2;">${fullName || "Verifierad kund"}</span>
+          <span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:700;color:${theme.color};line-height:1.2;">${fullName || "Verified customer"}</span>
           <span style="font-family:'${theme.fontHeadline}',sans-serif;font-size:28px;font-weight:400;color:#888888;line-height:1.2;">${roleLabel}</span>
         </div>
       </div>

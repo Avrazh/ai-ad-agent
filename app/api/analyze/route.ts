@@ -3,6 +3,7 @@ import {
   getImage,
   insertImage,
   hasGlobalPersonaHeadlines,
+  hasGlobalPersonaQuotes,
   upsertGlobalPersonaHeadlines,
 } from "@/lib/db";
 
@@ -56,6 +57,23 @@ export async function POST(req: NextRequest) {
           console.log("[analyze] Global persona headlines generated and stored");
         } catch (err) {
           console.warn("[analyze] Failed to generate global persona headlines:", err);
+        }
+      }
+    }).catch(() => {});
+
+    // Fire-and-forget: generate global persona quotes if not yet done
+    hasGlobalPersonaQuotes().then(async (has) => {
+      if (!has) {
+        try {
+          const { generateGlobalPersonaQuotes } = await import("@/lib/ai/personaHeadlines");
+          const generated = await generateGlobalPersonaQuotes();
+          const rows = Object.entries(generated).map(([pid, quote]) => ({
+            personaId: pid, tone: "quote", headline: quote, language: "en", slotType: "quote",
+          }));
+          if (rows.length) await upsertGlobalPersonaHeadlines(rows);
+          console.log("[analyze] Global persona quotes generated and stored");
+        } catch (err) {
+          console.warn("[analyze] Failed to generate global persona quotes:", err);
         }
       }
     }).catch(() => {});

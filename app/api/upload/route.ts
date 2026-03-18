@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { save, removeBlobUrl } from "@/lib/storage";
-import { insertImage, getAllImages, hasGlobalPersonaHeadlines, upsertGlobalPersonaHeadlines } from "@/lib/db";
+import { insertImage, getAllImages, hasGlobalPersonaHeadlines, hasGlobalPersonaQuotes, upsertGlobalPersonaHeadlines } from "@/lib/db";
 import { newId } from "@/lib/ids";
 import path from "path";
 
@@ -58,6 +58,22 @@ export async function POST(req: NextRequest) {
           await upsertGlobalPersonaHeadlines(rows);
         } catch (err) {
           console.warn("[upload] Failed to generate global persona headlines:", err);
+        }
+      }
+    }).catch(() => {});
+
+    // Fire-and-forget: generate global persona quotes if not yet done
+    hasGlobalPersonaQuotes().then(async (has) => {
+      if (!has) {
+        try {
+          const { generateGlobalPersonaQuotes } = await import("@/lib/ai/personaHeadlines");
+          const generated = await generateGlobalPersonaQuotes();
+          const rows = Object.entries(generated).map(([pid, quote]) => ({
+            personaId: pid, tone: "quote", headline: quote, language: "en", slotType: "quote",
+          }));
+          if (rows.length) await upsertGlobalPersonaHeadlines(rows);
+        } catch (err) {
+          console.warn("[upload] Failed to generate global persona quotes:", err);
         }
       }
     }).catch(() => {});

@@ -144,3 +144,52 @@ export async function generateHeadlinesForPersona(persona: {
     return fallback;
   }
 }
+
+/**
+ * Generates one customer review quote per persona for testimonial ad layouts.
+ * Quote format: "Review text. — Sofia M." (name embedded, no real person)
+ * Stored with slot_type = 'quote' in global_persona_headlines.
+ */
+export async function generateGlobalPersonaQuotes(): Promise<Record<string, string>> {
+  const { getAllPersonas } = await import("@/lib/db");
+  const personas = await getAllPersonas();
+  const FALLBACK_QUOTE = "These nails saved my routine. \u2014 Emma R.";
+  const makeFallback = () => Object.fromEntries(personas.map((p) => [p.id, FALLBACK_QUOTE]));
+
+  if (process.env.SKIP_AI === "true") return makeFallback();
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return makeFallback();
+
+  const personaBlock = personas
+    .map((p) => `ID: ${p.id}\nName: ${p.name}\nMotivation: ${p.motivation}`)
+    .join("\n\n");
+
+  const prompt = [
+    "You are an expert ad copywriter for SWITCH NAILS (press-on nails brand).",
+    "",
+    "For each persona, write ONE short customer review quote (10-20 words) in first-person voice.",
+    "Append a fictional reviewer name at the end in the format: \u2014 FirstName L.",
+    "Rules: no emojis, specific to press-on nails, positive but genuine-sounding.",
+    "",
+    "Return ONLY raw JSON: persona ID -> full quote string including the name",
+    "",
+    "Personas:",
+    personaBlock,
+  ].join("\n");
+
+  try {
+    const client = new Anthropic({ apiKey });
+    const response = await withRetry(
+      () => client.messages.create({ model: MODEL, max_tokens: 1200, messages: [{ role: "user", content: prompt }] }),
+      "global-persona-quotes"
+    );
+    const raw = response.content.find((b) => b.type === "text")?.text ?? "";
+    const text = raw.replace(/^```(?:json)?[\s]*/i, "").replace(/[\s]*```[\s]*$/i, "").trim();
+    const parsed = JSON.parse(text) as Record<string, string>;
+    console.log(`[global-persona-quotes] Generated ${Object.keys(parsed).length} quotes for ${personas.length} personas`);
+    return parsed;
+  } catch (err) {
+    console.error("[global-persona-quotes] Claude call failed - using fallback:", err);
+    return makeFallback();
+  }
+}

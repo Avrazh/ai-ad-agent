@@ -7,6 +7,7 @@ import {
   getRenderResult,
   getAdSpec,
   getGlobalPersonaHeadlines,
+  getPersonaQuote,
   insertAdSpec,
   insertRenderResult,
   markReplaced,
@@ -74,6 +75,15 @@ export async function POST(req: NextRequest) {
         newPrimarySlotId = "own";
         newCopy = { ...oldSpec.copy, [primarySlotType]: customHeadline };
         delete newCopy.subtext;
+      } else if (primarySlotType === "quote") {
+        // Testimonial layouts: refresh quote from persona (only 1 per persona, so this keeps it)
+        const refreshedQuote = oldSpec.personaId
+          ? await getPersonaQuote(oldSpec.personaId, lang)
+          : null;
+        if (refreshedQuote) {
+          newCopy = { ...oldSpec.copy, quote: refreshedQuote.text, attribution: refreshedQuote.attribution };
+        }
+        newZoneId = "A";
       } else {
         const currentTone = oldSpec.primarySlotId?.split(":")[1];
         const nextRow = personaHls.find((r) => r.tone !== currentTone) ?? personaHls[0];
