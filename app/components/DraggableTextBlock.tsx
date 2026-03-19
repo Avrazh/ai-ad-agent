@@ -98,7 +98,11 @@ export function DraggableTextBlock({ box, containerW, containerH, onChange, onDe
     <div
       style={{
         position: "absolute",
-        left: px, top: py, width: pw,
+        left: px, top: py,
+        width: "fit-content",
+        maxWidth: pw,
+        padding: "2px 8px",
+        boxSizing: "border-box",
         cursor: isDragging ? "grabbing" : "grab",
         userSelect: "none",
         zIndex: 20,
