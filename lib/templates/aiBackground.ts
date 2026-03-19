@@ -1,5 +1,6 @@
 import type { AdSpec, PixelRect, SafeZones } from "@/lib/types";
 import { registerTemplate } from "./registry";
+import { BRAND_NAME } from "@/lib/customerConfig";
 
 registerTemplate(
   {
@@ -50,6 +51,14 @@ registerTemplate(
         white-space:pre-wrap;
       ">${headline}</p>` : "";
 
+    const brandFontSize = Math.round(36 * (spec.brandNameFontScale ?? 1.0));
+    const brandTopPx = spec.brandNameY !== undefined
+      ? Math.round(h * spec.brandNameY)
+      : Math.round(h * 0.88);
+    const brandHtml = spec.showBrand
+      ? `<div style="position:absolute;top:${brandTopPx}px;left:0;width:100%;text-align:center;"><span style="font-family:'Krona One',sans-serif;font-size:${brandFontSize}px;font-weight:400;color:${spec.brandColor ?? color};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`
+      : "";
+
     return `
       <div style="position:relative;width:${w}px;height:${h}px;overflow:hidden;background:#000;">
         <img
@@ -58,6 +67,7 @@ registerTemplate(
           alt=""
         />
         ${headlineHtml}
+        ${brandHtml}
       </div>`;
   },
 );

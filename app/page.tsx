@@ -2159,7 +2159,7 @@ export default function Home() {
                           onTextBoxesChange={handleTextBoxesChange}
                           onHideHeadlineChange={handleHideHeadlineChange}
                         />
-                      ) : isAIBackground ? (
+                      ) : isAIBackground && !selectedItem.approved ? (
                         <LiveAdCanvas
                           key={selectedItemId ?? ""}
                           imageUrl={selectedItem.result.pngUrl}
