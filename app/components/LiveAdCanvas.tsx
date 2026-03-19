@@ -675,40 +675,6 @@ export function LiveAdCanvas({
         )}
       </div>
 
-      {/* Add Text + Hide headline controls */}
-      {!disabled && (
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
-          <button
-            onClick={() => {
-              const newBox: TextBox = {
-                id: crypto.randomUUID(),
-                text: "Your text here",
-                x: 0.1, y: 0.45,
-                w: 0.8,
-                fontSize: 0.04,
-                color: "#ffffff",
-                bold: false,
-                bullets: false,
-              };
-              const next = [...boxes, newBox];
-              setBoxes(next);
-              onTextBoxesChange?.(next);
-            }}
-            style={{
-              background: "#6366f1", color: "white", border: "none",
-              borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer",
-            }}
-          >+ Add Text</button>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#a1a1aa", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={hideHeadline ?? false}
-              onChange={(e) => onHideHeadlineChange?.(e.target.checked)}
-            />
-            Hide headline
-          </label>
-        </div>
-      )}
     </div>
   );
 }

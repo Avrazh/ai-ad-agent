@@ -1553,17 +1553,52 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Stage: Brand name */}
-                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Brand</span>
-                  <div className="flex items-center">
-                    <div
-                      onClick={() => { const next = !showBrand; if (selectedItemId) setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); }}
-                      className={"w-12 h-6 rounded-full flex items-center px-0.5 transition-colors cursor-pointer " + (showBrand ? "bg-indigo-600" : "bg-white/10")}
-                    >
-                      <div className={"w-5 h-5 rounded-full bg-white shadow transition-transform " + (showBrand ? "translate-x-6" : "translate-x-0")} />
+                {/* Stage: Header / Brand */}
+                <div className="flex flex-col justify-center gap-2 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Header / Brand</span>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <div
+                        onClick={() => { if (selectedItemId) updateItem(selectedItemId, { hideHeadline: !selectedItem?.hideHeadline }); }}
+                        className={"w-8 h-4 rounded-full flex items-center px-0.5 transition-colors cursor-pointer " + (!selectedItem?.hideHeadline ? "bg-indigo-600" : "bg-white/10")}
+                      >
+                        <div className={"w-3 h-3 rounded-full bg-white shadow transition-transform " + (!selectedItem?.hideHeadline ? "translate-x-4" : "translate-x-0")} />
+                      </div>
+                      <span className="text-xs text-gray-400">Header</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div
+                        onClick={() => { const next = !showBrand; if (selectedItemId) setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); }}
+                        className={"w-8 h-4 rounded-full flex items-center px-0.5 transition-colors cursor-pointer " + (showBrand ? "bg-indigo-600" : "bg-white/10")}
+                      >
+                        <div className={"w-3 h-3 rounded-full bg-white shadow transition-transform " + (showBrand ? "translate-x-4" : "translate-x-0")} />
+                      </div>
+                      <span className="text-xs text-gray-400">Brand</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Stage: Text boxes */}
+                <div className="flex flex-col justify-center gap-2 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Text</span>
+                  <button
+                    disabled={!selectedItem?.result || detailLoading}
+                    onClick={() => {
+                      if (!selectedItemId) return;
+                      const newBox: import("@/lib/types").TextBox = {
+                        id: crypto.randomUUID(),
+                        text: "Your text here",
+                        x: 0.1, y: 0.45,
+                        w: 0.8,
+                        fontSize: 0.04,
+                        color: "#ffffff",
+                        bold: false,
+                        bullets: false,
+                      };
+                      updateItem(selectedItemId, { textBoxes: [...(selectedItem?.textBoxes ?? []), newBox] });
+                    }}
+                    className="rounded-md px-3 py-1 text-xs font-medium bg-indigo-600 text-white disabled:opacity-30 hover:bg-indigo-500 transition-colors whitespace-nowrap"
+                  >+ Add Text</button>
                 </div>
 
                 {/* Stage: Persona */}
