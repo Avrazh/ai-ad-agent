@@ -6,7 +6,16 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
   },
-  serverExternalPackages: ["sharp", "@sparticuz/chromium", "puppeteer-core", "@resvg/resvg-js"],
+  serverExternalPackages: [
+    "sharp",
+    "@sparticuz/chromium",
+    "puppeteer-core",
+    "puppeteer",
+    "@resvg/resvg-js",
+    "@anthropic-ai/sdk",
+    "@libsql/client",
+    "better-sqlite3",
+  ],
   outputFileTracingIncludes: {
     "/api/generate": ["./node_modules/@sparticuz/chromium/**/*"],
     "/api/regenerate": ["./node_modules/@sparticuz/chromium/**/*"],
