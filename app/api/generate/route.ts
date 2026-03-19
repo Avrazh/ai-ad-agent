@@ -41,6 +41,11 @@ export async function POST(req: NextRequest) {
       cropX,
       headline,
       headlineYOverride,
+      splitSecondImageId,
+      splitDividerX,
+      splitProductPanX,
+      splitSecondPanX,
+      splitSwapped,
     } = body as {
       imageId: string;
       imageUrl?: string;
@@ -61,6 +66,11 @@ export async function POST(req: NextRequest) {
       cropX?: number;
       headline?: string;
       headlineYOverride?: number;
+      splitSecondImageId?: string;
+      splitDividerX?: number;
+      splitProductPanX?: number;
+      splitSecondPanX?: number;
+      splitSwapped?: boolean;
     };
 
     if (!imageId) {
@@ -267,6 +277,11 @@ export async function POST(req: NextRequest) {
           ...(scenePersonaId ? { scenePersonaId } : {}),
           ...(personaId ? { personaId } : {}),
           ...(cropX !== undefined ? { cropX } : {}),
+          ...(splitSecondImageId ? { splitSecondImageId } : {}),
+          ...(splitDividerX !== undefined ? { splitDividerX } : {}),
+          ...(splitProductPanX !== undefined ? { splitProductPanX } : {}),
+          ...(splitSecondPanX !== undefined ? { splitSecondPanX } : {}),
+          ...(splitSwapped !== undefined ? { splitSwapped } : {}),
           brandColor: showBrand ? (await sampleBrandZoneBrightness(imageId) <= 128 ? '#FFFFFF' : '#1a1a1a') : undefined,
         };
 

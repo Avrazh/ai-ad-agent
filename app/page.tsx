@@ -7,6 +7,7 @@ import { LiveAdCanvas } from "@/app/components/LiveAdCanvas";
 import { StarCardPreview } from "@/app/components/StarCardPreview";
 import { BRAND_NAME } from "@/lib/customerConfig";
 import { CropEditor } from "@/app/components/CropEditor";
+import SplitSceneEditor, { SplitConfig } from "@/app/components/SplitSceneEditor";
 
 type RenderResultItem = {
   id: string;
@@ -116,6 +117,8 @@ type QueueItem = {
   headlineColor?: string;       // user-set headline text color (persisted until approve)
   brandColor?: string;          // user-set brand name color (persisted until approve)
   overrideHeadline?: string;    // user-inserted line breaks; cleared on new headline
+  splitConfig?: SplitConfig;   // config for split scene editor
+  splitEditing?: boolean;      // true when split scene editor is open
   error?: string;
 };
 
@@ -971,6 +974,41 @@ export default function Home() {
       setQueue((prev) => prev.map((q) => q.id === queueId ? { ...q, status: "error" } : q));
     }
   }, [personaByImage, personas, setQueue]);
+
+
+  // ── Split Scene with own photos ──────────────────────────
+  const handleSplitSceneRender = useCallback(async (cfg: SplitConfig) => {
+    const currentId = selectedItemIdRef.current;
+    const item = queueRef.current.find((q) => q.id === currentId);
+    if (!item || !currentId) return;
+    const activePersonaId = personaByImage[currentId] ?? personas[0]?.id;
+    setQueue((prev) => prev.map((q) => q.id === currentId ? { ...q, status: "generating" } : q));
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId: item.imageId,
+          forceTemplateId: "split_scene",
+          lang: selectedLangRef.current,
+          format: "9:16",
+          personaId: activePersonaId ?? undefined,
+          splitSecondImageId: cfg.secondImageId,
+          splitDividerX: cfg.dividerX,
+          splitProductPanX: cfg.productPanX,
+          splitSecondPanX: cfg.secondPanX,
+          splitSwapped: cfg.swapped,
+        }),
+      });
+      const data = await res.json();
+      if (data.results?.[0]) {
+        updateItem(currentId, { status: "done", result: data.results[0], usedSurpriseSpec: undefined, splitEditing: false, splitConfig: cfg });
+      }
+    } catch (err) {
+      console.error("[handleSplitSceneRender]", err);
+      updateItem(currentId, { status: "error" });
+    }
+  }, [personaByImage, personas, setQueue, updateItem]);
 
   // ── Approve ─────────────────────────────────────────────
   const handleApprove = useCallback(
@@ -1844,7 +1882,7 @@ export default function Home() {
                     return (
                       <button
                         key="split_scene"
-                        onClick={() => { handleSplitScene(); setLayoutPanelOpen(false); }}
+                        onClick={() => { updateItem(selectedItem.id, { splitEditing: true }); setLayoutPanelOpen(false); }}
                         disabled={detailLoading || !selectedItem.imageId}
                         className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-white/[0.08] hover:border-white/25 bg-white/[0.02]")}
                       >
@@ -1894,7 +1932,23 @@ export default function Home() {
                 ) : (
                 <>{/* Ad image — full width, fills all remaining space */}
                 <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
-                  {selectedItem.result ? (
+                  {selectedItem.splitEditing ? (
+                    <div className="w-full h-full flex items-center justify-center overflow-auto">
+                      <div className="w-full max-w-xs">
+                        <SplitSceneEditor
+                          productImageUrl={selectedItem.imageUrl ?? selectedItem.previewUrl}
+                          productImageId={selectedItem.imageId ?? ""}
+                          queueThumbs={queue
+                            .filter((q) => q.imageId && q.imageId !== selectedItem.imageId)
+                            .map((q) => ({ id: q.imageId!, url: q.imageUrl ?? q.previewUrl }))}
+                          config={selectedItem.splitConfig ?? null}
+                          onConfigChange={(cfg) => updateItem(selectedItemId!, { splitConfig: cfg })}
+                          onRender={handleSplitSceneRender}
+                          rendering={detailLoading}
+                        />
+                      </div>
+                    </div>
+                  ) : selectedItem.result ? (
                     <div className="relative h-full flex items-center justify-center">
                       {isCleanHeadline ? (
                         <LiveAdCanvas

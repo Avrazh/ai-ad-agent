@@ -13,7 +13,7 @@ import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
 
 export async function POST(req: NextRequest) {
   try {
-    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride } = await req.json() as {
+    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride, splitSecondImageId, splitDividerX, splitProductPanX, splitSecondPanX, splitSwapped } = await req.json() as {
       resultId: string;
       headlineYOverride: number;
       headlineFontScale?: number;
@@ -24,6 +24,11 @@ export async function POST(req: NextRequest) {
       headlineColor?: string;
       brandColor?: string;
       headlineOverride?: string;
+      splitSecondImageId?: string;
+      splitDividerX?: number;
+      splitProductPanX?: number;
+      splitSecondPanX?: number;
+      splitSwapped?: boolean;
     };
     if (!resultId || headlineYOverride === undefined) {
       return NextResponse.json({ error: "resultId and headlineYOverride required" }, { status: 400 });
@@ -54,6 +59,11 @@ export async function POST(req: NextRequest) {
         },
       } : {}),
       ...(headlineColor !== undefined ? { headlineColor } : {}),
+      ...(splitSecondImageId !== undefined ? { splitSecondImageId } : {}),
+      ...(splitDividerX !== undefined ? { splitDividerX } : {}),
+      ...(splitProductPanX !== undefined ? { splitProductPanX } : {}),
+      ...(splitSecondPanX !== undefined ? { splitSecondPanX } : {}),
+      ...(splitSwapped !== undefined ? { splitSwapped } : {}),
     };
 
     if (headlineOverride !== undefined) {

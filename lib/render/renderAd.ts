@@ -182,9 +182,18 @@ export async function renderAd(
     console.log("[renderAd] image-resize: 0ms (cached)");
   }
 
-  // Load scene image for split_scene template
-  let buildContext: { sceneBase64?: string } | undefined;
-  if (spec.scenePersonaId) {
+  // Load scene image or second user photo for split_scene template
+  let buildContext: { sceneBase64?: string; secondImageBase64?: string } | undefined;
+  if (spec.splitSecondImageId) {
+    const { getImage } = await import("@/lib/db");
+    const secondImg = await getImage(spec.splitSecondImageId);
+    if (secondImg) {
+      const buf = await readStorage("uploads", secondImg.url);
+      const ext = secondImg.url.split(".").pop() ?? "jpg";
+      const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+      buildContext = { secondImageBase64: `data:${mime};base64,${buf.toString("base64")}` };
+    }
+  } else if (spec.scenePersonaId) {
     const exts = ["jpg", "jpeg", "png", "webp"];
     for (const ext of exts) {
       const scenePath = path.join(process.cwd(), "public", "scenes", `${spec.scenePersonaId}.${ext}`);

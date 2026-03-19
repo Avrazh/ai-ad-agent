@@ -8,7 +8,7 @@ Status: `open` · `in progress` · `done`
 
 ## Versioning
 
-Current version: **0.2.1** (in `package.json` — single source of truth, displayed in the UI)
+Current version: **0.3.0** (in `package.json` — single source of truth, displayed in the UI)
 
 | Bump | When |
 |------|------|
@@ -31,7 +31,6 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 
 | ID | Title | Description | Status | Plan |
 |----|-------|-------------|--------|------|
-| F5 | Split screen with own photos | Replace AI-generated scene images. User picks 2 own uploaded photos, or 1 own + 1 AI scene. | open | — |
 | F6 | Auto font variation by persona | Automatically vary fonts across ads based on persona, reducing need for manual font selection. | open | — |
 | TR | Translate approved ads | One-click translation of all approved EN ads into SE, GR, FR, ES. Collapsible language groups in left panel. | open | [plan](superpowers/plans/2026-03-17-translate-approved.md) |
 
@@ -41,6 +40,7 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 
 | ID | Title | Notes |
 |----|-------|-------|
+| F5 | Split screen with own photos | SplitSceneEditor component: pick second image from queue, drag-to-pan both panels, draggable divider, swap panels, renders via existing split_scene template |
 | — | Live ad canvas with drag-to-position | Headline drag, brand name overlay, star review card |
 | — | Persona selector | Persona picker with custom persona creation |
 | F2 | Text color picker | Color swatch on headline box (top-left) and brand name box; persists to PNG via reposition |

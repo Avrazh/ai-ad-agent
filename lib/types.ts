@@ -153,6 +153,12 @@ export type AdSpec = {
   cropX?: number;               // user-chosen horizontal crop center (0-1); overrides auto-detect
   headlineFont?: string;        // user-selected headline font family (e.g. "Montserrat", "Playfair Display")
   headlineColor?: string;       // user-set text color for headline overlay (overrides auto-detect)
+  // Split scene -- own photos
+  splitSecondImageId?: string;  // imageId of the second panel image
+  splitDividerX?: number;       // 0-1 normalized divider position (default 0.5)
+  splitProductPanX?: number;    // 0-1 horizontal pan of product photo panel (default 0.5)
+  splitSecondPanX?: number;     // 0-1 horizontal pan of second image panel (default 0.5)
+  splitSwapped?: boolean;       // if true: second image on left, product on right
 };
 
 // ── AI Style Pool ────────────────────────────────────────────

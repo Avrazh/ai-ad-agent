@@ -1,6 +1,6 @@
 {
   "name": "ai-ad-agent",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=1024\" next dev",
