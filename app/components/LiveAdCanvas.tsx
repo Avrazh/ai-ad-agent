@@ -1,6 +1,8 @@
 "use client";
 
 import { useRef, useState, useEffect, useCallback } from "react";
+import { DraggableTextBlock } from "./DraggableTextBlock";
+import type { TextBox } from "@/lib/types";
 
 const FONT_SIZE_RATIO = 0.8148 * 0.12;
 const BRAND_FONT_RATIO = 36 / 1080; // 36px at 1080px canvas width // TEXT_W% * font multiplier ≈ 9.78% of canvas width
@@ -45,6 +47,10 @@ interface Props {
   headlineFont?: string;
   initialHeadlineColor?: string;
   initialBrandColor?: string;
+  textBoxes?: TextBox[];
+  hideHeadline?: boolean;
+  onTextBoxesChange?: (boxes: TextBox[]) => void;
+  onHideHeadlineChange?: (hide: boolean) => void;
 }
 
 function resolveFont(f?: string): string {
@@ -75,6 +81,10 @@ export function LiveAdCanvas({
   headlineFont,
   initialHeadlineColor,
   initialBrandColor,
+  textBoxes: textBoxesProp,
+  hideHeadline,
+  onTextBoxesChange,
+  onHideHeadlineChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerW, setContainerW] = useState(300);
@@ -108,6 +118,9 @@ export function LiveAdCanvas({
   const brandScaleRef = useRef({ mouseY: 0, startScale: 1.0 });
   const [editingHeadline, setEditingHeadline] = useState(false);
   const editRef = useRef<HTMLDivElement>(null);
+  const [boxes, setBoxes] = useState<TextBox[]>(textBoxesProp ?? []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setBoxes(textBoxesProp ?? []); }, [JSON.stringify(textBoxesProp)]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -320,7 +333,7 @@ export function LiveAdCanvas({
         />
 
         {/* Draggable text block */}
-        <div
+        {!hideHeadline && <div
           onMouseDown={(e) => {
             if (disabled || editingHeadline) return;
             e.preventDefault();
@@ -531,7 +544,27 @@ export function LiveAdCanvas({
               )}
             </>
           )}
-        </div>
+        </div>}
+
+        {/* User-added free-form text boxes */}
+        {boxes.map(box => (
+          <DraggableTextBlock
+            key={box.id}
+            box={box}
+            containerW={containerW}
+            containerH={containerRef.current?.getBoundingClientRect().height ?? 600}
+            onChange={(updated) => {
+              const next = boxes.map(b => b.id === updated.id ? updated : b);
+              setBoxes(next);
+              onTextBoxesChange?.(next);
+            }}
+            onDelete={(id) => {
+              const next = boxes.filter(b => b.id !== id);
+              setBoxes(next);
+              onTextBoxesChange?.(next);
+            }}
+          />
+        ))}
 
         {/* Loading spinner */}
 
@@ -642,6 +675,40 @@ export function LiveAdCanvas({
         )}
       </div>
 
+      {/* Add Text + Hide headline controls */}
+      {!disabled && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8 }}>
+          <button
+            onClick={() => {
+              const newBox: TextBox = {
+                id: crypto.randomUUID(),
+                text: "Your text here",
+                x: 0.1, y: 0.45,
+                w: 0.8,
+                fontSize: 0.04,
+                color: "#ffffff",
+                bold: false,
+                bullets: false,
+              };
+              const next = [...boxes, newBox];
+              setBoxes(next);
+              onTextBoxesChange?.(next);
+            }}
+            style={{
+              background: "#6366f1", color: "white", border: "none",
+              borderRadius: 6, padding: "6px 14px", fontSize: 13, cursor: "pointer",
+            }}
+          >+ Add Text</button>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#a1a1aa", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={hideHeadline ?? false}
+              onChange={(e) => onHideHeadlineChange?.(e.target.checked)}
+            />
+            Hide headline
+          </label>
+        </div>
+      )}
     </div>
   );
 }
