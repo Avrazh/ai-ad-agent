@@ -441,7 +441,7 @@ export function LiveAdCanvas({
             }}
             style={{
               position: "absolute",
-              top: -14,
+              bottom: -14,
               right: -14,
               width: 20,
               height: 20,
@@ -637,7 +637,7 @@ export function LiveAdCanvas({
               }}
               style={{
                 position: "absolute",
-                top: -14, right: -14,
+                bottom: -14, right: -14,
                 width: 20, height: 20,
                 borderRadius: 4,
                 background: "#ca8a04",
