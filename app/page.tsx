@@ -30,6 +30,8 @@ type RenderResultItem = {
   headlineColor?: string;
   brandColor?: string;
   lang?: string;
+  textBoxes?: import("@/lib/types").TextBox[];
+  hideHeadline?: boolean;
 };
 
 type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
@@ -1202,6 +1204,40 @@ export default function Home() {
     }
   };
 
+  const handleTextBoxesChange = useCallback(async (textBoxes: import("@/lib/types").TextBox[]) => {
+    if (!selectedItem?.result) return;
+    const res = await fetch("/api/reposition", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        resultId: selectedItem.result.id,
+        headlineYOverride: selectedItem.result.headlineYOverride ?? 0.3,
+        textBoxes,
+        hideHeadline: selectedItem.result.hideHeadline,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) updateItem(selectedItemId!, { result: { ...selectedItem.result, ...data.result } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItem, selectedItemId]);
+
+  const handleHideHeadlineChange = useCallback(async (hideHeadline: boolean) => {
+    if (!selectedItem?.result) return;
+    const res = await fetch("/api/reposition", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        resultId: selectedItem.result.id,
+        headlineYOverride: selectedItem.result.headlineYOverride ?? 0.3,
+        textBoxes: selectedItem.result.textBoxes,
+        hideHeadline,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) updateItem(selectedItemId!, { result: { ...selectedItem.result, ...data.result } });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedItem, selectedItemId]);
+
   const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string) => {
     if (!selectedItem?.result || detailLoading) return;
     setDetailLoading(true);
@@ -1980,6 +2016,10 @@ export default function Home() {
                             });
                           }}
                           onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          textBoxes={selectedItem.result?.textBoxes}
+                          hideHeadline={selectedItem.result?.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
                         />
                       ) : isStarReview ? (
                         <LiveAdCanvas
@@ -2009,6 +2049,10 @@ export default function Home() {
                               containerW={cw}
                             />
                           )}
+                          textBoxes={selectedItem.result?.textBoxes}
+                          hideHeadline={selectedItem.result?.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
                         />
                       ) : isSplitScene ? (
                         <LiveAdCanvas
@@ -2035,6 +2079,10 @@ export default function Home() {
                             });
                           }}
                           onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          textBoxes={selectedItem.result?.textBoxes}
+                          hideHeadline={selectedItem.result?.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
                         />
                       ) : (
                         <img
