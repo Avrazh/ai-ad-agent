@@ -220,9 +220,24 @@ export function DraggableTextBlock({ box, containerW, containerH, onChange, onDe
         <button
           onClick={(e) => {
             e.stopPropagation();
-            const next = { ...localRef.current, bullets: !localRef.current.bullets };
+            const newBullets = !localRef.current.bullets;
+            const next = { ...localRef.current, bullets: newBullets };
             setLocal(next);
             onChange(next);
+            // If currently editing, rewrite the contentEditable content immediately
+            if (editing && editRef.current) {
+              const lines = editRef.current.innerText.split("\n");
+              const stripped = lines.map(l => l.replace(/^•\s?/, ""));
+              editRef.current.innerText = newBullets
+                ? stripped.map(l => `• ${l}`).join("\n")
+                : stripped.join("\n");
+              // Move cursor to end
+              const range = document.createRange();
+              range.selectNodeContents(editRef.current);
+              range.collapse(false);
+              window.getSelection()?.removeAllRanges();
+              window.getSelection()?.addRange(range);
+            }
           }}
           style={{
             background: local.bullets ? "#6366f1" : "rgba(0,0,0,0.55)",
@@ -238,7 +253,23 @@ export function DraggableTextBlock({ box, containerW, containerH, onChange, onDe
           ref={editRef}
           contentEditable
           suppressContentEditableWarning
-          onKeyDown={(e) => { if (e.key === "Escape") e.currentTarget.blur(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { e.currentTarget.blur(); return; }
+            if (e.key === "Enter" && localRef.current.bullets) {
+              e.preventDefault();
+              const sel = window.getSelection();
+              if (sel && sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                range.deleteContents();
+                const node = document.createTextNode("\n• ");
+                range.insertNode(node);
+                range.setStartAfter(node);
+                range.setEndAfter(node);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            }
+          }}
           onBlur={() => {
             const raw = editRef.current?.innerText ?? local.text;
             const cleaned = local.bullets
