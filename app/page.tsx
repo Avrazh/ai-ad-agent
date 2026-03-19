@@ -119,6 +119,8 @@ type QueueItem = {
   headlineColor?: string;       // user-set headline text color (persisted until approve)
   brandColor?: string;          // user-set brand name color (persisted until approve)
   overrideHeadline?: string;    // user-inserted line breaks; cleared on new headline
+  textBoxes?: import("@/lib/types").TextBox[]; // user-added text overlays (local until approve)
+  hideHeadline?: boolean;       // hide headline overlay (local until approve)
   splitConfig?: SplitConfig;   // config for split scene editor
   splitEditing?: boolean;      // true when split scene editor is open
   error?: string;
@@ -1204,39 +1206,15 @@ export default function Home() {
     }
   };
 
-  const handleTextBoxesChange = useCallback(async (textBoxes: import("@/lib/types").TextBox[]) => {
-    if (!selectedItem?.result) return;
-    const res = await fetch("/api/reposition", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        resultId: selectedItem.result.id,
-        headlineYOverride: selectedItem.result.headlineYOverride ?? 0.3,
-        textBoxes,
-        hideHeadline: selectedItem.result.hideHeadline,
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) updateItem(selectedItemId!, { result: { ...selectedItem.result, ...data.result } });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItem, selectedItemId]);
+  const handleTextBoxesChange = useCallback((textBoxes: import("@/lib/types").TextBox[]) => {
+    if (!selectedItemId) return;
+    updateItem(selectedItemId, { textBoxes });
+  }, [selectedItemId, updateItem]);
 
-  const handleHideHeadlineChange = useCallback(async (hideHeadline: boolean) => {
-    if (!selectedItem?.result) return;
-    const res = await fetch("/api/reposition", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        resultId: selectedItem.result.id,
-        headlineYOverride: selectedItem.result.headlineYOverride ?? 0.3,
-        textBoxes: selectedItem.result.textBoxes,
-        hideHeadline,
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) updateItem(selectedItemId!, { result: { ...selectedItem.result, ...data.result } });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItem, selectedItemId]);
+  const handleHideHeadlineChange = useCallback((hideHeadline: boolean) => {
+    if (!selectedItemId) return;
+    updateItem(selectedItemId, { hideHeadline });
+  }, [selectedItemId, updateItem]);
 
   const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string) => {
     if (!selectedItem?.result || detailLoading) return;
@@ -1245,7 +1223,7 @@ export default function Home() {
       const res = await fetch("/api/reposition", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, showBrand, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}), ...(selectedItem.headlineFont ? { headlineFont: selectedItem.headlineFont } : {}), ...(headlineColor !== undefined ? { headlineColor } : {}), ...(brandColor !== undefined ? { brandColor } : {}), ...(headlineOverride !== undefined ? { headlineOverride } : {}) }),
+        body: JSON.stringify({ resultId: selectedItem.result.id, headlineYOverride: normalizedY, headlineFontScale: fontScale, showBrand, ...(brandNameY !== undefined ? { brandNameY } : {}), ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}), ...(selectedItem.headlineFont ? { headlineFont: selectedItem.headlineFont } : {}), ...(headlineColor !== undefined ? { headlineColor } : {}), ...(brandColor !== undefined ? { brandColor } : {}), ...(headlineOverride !== undefined ? { headlineOverride } : {}), ...(selectedItem.textBoxes !== undefined ? { textBoxes: selectedItem.textBoxes } : {}), ...(selectedItem.hideHeadline !== undefined ? { hideHeadline: selectedItem.hideHeadline } : {}) }),
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
@@ -2016,8 +1994,8 @@ export default function Home() {
                             });
                           }}
                           onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
-                          textBoxes={selectedItem.result?.textBoxes}
-                          hideHeadline={selectedItem.result?.hideHeadline}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
                           onHideHeadlineChange={handleHideHeadlineChange}
                         />
@@ -2049,8 +2027,8 @@ export default function Home() {
                               containerW={cw}
                             />
                           )}
-                          textBoxes={selectedItem.result?.textBoxes}
-                          hideHeadline={selectedItem.result?.hideHeadline}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
                           onHideHeadlineChange={handleHideHeadlineChange}
                         />
@@ -2079,8 +2057,8 @@ export default function Home() {
                             });
                           }}
                           onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
-                          textBoxes={selectedItem.result?.textBoxes}
-                          hideHeadline={selectedItem.result?.hideHeadline}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
                           onHideHeadlineChange={handleHideHeadlineChange}
                         />
