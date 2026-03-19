@@ -1601,6 +1601,30 @@ export default function Home() {
                   >+ Add Text</button>
                 </div>
 
+                {/* Stage: Font */}
+                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Font</span>
+                  <div className="flex items-center gap-1.5">
+                    {([
+                      { key: "Playfair Display", label: "Playfair" },
+                      { key: "Montserrat",        label: "Montserrat" },
+                    ] as { key: string; label: string }[]).map(({ key, label }) => {
+                      const active = (selectedItem?.headlineFont ?? "Playfair Display") === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => selectedItemId && updateItem(selectedItemId, { headlineFont: key })}
+                          disabled={isSVGSurprise || !selectedItem?.result}
+                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (active ? pillActive : pillInactive)}
+                          style={{ fontFamily: `'${key}', sans-serif` }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Stage: Persona */}
                 <div className="relative flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Persona</span>
@@ -1748,29 +1772,6 @@ export default function Home() {
                 </div>
 
 
-                {/* Stage: Font */}
-                <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Font</span>
-                  <div className="flex items-center gap-1.5">
-                    {([
-                      { key: "Playfair Display", label: "Playfair" },
-                      { key: "Montserrat",        label: "Montserrat" },
-                    ] as { key: string; label: string }[]).map(({ key, label }) => {
-                      const active = (selectedItem?.headlineFont ?? "Playfair Display") === key;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => selectedItemId && updateItem(selectedItemId, { headlineFont: key })}
-                          disabled={isSVGSurprise || !selectedItem?.result}
-                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (active ? pillActive : pillInactive)}
-                          style={{ fontFamily: `'${key}', sans-serif` }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
                 {/* Stage: Crop */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-l-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Crop</span>
