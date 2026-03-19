@@ -3,6 +3,7 @@ import path from "path";
 import sharp from "sharp";
 import type { AdSpec, SafeZones } from "@/lib/types";
 import { getTemplate } from "@/lib/templates";
+import { buildTextBoxesHtml } from "@/lib/templates/textBoxHelper";
 import { read as readStorage, save } from "@/lib/storage";
 import { newId } from "@/lib/ids";
 
@@ -222,7 +223,11 @@ export function renderAd(
     }
   }
   // Build template → HTML string
-  const html = template.build(spec, imageBase64, zonePx, safeZones, buildContext);
+  const templateHtml = template.build(spec, imageBase64, zonePx, safeZones, buildContext);
+  const textBoxHtml = buildTextBoxesHtml(spec.textBoxes ?? [], spec.renderMeta.w, spec.renderMeta.h);
+  const html = textBoxHtml
+    ? templateHtml.replace("</body>", `${textBoxHtml}</body>`)
+    : templateHtml;
 
   // Wrap in a full HTML page with embedded fonts + reset CSS
   // Only embed fonts actually used: Inter (always) + Playfair Display (brand name) + theme headline + Bebas Neue (ai_surprise)

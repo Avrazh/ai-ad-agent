@@ -144,7 +144,10 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
     return `<p style="font-family:'${subtextFamily}',sans-serif;font-size:${size}px;font-weight:400;color:${textColor};opacity:0.55;text-align:${textAlign};letter-spacing:0.16em;text-transform:uppercase;margin:16px 0 0 0;word-break:break-word;">${subtext}</p>`;
   }
 
+  const hideHeadline = spec.hideHeadline === true;
+
   function headlineHTML(hSize: number, textW: number): string {
+    if (hideHeadline) return "";
     return `<p data-fit-headline style="font-family:'${fontFamily}',sans-serif;font-size:${hSize}px;font-weight:${fontWeight};color:${textColor};text-align:${textAlign};text-transform:${textTransform};letter-spacing:${letterSpacing};line-height:1.15;margin:0;width:${textW}px;flex-shrink:0;word-break:normal;overflow-wrap:normal;transform:rotate(${hlRotation}deg);">${headline}</p>`;
   }
 
