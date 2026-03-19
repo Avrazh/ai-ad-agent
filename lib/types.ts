@@ -159,6 +159,8 @@ export type AdSpec = {
   splitProductPanX?: number;    // 0-1 horizontal pan of product photo panel (default 0.5)
   splitSecondPanX?: number;     // 0-1 horizontal pan of second image panel (default 0.5)
   splitSwapped?: boolean;       // if true: second image on left, product on right
+  textBoxes?: TextBox[];        // user-added free-form text overlays
+  hideHeadline?: boolean;       // if true, suppress AI headline in render
 };
 
 // ── AI Style Pool ────────────────────────────────────────────
@@ -243,6 +245,19 @@ export type SurpriseSpec = {
   preferredHeadlineLength?: "short" | "medium" | "long"; // for length-aware slot matching
   headlineYOverride?: number;  // 0–1 normalized canvas Y for headline top; overrides auto top/bottom logic
   headlineFontScale?: number;  // multiplier for font size; 1.0 = default, 0.5–2.5
+};
+
+// ── Text Boxes (user-added overlays) ─────────────────────────
+export type TextBox = {
+  id: string;
+  text: string;
+  x: number;        // 0-1 normalized canvas X (left edge of box)
+  y: number;        // 0-1 normalized canvas Y (top edge of box)
+  w: number;        // 0-1 normalized canvas width
+  fontSize: number; // 0-1 normalized canvas height (e.g. 0.04 = 4% of canvas height)
+  color: string;    // hex
+  bold: boolean;
+  bullets: boolean;
 };
 
 // ── Render result ───────────────────────────────────────────
