@@ -100,7 +100,8 @@ export type TemplateId =
   | "luxury_editorial_left" | "luxury_soft_frame_open"
   | "switch_grid_3x2_no_text"
   | "ai_surprise"
-  | "split_scene";
+  | "split_scene"
+  | "ai_background";
 
 export type TemplateTheme = {
   fontHeadline: string;
@@ -161,6 +162,7 @@ export type AdSpec = {
   splitSwapped?: boolean;       // if true: second image on left, product on right
   textBoxes?: TextBox[];        // user-added free-form text overlays
   hideHeadline?: boolean;       // if true, suppress AI headline in render
+  aiBgImagePath?: string;       // URL of pre-rendered background PNG (ai_background template only)
 };
 
 // ── AI Style Pool ────────────────────────────────────────────

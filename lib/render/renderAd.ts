@@ -110,6 +110,30 @@ export async function warmBrowser(): Promise<void> {
   await getBrowser();
 }
 
+/**
+ * Renders arbitrary HTML to a PNG buffer using the cached Puppeteer browser.
+ * Uses the same render lock as renderAd to avoid concurrent Chromium usage.
+ */
+export function renderHtmlToPng(html: string, w: number, h: number): Promise<Buffer> {
+  return withRenderLock(async () => {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    try {
+      await page.setViewport({ width: w, height: h, deviceScaleFactor: 1 });
+      await page.setContent(html, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      // Wait one frame for paint
+      await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      const buf = await page.screenshot({ type: "png", clip: { x: 0, y: 0, width: w, height: h } });
+      return Buffer.from(buf);
+    } catch (err) {
+      browserInstance = null;
+      throw err;
+    } finally {
+      await page.close().catch(() => {});
+    }
+  });
+}
+
 export function getCachedSubjectPos(imageId: string, w: number, h: number, cropX?: number): string | null {
   const key = `${imageId}:${w}x${h}${cropX !== undefined ? `:cx${Math.round(cropX * 10000)}` : ""}`;
   return cssSubjectPosCache.get(key) ?? null;
@@ -138,6 +162,71 @@ export function renderAd(
 
   // Zone is no longer used for positioning — user controls crop and headline position
   const zonePx = { x: 0, y: 0, w: spec.renderMeta.w, h: spec.renderMeta.h };
+
+  // ai_background: use the pre-rendered background PNG instead of the product image
+  if (spec.templateId === "ai_background" && spec.aiBgImagePath) {
+    const bgBuffer = await readStorage("generated", spec.aiBgImagePath);
+    const imageBase64 = `data:image/png;base64,${bgBuffer.toString("base64")}`;
+    const html = template.build(spec, imageBase64, zonePx, safeZones);
+    const textBoxHtml = buildTextBoxesHtml(spec.textBoxes ?? [], spec.renderMeta.w, spec.renderMeta.h);
+    const neededFonts = new Set(["Inter", "Playfair Display", spec.theme.fontHeadline]);
+    if (spec.headlineFont) neededFonts.add(spec.headlineFont);
+    const fonts = await getFontCSSForFamilies([...neededFonts]);
+    const page_html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+${fonts}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: hidden; }
+</style>
+</head>
+<body>${html}${textBoxHtml}</body>
+</html>`;
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    const timeoutHandle = setTimeout(() => { page.close().catch(() => {}); browserInstance = null; }, 15_000);
+    try {
+      await page.setViewport({ width: spec.renderMeta.w, height: spec.renderMeta.h, deviceScaleFactor: 1 });
+      await page.setContent(page_html, { waitUntil: "domcontentloaded" });
+      await page.evaluate(() => {
+        function getClipAncestor(el: Element): Element {
+          let node = el.parentElement;
+          while (node) {
+            const s = getComputedStyle(node);
+            if (s.overflow === "hidden" || s.overflowY === "hidden") return node;
+            node = node.parentElement;
+          }
+          return document.body;
+        }
+        document.querySelectorAll<HTMLElement>("[data-fit-headline]").forEach((el) => {
+          el.style.wordBreak = "normal";
+          el.style.overflowWrap = "normal";
+          const clip = getClipAncestor(el);
+          const clipBottom = clip.getBoundingClientRect().bottom;
+          const minFs = 12;
+          let lo = minFs, hi = parseFloat(getComputedStyle(el).fontSize);
+          const overflows = () => el.getBoundingClientRect().bottom > clipBottom || el.scrollWidth > el.offsetWidth;
+          if (!overflows()) return;
+          while (lo < hi - 1) { const mid = Math.round((lo + hi) / 2); el.style.fontSize = `${mid}px`; if (overflows()) hi = mid; else lo = mid; }
+          el.style.fontSize = `${lo}px`;
+        });
+      });
+      await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+      const jpegBuffer = await page.screenshot({ type: "jpeg", quality: 90, clip: { x: 0, y: 0, width: spec.renderMeta.w, height: spec.renderMeta.h } });
+      const renderResultId = newId("rr");
+      const jpegUrl = await save("generated", `${renderResultId}.jpg`, Buffer.from(jpegBuffer));
+      lap("TOTAL (ai_background)");
+      return { pngUrl: jpegUrl, renderResultId, cssSubjectPos: "50% 50%" };
+    } catch (err) {
+      browserInstance = null;
+      throw err;
+    } finally {
+      clearTimeout(timeoutHandle);
+      await page.close().catch(() => {});
+    }
+  }
 
   // Load + resize source image with smart focal-point crop, cache per imageId+canvas size
   const cacheKey = `${spec.imageId}:${spec.renderMeta.w}x${spec.renderMeta.h}${spec.cropX !== undefined ? `:cx${Math.round(spec.cropX * 10000)}` : ""}`;

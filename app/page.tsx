@@ -605,6 +605,41 @@ export default function Home() {
     [detailLoading, updateItem]
   );
 
+  // ── AI Style — Claude generates no-text background; user adds text on top ──
+  const handleAIStyle = useCallback(
+    async (item: QueueItem) => {
+      if (!item.imageId || detailLoading) return;
+      setDetailLoading(true);
+      try {
+        const res = await fetch("/api/ai-style", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageId: item.imageId,
+            lang: selectedLang,
+            format: selectedFormat,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "AI Style failed");
+        updateItem(item.id, {
+          result: data.result,
+          approved: false,
+          usedFamilyId: "ai" as FamilyId,
+          usedSurpriseSpec: undefined,
+          lang: selectedLang,
+          textBoxes: [],
+          hideHeadline: false,
+        });
+      } catch (err) {
+        console.error("[ai-style]", err);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [detailLoading, updateItem, selectedLang, selectedFormat],
+  );
+
   // ── Surprise Me — Claude generates full SVG ad (no Satori, no predefined layout) ──
   const handleSurpriseMe = useCallback(
     async (item: QueueItem) => {
@@ -1165,13 +1200,14 @@ export default function Home() {
     !!selectedItem?.result &&
     (selectedItem.usedSurpriseSpec?.layout === "clean_headline" ||
      selectedItem.result.templateId === "star_review" ||
-     selectedItem.result.templateId === "split_scene");
+     selectedItem.result.templateId === "split_scene" ||
+     selectedItem.result.templateId === "ai_background");
 
   const initialHeadlineY = selectedItem?.headlineY
     ?? (selectedItem?.result
       ? (selectedItem.result.headlineYOverride
           ?? selectedItem.usedSurpriseSpec?.headlineYOverride
-          ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : selectedItem.result.templateId === "split_scene" ? 0.82 : 0.1484))
+          ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : selectedItem.result.templateId === "split_scene" ? 0.82 : selectedItem.result.templateId === "ai_background" ? 0.65 : 0.1484))
       : 0.1484);
 
   // ── Reposition headline ───────────────────────────────────
@@ -1947,6 +1983,29 @@ export default function Home() {
                           </div>
                         </div>
                         <span className={"text-[10px] shrink-0 " + (isActive ? "text-indigo-300" : "text-gray-500")}>Split Scene</span>
+                      </button>
+                    );
+                  })()}
+
+                  {/* Divider before AI Style */}
+                  <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" />
+
+                  {/* AI Style pill — Claude-generated background, user adds text */}
+                  {(() => {
+                    const isActive = selectedItem.result?.templateId === "ai_background";
+                    return (
+                      <button
+                        key="ai_background"
+                        onClick={() => { handleAIStyle(selectedItem); setLayoutPanelOpen(false); }}
+                        disabled={detailLoading || !selectedItem.imageId}
+                        className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-indigo-500/20 hover:border-indigo-500/50 bg-indigo-500/5")}
+                      >
+                        <div className="w-[80px] h-[100px] rounded-lg overflow-hidden bg-white/[0.04] flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1a1040 0%, #0d0d1a 100%)" }}>
+                          {detailLoading && isActive
+                            ? <div className="h-4 w-4 animate-spin rounded-full border border-indigo-400/50 border-t-transparent" />
+                            : <span style={{ fontSize: 28 }}>✦</span>}
+                        </div>
+                        <span className={"text-[10px] shrink-0 font-medium " + (isActive ? "text-indigo-300" : "text-indigo-400")}>AI Style</span>
                       </button>
                     );
                   })()}
