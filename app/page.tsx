@@ -355,20 +355,23 @@ export default function Home() {
   // intentionally omitted from deps, but the ref always holds the latest value.
   const statusKey = queue.map((i) => i.status).join(",");
   useEffect(() => {
-    fetch("/api/personas")
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setPersonas(data); })
-      .catch(() => { /* leave personas as [] — select stays disabled */ });
-    // Poll until persona headlines are available.
-    // On cold start they are generated in the background during first upload,
-    // so the initial fetch may return empty — retry every 2s until populated.
     let cancelled = false;
     (async () => {
+      // Fetch sequentially so webpack compiles one route at a time on first load
+      try {
+        const r = await fetch("/api/personas");
+        const data = await r.json();
+        if (Array.isArray(data)) setPersonas(data);
+      } catch { /* leave personas as [] */ }
+
+      // Poll until persona headlines are available.
+      // On cold start they are generated in the background during first upload,
+      // so the initial fetch may return empty — retry every 2s until populated.
       for (let i = 0; i < 15; i++) {
         if (cancelled) return;
         try {
           const r = await fetch("/api/persona-headlines");
-          if (!r.ok) return; // route error or 404 — stop polling, don't spam logs
+          if (!r.ok) return;
           const data = await r.json();
           if (data && typeof data === "object" && Object.keys(data).length > 0) {
             setPersonaHeadlineMap(data);
