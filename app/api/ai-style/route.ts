@@ -4,10 +4,9 @@ import { newId } from "@/lib/ids";
 import { insertAdSpec, insertRenderResult, getImage, getCopySlotsByImage } from "@/lib/db";
 import { read as readStorage, save } from "@/lib/storage";
 import { generateAIBackground } from "@/lib/ai/aiBackground";
-import { renderHtmlToPng, renderAd } from "@/lib/render/renderAd";
+import { renderHtmlToPng } from "@/lib/render/renderAd";
 import { FORMAT_DIMS } from "@/lib/types";
 import type { Format, Language, AdSpec } from "@/lib/types";
-import "@/lib/templates"; // ensure templates registered
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,27 +94,26 @@ export async function POST(req: NextRequest) {
       aiBgImagePath: bgUrl,
     };
 
-    // 7. Render final composite (background + headline) via renderAd
-    // Safe zones not needed — ai_background reads from aiBgImagePath, not the product image
-    const { pngUrl, renderResultId } = await renderAd(adSpec);
-
-    // 8. Persist to DB
+    // 7. Persist AdSpec + RenderResult — background PNG is the initial pngUrl.
+    // No second Puppeteer render needed: LiveAdCanvas overlays the headline client-side.
+    // The headline is baked in only on Approve via /api/reposition.
+    const resultId = newId("rr");
     await insertAdSpec(adSpecId, imageId, JSON.stringify(adSpec));
     await insertRenderResult({
-      id: renderResultId,
+      id: resultId,
       adSpecId,
       imageId,
       familyId: "ai",
       templateId: "ai_background",
       primarySlotId,
-      pngUrl,
+      pngUrl: bgUrl,
     });
 
-    // 9. Return result
+    // 8. Return result
     return NextResponse.json({
       ok: true,
       result: {
-        id: renderResultId,
+        id: resultId,
         adSpecId,
         imageId,
         familyId: "ai",
@@ -123,7 +121,7 @@ export async function POST(req: NextRequest) {
         primarySlotId,
         format,
         lang,
-        pngUrl,
+        pngUrl: bgUrl,
         approved: false,
         createdAt: new Date().toISOString(),
         headlineText: headline,
