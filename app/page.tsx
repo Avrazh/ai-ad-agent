@@ -1187,6 +1187,7 @@ export default function Home() {
     : TONES;
 
   const isSplitScene = selectedItem?.result?.templateId === "split_scene";
+  const isAIBackground = selectedItem?.result?.templateId === "ai_background";
 
   const isCleanHeadline =
     !!selectedItem?.result &&
@@ -2136,6 +2137,37 @@ export default function Home() {
                           spec={{}}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
+                          initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
+                          onColorChange={(hColor, bColor) => {
+                            updateItem(selectedItemId!, {
+                              ...(hColor !== null ? { headlineColor: hColor } : {}),
+                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
+                            });
+                          }}
+                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
+                        />
+                      ) : isAIBackground ? (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.result.pngUrl}
+                          subjectPos="50% 50%"
+                          headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? ""}
+                          spec={{ font: "serif", fontWeight: 700, textAlign: "center" }}
+                          format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
+                          initialY={initialHeadlineY}
+                          initialFontScale={selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0}
                           disabled={detailLoading}
                           onApply={handleReposition}
                           onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
