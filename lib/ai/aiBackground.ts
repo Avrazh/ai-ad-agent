@@ -65,7 +65,7 @@ CREATIVE DIRECTION FOR THIS EXECUTION:
 Mood: ${mood}
 Color: ${colorDir}
 
-Invent an original layout that expresses this creative direction. Do not default to obvious approaches — be genuinely surprising. The composition should feel like it came from a specific creative vision, not a template.
+Invent an original layout that expresses this creative direction. Lean minimalist — fewer elements, more intentional negative space, nothing decorative that doesn't serve the composition. But be genuinely diverse in how you achieve that minimalism: the structure, proportions, and color relationships should feel distinct every time. Do not default to obvious approaches.
 
 RULES:
 - Include ZERO text, letters, words, numbers, labels, watermarks, or placeholder text
