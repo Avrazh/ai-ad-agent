@@ -61,11 +61,18 @@ export async function generateAIBackground(
           type: "text",
           text: `You are a world-class art director creating a background composition for this product image.
 
-CREATIVE DIRECTION FOR THIS EXECUTION:
+STEP 1 — READ THE IMAGE:
+Study the product carefully: its shape, where the visual weight sits, what's in focus, how much negative space surrounds it, whether it's better featured centered or offset, portrait or landscape in feel.
+Let those observations drive your layout decisions.
+
+STEP 2 — APPLY THIS CREATIVE DIRECTION:
 Mood: ${mood}
 Color: ${colorDir}
 
-Invent an original layout that expresses this creative direction. Lean minimalist — fewer elements, more intentional negative space, nothing decorative that doesn't serve the composition. But be genuinely diverse in how you achieve that minimalism: the structure, proportions, and color relationships should feel distinct every time. Do not default to obvious approaches.
+Use the mood and color direction to set the atmosphere and palette, but let the image's own composition tell you where to place it and how to structure the canvas around it.
+
+STEP 3 — BUILD IT:
+Lean minimalist — fewer elements, more intentional negative space, nothing decorative that doesn't serve the composition. The result should feel like it was designed specifically for this product, not a generic template.
 
 RULES:
 - Include ZERO text, letters, words, numbers, labels, watermarks, or placeholder text
