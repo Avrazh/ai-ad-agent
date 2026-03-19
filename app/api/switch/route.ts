@@ -3,7 +3,7 @@
 // If this file ever imports from 'lib/ai/', it's a bug.
 
 import { NextRequest, NextResponse } from "next/server";
-import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
+import { sampleBrandZoneBrightness } from "@/lib/imageUtils";
 import {
   getRenderResult,
   getAdSpec,

@@ -3,9 +3,9 @@
   "version": "0.3.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=1024\" next dev",
+    "dev": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next dev --webpack",
     "build": "next build",
-    "start": "cross-env NODE_OPTIONS=\"--max-old-space-size=1024\" next start",
+    "start": "cross-env NODE_OPTIONS=\"--max-old-space-size=4096\" next start",
     "lint": "eslint",
     "generate-previews": "node scripts/generate-previews.mjs"
   },

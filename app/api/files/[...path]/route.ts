@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { read } from "@/lib/storage";
+import fs from "fs";
 import path from "path";
+import { Readable } from "stream";
+
+const STORAGE_ROOT = process.env.NODE_ENV === "production"
+  ? "/tmp"
+  : path.join(process.cwd(), "storage");
 
 const MIME: Record<string, string> = {
   ".png": "image/png",
@@ -19,19 +24,22 @@ export async function GET(
     return NextResponse.json({ error: "Invalid path" }, { status: 400 });
   }
 
-  const bucket = segments[0] as "uploads" | "generated";
+  const bucket = segments[0];
   if (bucket !== "uploads" && bucket !== "generated") {
     return NextResponse.json({ error: "Invalid bucket" }, { status: 400 });
   }
 
-  const filename = segments.slice(1).join("/");
+  // Use basename to prevent path traversal
+  const filename = path.basename(segments.slice(1).join("/"));
+  const filePath = path.join(STORAGE_ROOT, bucket, filename);
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = MIME[ext] || "application/octet-stream";
 
   try {
-    const buffer = await read(bucket, filename);
-    const ext = path.extname(filename).toLowerCase();
-    const contentType = MIME[ext] || "application/octet-stream";
-
-    return new NextResponse(new Uint8Array(buffer), {
+    // Stream from disk — never loads the full file into memory
+    const stream = fs.createReadStream(filePath);
+    const readable = Readable.toWeb(stream) as ReadableStream;
+    return new NextResponse(readable, {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",

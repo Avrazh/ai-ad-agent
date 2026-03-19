@@ -114,13 +114,22 @@ export function getCachedSubjectPos(imageId: string, w: number, h: number, cropX
   return cssSubjectPosCache.get(key) ?? null;
 }
 
+// ── Render semaphore (max 1 concurrent Puppeteer render) ──────────────────
+let renderSemaphore: Promise<void> = Promise.resolve();
+function withRenderLock<T>(fn: () => Promise<T>): Promise<T> {
+  const next = renderSemaphore.then(fn);
+  renderSemaphore = next.then(() => {}, () => {});
+  return next;
+}
+
 // ── renderAd ───────────────────────────────────────────────────────────────
 const EMPTY_SAFE_ZONES: SafeZones = { zones: [], avoidRegions: [] };
 
-export async function renderAd(
+export function renderAd(
   spec: AdSpec,
   safeZones: SafeZones = EMPTY_SAFE_ZONES
 ): Promise<{ pngUrl: string; renderResultId: string; cssSubjectPos: string }> {
+  return withRenderLock(async () => {
   const t0 = Date.now();
   const lap = (label: string, since = t0) => console.log(`[renderAd] ${label}: ${Date.now() - since}ms`);
 
@@ -306,6 +315,7 @@ body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: 
     clearTimeout(timeoutHandle);
     await page.close().catch(() => {});
   }
+  }); // end withRenderLock (entire renderAd serialised)
 }
 
 async function getImageInfo(imageId: string): Promise<{ filename: string; url: string }> {

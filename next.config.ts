@@ -12,6 +12,11 @@ const nextConfig: NextConfig = {
     "/api/regenerate": ["./node_modules/@sparticuz/chromium/**/*"],
     "/api/surprise-render": ["./node_modules/@sparticuz/chromium/**/*"],
   },
+  webpack: (config) => {
+    // Limit parallel workers to prevent OOM crashes on webpack child processes
+    config.parallelism = 1;
+    return config;
+  },
 };
 
 export default nextConfig;

@@ -9,7 +9,7 @@ import {
 import { renderAd } from "@/lib/render/renderAd";
 import { newId } from "@/lib/ids";
 import type { AdSpec } from "@/lib/types";
-import { sampleBrandZoneBrightness } from "@/app/api/generate/route";
+import { sampleBrandZoneBrightness } from "@/lib/imageUtils";
 
 export async function POST(req: NextRequest) {
   try {
