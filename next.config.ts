@@ -13,8 +13,9 @@ const nextConfig: NextConfig = {
     "/api/surprise-render": ["./node_modules/@sparticuz/chromium/**/*"],
   },
   webpack: (config) => {
-    // Limit parallel workers to prevent OOM crashes on webpack child processes
+    // Limit parallel workers and disable disk cache to prevent OOM on low-memory machines
     config.parallelism = 1;
+    config.cache = false;
     return config;
   },
 };
