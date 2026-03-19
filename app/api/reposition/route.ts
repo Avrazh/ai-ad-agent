@@ -13,7 +13,7 @@ import { sampleBrandZoneBrightness } from "@/lib/imageUtils";
 
 export async function POST(req: NextRequest) {
   try {
-    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride, splitSecondImageId, splitDividerX, splitProductPanX, splitSecondPanX, splitSwapped } = await req.json() as {
+    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride, splitSecondImageId, splitDividerX, splitProductPanX, splitSecondPanX, splitSwapped, textBoxes, hideHeadline } = await req.json() as {
       resultId: string;
       headlineYOverride: number;
       headlineFontScale?: number;
@@ -29,6 +29,8 @@ export async function POST(req: NextRequest) {
       splitProductPanX?: number;
       splitSecondPanX?: number;
       splitSwapped?: boolean;
+      textBoxes?: import("@/lib/types").TextBox[];
+      hideHeadline?: boolean;
     };
     if (!resultId || headlineYOverride === undefined) {
       return NextResponse.json({ error: "resultId and headlineYOverride required" }, { status: 400 });
@@ -64,6 +66,8 @@ export async function POST(req: NextRequest) {
       ...(splitProductPanX !== undefined ? { splitProductPanX } : {}),
       ...(splitSecondPanX !== undefined ? { splitSecondPanX } : {}),
       ...(splitSwapped !== undefined ? { splitSwapped } : {}),
+      ...(textBoxes !== undefined ? { textBoxes } : {}),
+      ...(hideHeadline !== undefined ? { hideHeadline } : {}),
     };
 
     if (headlineOverride !== undefined) {
@@ -110,6 +114,8 @@ export async function POST(req: NextRequest) {
         brandNameFontScale: newSpec.brandNameFontScale,
         headlineColor: newSpec.headlineColor,
         brandColor: newSpec.brandColor,
+        textBoxes: newSpec.textBoxes,
+        hideHeadline: newSpec.hideHeadline,
         subjectPos,
       },
     });
