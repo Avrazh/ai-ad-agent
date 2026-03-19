@@ -449,8 +449,8 @@ export default function Home() {
 
     setProcessing(true);
 
-    // Process one at a time to avoid OOM on low-memory dev machines
-    const CONCURRENCY = 1;
+    // Process at most 3 images concurrently
+    const CONCURRENCY = 3;
     const results: PromiseSettledResult<void>[] = [];
     for (let i = 0; i < itemsToProcess.length; i += CONCURRENCY) {
       const batch = itemsToProcess.slice(i, i + CONCURRENCY);
