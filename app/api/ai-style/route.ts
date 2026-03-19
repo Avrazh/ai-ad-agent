@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import { newId } from "@/lib/ids";
-import { insertAdSpec, insertRenderResult, getImage, getCopySlotsByImage } from "@/lib/db";
+import { insertAdSpec, insertRenderResult, getImage, getGlobalPersonaHeadlines } from "@/lib/db";
 import { read as readStorage, save } from "@/lib/storage";
 import { generateAIBackground } from "@/lib/ai/aiBackground";
 import { renderHtmlToPng } from "@/lib/render/renderAd";
@@ -10,10 +10,11 @@ import type { Format, Language, AdSpec } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageId, lang = "en", format = "9:16" } = await req.json() as {
+    const { imageId, lang = "en", format = "9:16", personaId } = await req.json() as {
       imageId: string;
       lang?: Language;
       format?: Format;
+      personaId?: string;
     };
 
     if (!imageId) {
@@ -56,18 +57,11 @@ export async function POST(req: NextRequest) {
     const bgUrl = await save("generated", `${bgId}.png`, bgPngBuffer);
     console.log(`[ai-style] Background saved: ${bgUrl}`);
 
-    // 5. Pick headline from copy slots (aspirational → any headline → fallback)
-    const copySlots = await getCopySlotsByImage(imageId);
-    let headline = "";
-    let primarySlotId = "default";
-    const headlineSlot =
-      copySlots.find((s) => s.language === lang && s.slotType === "headline" && s.tone === "aspirational")
-      ?? copySlots.find((s) => s.language === lang && s.slotType === "headline")
-      ?? copySlots.find((s) => s.slotType === "headline");
-    if (headlineSlot) {
-      headline = headlineSlot.text;
-      primarySlotId = headlineSlot.id;
-    }
+    // 5. Pick headline from global persona headlines (same source as generate route)
+    const FALLBACK_HEADLINE = "The nails made for you";
+    const personaHls = personaId ? await getGlobalPersonaHeadlines(personaId, lang) : [];
+    const headline = personaHls[0]?.headline ?? FALLBACK_HEADLINE;
+    const primarySlotId = personaId ? `${personaId}:${personaHls[0]?.tone ?? "default"}` : "default";
 
     // 6. Build AdSpec
     const adSpecId = newId("as");

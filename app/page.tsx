@@ -618,6 +618,7 @@ export default function Home() {
             imageId: item.imageId,
             lang: selectedLang,
             format: selectedFormat,
+            personaId: personaByImage[item.id] ?? personas[0]?.id,
           }),
         });
         const data = await res.json();
@@ -637,7 +638,7 @@ export default function Home() {
         setDetailLoading(false);
       }
     },
-    [detailLoading, updateItem, selectedLang, selectedFormat],
+    [detailLoading, updateItem, selectedLang, selectedFormat, personaByImage, personas],
   );
 
   // ── Surprise Me — Claude generates full SVG ad (no Satori, no predefined layout) ──
