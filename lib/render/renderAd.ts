@@ -223,11 +223,8 @@ export function renderAd(
     }
   }
   // Build template → HTML string
-  const templateHtml = template.build(spec, imageBase64, zonePx, safeZones, buildContext);
+  const html = template.build(spec, imageBase64, zonePx, safeZones, buildContext);
   const textBoxHtml = buildTextBoxesHtml(spec.textBoxes ?? [], spec.renderMeta.w, spec.renderMeta.h);
-  const html = textBoxHtml
-    ? templateHtml.replace("</body>", `${textBoxHtml}</body>`)
-    : templateHtml;
 
   // Wrap in a full HTML page with embedded fonts + reset CSS
   // Only embed fonts actually used: Inter (always) + Playfair Display (brand name) + theme headline + Bebas Neue (ai_surprise)
@@ -247,7 +244,7 @@ ${fonts}
 body { width: ${spec.renderMeta.w}px; height: ${spec.renderMeta.h}px; overflow: hidden; }
 </style>
 </head>
-<body>${html}</body>
+<body>${html}${textBoxHtml}</body>
 </html>`;
 
   // Screenshot via Puppeteer
