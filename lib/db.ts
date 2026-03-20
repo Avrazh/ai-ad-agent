@@ -203,6 +203,11 @@ async function migrate(): Promise<void> {
     await client.execute(`ALTER TABLE personas ADD COLUMN is_custom INTEGER NOT NULL DEFAULT 0`);
   } catch { /* already exists */ }
 
+  // Additive migration: store the original clean background URL for ai_background results
+  try {
+    await client.execute(`ALTER TABLE render_results ADD COLUMN ai_bg_png_url TEXT`);
+  } catch { /* already exists */ }
+
   // Global persona headlines — generated once, no image dependency
   await client.execute(`CREATE TABLE IF NOT EXISTS global_persona_headlines (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -531,12 +536,13 @@ export async function insertRenderResult(row: {
   templateId: string;
   primarySlotId: string;
   pngUrl: string;
+  aiBgPngUrl?: string;
 }) {
   await ensureMigrated();
   const client = getClient();
   await client.execute({
-    sql: `INSERT INTO render_results (id, ad_spec_id, image_id, family_id, template_id, headline_id, png_url)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    sql: `INSERT INTO render_results (id, ad_spec_id, image_id, family_id, template_id, headline_id, png_url, ai_bg_png_url)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
       row.id,
       row.adSpecId,
@@ -545,6 +551,7 @@ export async function insertRenderResult(row: {
       row.templateId,
       row.primarySlotId,
       row.pngUrl,
+      row.aiBgPngUrl ?? null,
     ],
   });
 }
@@ -569,6 +576,7 @@ export async function getRenderResult(id: string) {
     approved: row.approved as number,
     replaced_by: row.replaced_by as string | null,
     created_at: row.created_at as string,
+    ai_bg_png_url: row.ai_bg_png_url as string | null,
   };
 }
 
@@ -589,6 +597,7 @@ export async function getActiveResults(imageId: string) {
     approved: row.approved as number,
     replaced_by: row.replaced_by as string | null,
     created_at: row.created_at as string,
+    ai_bg_png_url: row.ai_bg_png_url as string | null,
   }));
 }
 

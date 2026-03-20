@@ -1244,7 +1244,7 @@ export default function Home() {
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
-      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: approveAfter, overrideHeadline: undefined });
+      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: approveAfter, overrideHeadline: undefined, ...(data.result.aiBgPngUrl ? { aiBgPngUrl: data.result.aiBgPngUrl } : {}) });
       return data.result.id as string;
     } catch (err) {
       console.error("[reposition]", err);

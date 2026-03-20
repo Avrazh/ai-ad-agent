@@ -93,6 +93,8 @@ export async function POST(req: NextRequest) {
       templateId: newSpec.templateId,
       primarySlotId: newSpec.primarySlotId,
       pngUrl,
+      // Carry forward the clean background URL so it survives across baked re-renders
+      aiBgPngUrl: oldResult.ai_bg_png_url ?? undefined,
     });
     await markReplaced(resultId, renderResultId);
 
@@ -117,6 +119,7 @@ export async function POST(req: NextRequest) {
         brandColor: newSpec.brandColor,
         textBoxes: newSpec.textBoxes,
         hideHeadline: newSpec.hideHeadline,
+        aiBgPngUrl: oldResult.ai_bg_png_url ?? undefined,
         subjectPos,
       },
     });

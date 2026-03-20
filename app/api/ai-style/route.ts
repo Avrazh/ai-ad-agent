@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
       templateId: "ai_background",
       primarySlotId,
       pngUrl: bgUrl,
+      aiBgPngUrl: bgUrl,
     });
 
     // 8. Return result
@@ -116,6 +117,7 @@ export async function POST(req: NextRequest) {
         format,
         lang,
         pngUrl: bgUrl,
+        aiBgPngUrl: bgUrl,
         approved: false,
         createdAt: new Date().toISOString(),
         headlineText: headline,
