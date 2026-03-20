@@ -1193,7 +1193,6 @@ export default function Home() {
       setTranslatePickerOpen(false);
       setTranslateSelectedLangs(new Set());
     } catch (err) {
-      console.error("[translate]", err);
       setTranslateError(err instanceof Error ? err.message : "Translation failed");
     } finally {
       setTranslateLoading(false);
