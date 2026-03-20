@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+
+export const config = {
+  api: { bodyParser: { sizeLimit: "20mb" } },
+};
 import { save, removeBlobUrl } from "@/lib/storage";
 import { insertImage, getAllImages, hasGlobalPersonaHeadlines, hasGlobalPersonaQuotes, upsertGlobalPersonaHeadlines } from "@/lib/db";
 import { newId } from "@/lib/ids";

@@ -484,8 +484,9 @@ export default function Home() {
         form.append("file", compressed, item.file.name.replace(/\.[^.]+$/, ".jpg"));
         const uploadRes = await fetch("/api/upload", { method: "POST", body: form });
         if (!uploadRes.ok) {
-          const d = await uploadRes.json();
-          throw new Error(d.error || "Upload failed");
+          const ct = uploadRes.headers.get("content-type") ?? "";
+          const d = ct.includes("application/json") ? await uploadRes.json() : {};
+          throw new Error(d.error || `Upload failed (${uploadRes.status})`);
         }
         const uploaded = await uploadRes.json();
 
