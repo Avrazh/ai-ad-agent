@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 import { newId } from "@/lib/ids";
-import { insertAdSpec, insertRenderResult, getImage, getGlobalPersonaHeadlines } from "@/lib/db";
+import { insertAdSpec, insertRenderResult, getImage, getPersona, getGlobalPersonaHeadlines } from "@/lib/db";
 import { read as readStorage, save } from "@/lib/storage";
 import { generateAIBackground } from "@/lib/ai/aiBackground";
-import { renderHtmlToPng } from "@/lib/render/renderAd";
 import { FORMAT_DIMS } from "@/lib/types";
 import type { Format, Language, AdSpec } from "@/lib/types";
 
@@ -34,30 +33,32 @@ export async function POST(req: NextRequest) {
       : imageRow.url.match(/\.webp$/i) ? "image/webp"
       : "image/jpeg";
 
-    // Resize product image to match the target canvas (so Claude composes at the right scale)
-    const resized = await sharp(rawBuffer).resize(w, h, { fit: "cover" }).jpeg({ quality: 85 }).toBuffer();
+    // Resize product image for the vision step (square crop is fine for nail analysis)
+    const resized = await sharp(rawBuffer).resize(1024, 1024, { fit: "cover" }).jpeg({ quality: 85 }).toBuffer();
     const imageBase64 = resized.toString("base64");
 
-    // 2. Generate background HTML via Claude Sonnet (no text, no UI)
-    console.log("[ai-style] Generating background HTML...");
-    let backgroundHtml = await generateAIBackground(imageBase64, "image/jpeg", format as Format);
+    // 2. Load persona context if available
+    const personaRow = personaId ? await getPersona(personaId) : undefined;
+    const personaContext = personaRow
+      ? {
+          name: personaRow.name,
+          visualWorld: personaRow.visualWorld,
+          nailPreference: personaRow.nailPreference,
+          motivation: personaRow.motivation,
+        }
+      : undefined;
 
-    // Replace product image placeholder with actual base64 (same pattern as surprise-render)
-    backgroundHtml = backgroundHtml.replace(
-      /__PRODUCT_IMAGE__/g,
-      `data:image/jpeg;base64,${imageBase64}`,
-    );
+    // 3. Generate new photorealistic image via DALL-E 3 (two-step: vision → image gen)
+    console.log("[ai-style] Generating realistic image via DALL-E 3...");
+    const bgPngBuffer = await generateAIBackground(imageBase64, "image/jpeg", format as Format, personaContext);
 
-    // 3. Render background HTML to PNG via Puppeteer
-    console.log("[ai-style] Rendering background PNG...");
-    const bgPngBuffer = await renderHtmlToPng(backgroundHtml, w, h);
-
-    // 4. Save background PNG to storage
+    // 4. Resize to exact format dimensions and save
+    const bgResized = await sharp(bgPngBuffer).resize(w, h, { fit: "cover" }).png().toBuffer();
     const bgId = newId("bg");
-    const bgUrl = await save("generated", `${bgId}.png`, bgPngBuffer);
-    console.log(`[ai-style] Background saved: ${bgUrl}`);
+    const bgUrl = await save("generated", `${bgId}.png`, bgResized);
+    console.log(`[ai-style] Image saved: ${bgUrl}`);
 
-    // 5. Pick headline from global persona headlines (same source as generate route)
+    // 5. Pick headline from global persona headlines
     const FALLBACK_HEADLINE = "The nails made for you";
     const personaHls = personaId ? await getGlobalPersonaHeadlines(personaId, lang) : [];
     const headline = personaHls[0]?.headline ?? FALLBACK_HEADLINE;
@@ -88,9 +89,7 @@ export async function POST(req: NextRequest) {
       aiBgImagePath: bgUrl,
     };
 
-    // 7. Persist AdSpec + RenderResult — background PNG is the initial pngUrl.
-    // No second Puppeteer render needed: LiveAdCanvas overlays the headline client-side.
-    // The headline is baked in only on Approve via /api/reposition.
+    // 7. Persist AdSpec + RenderResult
     const resultId = newId("rr");
     await insertAdSpec(adSpecId, imageId, JSON.stringify(adSpec));
     await insertRenderResult({
