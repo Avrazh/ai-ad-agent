@@ -369,6 +369,7 @@ export default function Home() {
   const [translatedItems, setTranslatedItems] = useState<TranslatedItem[]>([]);
   const [selectedTranslatedItemId, setSelectedTranslatedItemId] = useState<string | null>(null);
   const [translatePickerOpen, setTranslatePickerOpen] = useState(false);
+  const [translatePickerPos, setTranslatePickerPos] = useState<{ top: number; left: number } | null>(null);
   const [translateLoading, setTranslateLoading] = useState(false);
   const [translateSelectedLangs, setTranslateSelectedLangs] = useState<Set<string>>(new Set());
   const [expandedLangGroups, setExpandedLangGroups] = useState<Set<string>>(new Set(["en"]));
@@ -2063,7 +2064,11 @@ export default function Home() {
                     <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Translate</span>
                     <div className="flex items-center">
                       <button
-                        onClick={() => setTranslatePickerOpen((v) => !v)}
+                        onClick={(e) => {
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          setTranslatePickerPos({ top: rect.bottom + 8, left: rect.left });
+                          setTranslatePickerOpen((v) => !v);
+                        }}
                         className={"flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium border transition " + (translatePickerOpen ? pillActive : pillInactive)}
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -2075,8 +2080,8 @@ export default function Home() {
                         </svg>
                       </button>
                     </div>
-                    {translatePickerOpen && (
-                      <div className="absolute top-full left-0 mt-2 z-50 bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-48">
+                    {translatePickerOpen && translatePickerPos && (
+                      <div className="fixed z-[9999] bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-48" style={{ top: translatePickerPos.top, left: translatePickerPos.left }}>
                         <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">Select languages</p>
                         <div className="flex flex-col gap-1 mb-3">
                           {TRANSLATION_TARGETS.map((lang) => {
