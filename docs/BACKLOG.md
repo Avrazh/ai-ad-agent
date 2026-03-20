@@ -36,6 +36,7 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 | F6 | Auto font variation by persona | Automatically vary fonts across ads based on persona, reducing need for manual font selection. | open | — |
 
 | TR | Translate approved ads | One-click translation of all approved EN ads into SE, GR, FR, ES. Collapsible language groups in left panel. | open | [plan](superpowers/plans/2026-03-17-translate-approved.md) |
+| M1 | Multi-customer / white-label | Make the system brand-agnostic so it can be sold to any customer. Two parts: (1) Brand onboarding — user pastes their website URL, Claude scrapes it and extracts brand name, product type, tone, audience, colors, and key messages; one confirmation screen then ready to use. Falls back to a single "what are you selling?" text field if no website. (2) Auto mode for new customers — system picks styles and generates a full ad set automatically on first run, no style picker or persona selector shown; studio mode revealed progressively once user has approved first batch. | open | — |
 
 ---
 
