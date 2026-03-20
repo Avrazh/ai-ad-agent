@@ -2163,18 +2163,19 @@ export default function Home() {
                       )}
                     </div>
                   ) : (
-                    <img
-                      src={selectedItem.previewUrl}
-                      alt=""
-                      className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl opacity-40"
-                      style={{ aspectRatio: "9/16" }}
-                    />
-                  )}
-                  {!selectedItem.result && selectedItem.status === "analyzed" && !detailLoading && (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                      <p className="text-xs text-gray-500">Rendering ad…</p>
-                    </div>
+                    <>
+                      <img
+                        src={selectedItem.previewUrl}
+                        alt=""
+                        className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl"
+                        style={{ aspectRatio: "9/16" }}
+                      />
+                      {!detailLoading && (
+                        <div className="absolute inset-0 flex items-end justify-center pb-10 pointer-events-none">
+                          <p className="text-xs text-gray-400 bg-black/50 rounded-full px-4 py-1.5 backdrop-blur-sm">Select a style to get started</p>
+                        </div>
+                      )}
+                    </>
                   )}
                   {detailLoading && (
                     <div className="absolute inset-0 flex items-center justify-center">
