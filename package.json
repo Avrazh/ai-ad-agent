@@ -23,6 +23,7 @@
     "@vercel/blob": "^2.3.0",
     "better-sqlite3": "^12.6.2",
     "next": "16.1.6",
+    "openai": "^6.32.0",
     "puppeteer": "^24.38.0",
     "puppeteer-core": "^24.38.0",
     "react": "19.2.3",

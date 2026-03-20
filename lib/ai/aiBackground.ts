@@ -1,11 +1,10 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { withRetry } from "@/lib/ai/retry";
+import OpenAI from "openai";
 import type { Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "gpt-4o";
 
-// Random seeds injected into the prompt to prevent Claude from defaulting
+// Random seeds injected into the prompt to prevent the model from defaulting
 // to the same safe layout. Mood words and color directions are combined
 // randomly to produce a unique creative starting point each call.
 const MOODS = [
@@ -27,7 +26,7 @@ const COLOR_DIRECTIONS = [
 ];
 
 /**
- * Calls Claude Sonnet (vision) with the product image and asks it to generate
+ * Calls GPT-4o (vision) with the product image and asks it to generate
  * a rich editorial background HTML composition — NO text, no UI elements.
  * A random style is injected to guarantee visual variety across calls.
  * The product image placeholder __PRODUCT_IMAGE__ must be replaced by the caller.
@@ -37,29 +36,30 @@ export async function generateAIBackground(
   mimeType: "image/jpeg" | "image/png" | "image/webp",
   format: Format,
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
   const { w, h } = FORMAT_DIMS[format];
-  const client = new Anthropic({ apiKey });
+  const client = new OpenAI({ apiKey });
 
-  // Random seeds — prevent Claude from defaulting to the same safe layout
+  // Random seeds — prevent the model from defaulting to the same safe layout
   const mood = MOODS[Math.floor(Math.random() * MOODS.length)];
   const colorDir = COLOR_DIRECTIONS[Math.floor(Math.random() * COLOR_DIRECTIONS.length)];
 
-  const response = await withRetry(() => client.messages.create({
+  const response = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 4096,
-    messages: [{
-      role: "user",
-      content: [
-        {
-          type: "image",
-          source: { type: "base64", media_type: mimeType, data: imageBase64 },
-        },
-        {
-          type: "text",
-          text: `You are a world-class art director creating a background composition for this product image.
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "high" },
+          },
+          {
+            type: "text",
+            text: `You are a world-class art director creating a background composition for this product image.
 
 CONTEXT:
 This is a nail product — nail polish, gel, press-ons, or nail art. The background should feel like a premium beauty or nail brand editorial: tactile, close-up, feminine or bold depending on the mood, with a strong sense of texture and color.
@@ -93,12 +93,13 @@ CANVAS:
 
 Return ONLY the complete HTML. No markdown, no code fences, no explanation.
 Start with <!DOCTYPE html> and end with </html>.`,
-        },
-      ],
-    }],
-  }), "generateAIBackground");
+          },
+        ],
+      },
+    ],
+  });
 
-  let html = (response.content[0] as { type: "text"; text: string }).text.trim();
+  let html = (response.choices[0].message.content ?? "").trim();
   html = html.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
   return html;
 }
