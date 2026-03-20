@@ -6,6 +6,7 @@ import { HeadlineDragOverlay } from "@/app/components/HeadlineDragOverlay";
 import { LiveAdCanvas } from "@/app/components/LiveAdCanvas";
 import { StarCardPreview } from "@/app/components/StarCardPreview";
 import { BRAND_NAME } from "@/lib/customerConfig";
+import { TRANSLATION_TARGETS } from "@/lib/languages";
 import { CropEditor } from "@/app/components/CropEditor";
 import SplitSceneEditor, { SplitConfig } from "@/app/components/SplitSceneEditor";
 
@@ -32,6 +33,25 @@ type RenderResultItem = {
   lang?: string;
   textBoxes?: import("@/lib/types").TextBox[];
   hideHeadline?: boolean;
+};
+
+type TranslatedItem = {
+  id: string;
+  adSpecId: string;
+  imageId: string;
+  familyId: string;
+  templateId: string;
+  primarySlotId: string;
+  lang: string;
+  pngUrl: string;
+  headlineText?: string;
+  headlineYOverride?: number;
+  headlineFontScale?: number;
+  brandNameY?: number;
+  brandNameFontScale?: number;
+  subjectPos?: string;
+  approved: boolean;
+  sourceResultId: string;
 };
 
 type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
@@ -346,6 +366,13 @@ export default function Home() {
   const [personaHeadlineMap, setPersonaHeadlineMap] = useState<Record<string, Record<string, string>>>({});
   const [personaByImage, setPersonaByImage] = useState<Record<string, string>>({});
   const [toneByImage, setToneByImage] = useState<Record<string, string>>({});
+  const [translatedItems, setTranslatedItems] = useState<TranslatedItem[]>([]);
+  const [selectedTranslatedItemId, setSelectedTranslatedItemId] = useState<string | null>(null);
+  const [translatePickerOpen, setTranslatePickerOpen] = useState(false);
+  const [translateLoading, setTranslateLoading] = useState(false);
+  const [translateSelectedLangs, setTranslateSelectedLangs] = useState<Set<string>>(new Set());
+  const [expandedLangGroups, setExpandedLangGroups] = useState<Set<string>>(new Set(["en"]));
+  const translatePickerRef = useRef<HTMLDivElement>(null);
 
   const usedStyleIdsRef = useRef<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -1050,7 +1077,23 @@ export default function Home() {
     [updateItem]
   );
 
-    // ── Download ────────────────────────────────────────────
+    const handleApproveTranslated = useCallback(
+    async (itemId: string, approved: boolean) => {
+      try {
+        await fetch("/api/approve", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultId: itemId, approved }),
+        });
+        setTranslatedItems((prev) =>
+          prev.map((i) => (i.id === itemId ? { ...i, approved } : i))
+        );
+      } catch { /* silent */ }
+    },
+    []
+  );
+
+  // ── Download ────────────────────────────────────────────
   const LAYOUT_SHORT: Record<string, string> = {
     // ai_surprise layout pill variants (from usedSurpriseSpec.layout)
     clean_headline: "headline",
@@ -1115,6 +1158,39 @@ export default function Home() {
     }
   }, [queue, handleDownload]);
 
+  const handleTranslate = useCallback(async () => {
+    if (translateSelectedLangs.size === 0) return;
+    setTranslateLoading(true);
+    try {
+      const res = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ languages: [...translateSelectedLangs] }),
+      });
+      if (!res.ok) throw new Error("Translation failed");
+      const data = await res.json() as {
+        translations: { lang: string; results: TranslatedItem[] }[];
+      };
+      const newItems: TranslatedItem[] = data.translations.flatMap((t) => t.results);
+      setTranslatedItems((prev) => {
+        const incoming = new Set(newItems.map((i) => `${i.sourceResultId}:${i.lang}`));
+        const kept = prev.filter((i) => !incoming.has(`${i.sourceResultId}:${i.lang}`));
+        return [...kept, ...newItems];
+      });
+      setExpandedLangGroups((prev) => {
+        const next = new Set(prev);
+        for (const lang of translateSelectedLangs) next.add(lang);
+        return next;
+      });
+      setTranslatePickerOpen(false);
+      setTranslateSelectedLangs(new Set());
+    } catch (err) {
+      console.error("[translate]", err);
+    } finally {
+      setTranslateLoading(false);
+    }
+  }, [translateSelectedLangs]);
+
   async function handleSendFeedback() {
     if (!feedbackText.trim() || feedbackBusy) return;
     setFeedbackBusy(true);
@@ -1149,6 +1225,7 @@ export default function Home() {
   const visibleQueueItems = queue.filter((item) => item.status !== "idle");
 
   const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
+  const selectedTranslatedItem = translatedItems.find((i) => i.id === selectedTranslatedItemId) ?? null;
   const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
   const showBrand = selectedItemId != null ? (brandByImage[selectedItemId] ?? false) : false;
   const activeLayout = selectedItem?.usedSurpriseSpec?.layout ?? null;
@@ -1342,6 +1419,17 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItemId]);
 
+  useEffect(() => {
+    if (!translatePickerOpen) return;
+    function onClickOutside(e: MouseEvent) {
+      if (translatePickerRef.current && !translatePickerRef.current.contains(e.target as Node)) {
+        setTranslatePickerOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [translatePickerOpen]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-[#0B0F14] text-white">
 
@@ -1491,14 +1579,133 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto min-h-0">
           {visibleQueueItems.length > 0 && (
             <div>
-              {visibleQueueItems.map((item) => (
-                <QueueItemRow
+              {/* EN group header — only shown when there are translated items */}
+              {translatedItems.length > 0 && (
+                <button
+                  onClick={() => setExpandedLangGroups((prev) => {
+                    const next = new Set(prev);
+                    if (next.has("en")) next.delete("en"); else next.add("en");
+                    return next;
+                  })}
+                  className="w-full flex items-center justify-between px-4 py-2 text-left bg-white/[0.02] border-b border-white/[0.04] hover:bg-white/[0.04] transition"
+                >
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">EN · {visibleQueueItems.length} ads</span>
+                  <svg className={"h-3 w-3 text-gray-600 transition-transform " + (expandedLangGroups.has("en") ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+              )}
+              {/* EN items */}
+              {(expandedLangGroups.has("en") || translatedItems.length === 0) && visibleQueueItems.map((item) => (
+                <button
                   key={item.id}
-                  item={item}
-                  isSelected={selectedItemId === item.id}
-                  onSelect={handleSelectItem}
-                />
+                  onClick={() => { setSelectedItemId(item.id); setSelectedTranslatedItemId(null); }}
+                  className={
+                    "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
+                    (selectedItemId === item.id && !selectedTranslatedItemId
+                      ? "bg-indigo-500/[0.08] border-indigo-500/60"
+                      : "hover:bg-white/[0.03] border-transparent")
+                  }
+                >
+                  <StatusIcon status={item.status} />
+                  <img
+                    src={item.previewUrl}
+                    alt=""
+                    loading="lazy"
+                    className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px]">
+                      {item.status === "uploading" && (
+                        <span className="text-indigo-400">Uploading...</span>
+                      )}
+                      {item.status === "generating" && (
+                        <span className="text-indigo-400">Generating...</span>
+                      )}
+                      {item.status === "analyzed" && !item.result && (
+                        <span className="text-indigo-300/60">Ready · pick a style</span>
+                      )}
+                      {item.status === "error" && (
+                        <span className="text-red-400 truncate block">
+                          {item.error ?? "Error"}
+                        </span>
+                      )}
+                      {(item.status === "done" || item.status === "analyzed") && item.result && (
+                        <span className="text-gray-600">
+                          {item.result.templateId === "ai_background"
+                            ? "AI Style"
+                            : item.result.templateId === "ai_surprise_svg"
+                            ? "AI Creative"
+                            : item.usedSurpriseSpec?.layout
+                            ? (LAYOUT_LABELS[item.usedSurpriseSpec.layout] ?? "Layout")
+                            : (FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId)}{" "}
+                          · {item.result.format}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  {item.approved && (
+                    <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
               ))}
+
+              {/* Translated language groups */}
+              {TRANSLATION_TARGETS.filter((langConfig) =>
+                translatedItems.some((i) => i.lang === langConfig.code)
+              ).map((langConfig) => {
+                const langItems = translatedItems.filter((i) => i.lang === langConfig.code);
+                const isExpanded = expandedLangGroups.has(langConfig.code);
+                return (
+                  <div key={langConfig.code}>
+                    <button
+                      onClick={() => setExpandedLangGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(langConfig.code)) next.delete(langConfig.code); else next.add(langConfig.code);
+                        return next;
+                      })}
+                      className="w-full flex items-center justify-between px-4 py-2 text-left bg-white/[0.02] border-b border-white/[0.04] hover:bg-white/[0.04] transition"
+                    >
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{langConfig.label} · {langItems.length} ads</span>
+                      <svg className={"h-3 w-3 text-gray-600 transition-transform " + (isExpanded ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {isExpanded && langItems.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => { setSelectedTranslatedItemId(item.id); setSelectedItemId(null); }}
+                        className={
+                          "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
+                          (selectedTranslatedItemId === item.id
+                            ? "bg-indigo-500/[0.08] border-indigo-500/60"
+                            : "hover:bg-white/[0.03] border-transparent")
+                        }
+                      >
+                        <img
+                          src={item.pngUrl}
+                          alt=""
+                          loading="lazy"
+                          className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-gray-600 truncate">{item.templateId}</p>
+                          {item.headlineText && (
+                            <p className="text-[10px] text-gray-700 truncate mt-0.5">{item.headlineText}</p>
+                          )}
+                        </div>
+                        {item.approved && (
+                          <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1530,7 +1737,50 @@ export default function Home() {
 
       {/* ════ RIGHT PANEL — Stage Bar Design ══════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {!selectedItem ? (
+        {selectedTranslatedItem ? (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="shrink-0 border-b border-white/[0.06] px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
+                  {TRANSLATION_TARGETS.find((t) => t.code === selectedTranslatedItem.lang)?.label ?? selectedTranslatedItem.lang}
+                </span>
+                <span className="text-xs text-gray-700">· Translated</span>
+              </div>
+              <button
+                onClick={() => handleApproveTranslated(selectedTranslatedItem.id, !selectedTranslatedItem.approved)}
+                className={
+                  "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold border transition " +
+                  (selectedTranslatedItem.approved
+                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400"
+                    : "bg-white/[0.06] border-white/20 text-gray-300 hover:bg-emerald-500/20 hover:border-emerald-500/40 hover:text-emerald-400")
+                }
+              >
+                {selectedTranslatedItem.approved ? (
+                  <>
+                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Approved
+                  </>
+                ) : "Approve"}
+              </button>
+            </div>
+            <div className="flex-1 flex items-center justify-center p-6 overflow-hidden">
+              <img
+                src={selectedTranslatedItem.pngUrl}
+                alt="Translated ad"
+                className="max-h-full max-w-full rounded-xl shadow-2xl object-contain"
+                style={{ aspectRatio: "9/16" }}
+              />
+            </div>
+            <div className="shrink-0 border-t border-white/[0.06] px-6 py-3">
+              <p className="text-xs text-gray-600 truncate">
+                <span className="text-gray-500 font-medium">Headline: </span>
+                {selectedTranslatedItem.headlineText ?? "--"}
+              </p>
+            </div>
+          </div>
+        ) : !selectedItem ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center">
@@ -1806,6 +2056,62 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
+
+                {/* Stage: Translate — only shown when there are approved ads */}
+                {approvedCount > 0 && (
+                  <div ref={translatePickerRef} className="relative flex flex-col justify-center gap-1.5 px-5 border-l-2 border-white/[0.08] shrink-0">
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Translate</span>
+                    <div className="flex items-center">
+                      <button
+                        onClick={() => setTranslatePickerOpen((v) => !v)}
+                        className={"flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium border transition " + (translatePickerOpen ? pillActive : pillInactive)}
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                        </svg>
+                        <span>Translate</span>
+                        <svg className={"h-3.5 w-3.5 transition-transform " + (translatePickerOpen ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                    {translatePickerOpen && (
+                      <div className="absolute top-full left-0 mt-2 z-50 bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-48">
+                        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">Select languages</p>
+                        <div className="flex flex-col gap-1 mb-3">
+                          {TRANSLATION_TARGETS.map((lang) => {
+                            const checked = translateSelectedLangs.has(lang.code);
+                            return (
+                              <label key={lang.code} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/[0.06] cursor-pointer transition">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => {
+                                    setTranslateSelectedLangs((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(lang.code)) next.delete(lang.code); else next.add(lang.code);
+                                      return next;
+                                    });
+                                  }}
+                                  className="accent-indigo-500"
+                                />
+                                <span className="text-xs text-gray-300">{lang.name}</span>
+                                <span className="ml-auto text-[10px] text-gray-500 font-semibold">{lang.label}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <button
+                          onClick={handleTranslate}
+                          disabled={translateSelectedLangs.size === 0 || translateLoading}
+                          className="w-full rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-indigo-500 transition"
+                        >
+                          {translateLoading ? "Translating…" : `Translate (${translateSelectedLangs.size})`}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Spacer fills remaining right space */}
                 <div className="flex-1 min-w-4" />              </div>
