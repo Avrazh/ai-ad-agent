@@ -2008,7 +2008,24 @@ export default function Home() {
                   />
                 ) : (
                 <>{/* Ad image — full width, fills all remaining space */}
-                <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
+                <div className="flex-1 flex flex-row items-center p-4 overflow-hidden gap-2">
+                  {/* Left arrow — always reserves space to keep image centered */}
+                  <div className="shrink-0 w-12 flex justify-center">
+                    {prevItem && (
+                      <button
+                        onClick={() => setSelectedItemId(prevItem.id)}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-gray-300 backdrop-blur-sm hover:bg-black/70 hover:text-white transition"
+                        title="Previous image"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Image content */}
+                  <div className="relative flex-1 h-full flex items-center justify-center min-w-0">
                   {selectedItem.splitEditing ? (
                     <div className="w-full h-full flex items-center justify-center overflow-auto">
                       <div className="w-full max-w-xs">
@@ -2182,28 +2199,22 @@ export default function Home() {
                       <div className="h-9 w-9 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
                     </div>
                   )}
-                  {prevItem && (
-                    <button
-                      onClick={() => setSelectedItemId(prevItem.id)}
-                      className="absolute left-8 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-gray-300 backdrop-blur-sm hover:bg-black/70 hover:text-white transition"
-                      title="Previous image"
-                    >
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                      </svg>
-                    </button>
-                  )}
-                  {nextItem && (
-                    <button
-                      onClick={() => setSelectedItemId(nextItem.id)}
-                      className="absolute right-8 top-1/2 -translate-y-1/2 flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-gray-300 backdrop-blur-sm hover:bg-black/70 hover:text-white transition"
-                      title="Next image"
-                    >
-                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </button>
-                  )}
+                  </div>{/* end image content */}
+
+                  {/* Right arrow — always reserves space to keep image centered */}
+                  <div className="shrink-0 w-12 flex justify-center">
+                    {nextItem && (
+                      <button
+                        onClick={() => setSelectedItemId(nextItem.id)}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-black/50 text-gray-300 backdrop-blur-sm hover:bg-black/70 hover:text-white transition"
+                        title="Next image"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Action bar */}
