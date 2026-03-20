@@ -3,13 +3,13 @@ import type { Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
 const MODEL_VISION = "gpt-4.1";
-const MODEL_IMAGE = "dall-e-3";
+const MODEL_IMAGE = "gpt-image-1";
 
-// DALL-E 3 supported sizes mapped to our formats
-const FORMAT_TO_DALLE_SIZE: Record<Format, "1024x1024" | "1024x1792" | "1792x1024"> = {
+// gpt-image-1 supported sizes mapped to our formats
+const FORMAT_TO_SIZE: Record<Format, "1024x1024" | "1024x1536" | "1536x1024"> = {
   "1:1": "1024x1024",
-  "4:5": "1024x1792",
-  "9:16": "1024x1792",
+  "4:5": "1024x1536",
+  "9:16": "1024x1536",
 };
 
 export type PersonaContext = {
@@ -36,7 +36,7 @@ export async function generateAIBackground(
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
   const client = new OpenAI({ apiKey });
-  const dalleSize = FORMAT_TO_DALLE_SIZE[format];
+  const imageSize = FORMAT_TO_SIZE[format];
 
   // ── Step 1: GPT-4.1 vision → scene prompt ────────────────────────────────
   const personaBlock = persona
@@ -90,19 +90,17 @@ Output only the prompt.`,
 
   console.log(`[ai-style] DALL-E prompt: ${dallePrompt.slice(0, 120)}...`);
 
-  // ── Step 2: DALL-E 3 → image ─────────────────────────────────────────────
+  // ── Step 2: gpt-image-1 → image ──────────────────────────────────────────
   const imageResponse = await client.images.generate({
     model: MODEL_IMAGE,
     prompt: dallePrompt,
     n: 1,
-    size: dalleSize,
-    response_format: "b64_json",
-    quality: "hd",
-    style: "natural",
+    size: imageSize,
+    quality: "high",
   });
 
   const b64 = imageResponse.data?.[0]?.b64_json;
-  if (!b64) throw new Error("DALL-E returned no image data");
+  if (!b64) throw new Error("gpt-image-1 returned no image data");
 
   return Buffer.from(b64, "base64");
 }

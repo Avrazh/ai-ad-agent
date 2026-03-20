@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
         }
       : undefined;
 
-    // 3. Generate new photorealistic image via DALL-E 3 (two-step: vision → image gen)
-    console.log("[ai-style] Generating realistic image via DALL-E 3...");
+    // 3. Generate new photorealistic image via gpt-image-1 (two-step: vision → image gen)
+    console.log("[ai-style] Generating realistic image via gpt-image-1...");
     const bgPngBuffer = await generateAIBackground(imageBase64, "image/jpeg", format as Format, personaContext);
 
     // 4. Resize to exact format dimensions and save
