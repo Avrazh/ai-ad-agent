@@ -8,7 +8,7 @@ Status: `open` · `in progress` · `done`
 
 ## Versioning
 
-Current version: **0.3.0** (in `package.json` — single source of truth, displayed in the UI)
+Current version: **0.4.0** (in `package.json` — single source of truth, displayed in the UI)
 
 | Bump | When |
 |------|------|
@@ -31,10 +31,10 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 
 | ID | Title | Description | Status | Plan |
 |----|-------|-------------|--------|------|
-| F7 | Free-form text boxes + hide headline | User can add/delete unlimited free-form text boxes on any ad (drag X/Y, resize bottom-right corner, delete top-right corner, inline edit, color picker, font size, bold, bullet toggle). Headline box gets a hide/show toggle. Text boxes baked into PNG via reposition route. `DraggableTextBlock` component; headline box unchanged. | open | [plan](superpowers/plans/2026-03-19-f7-text-boxes.md) |
-| F8 | AI Style background generation | Move AI Generate into the layout pills as "AI Style". Claude Sonnet generates a no-text SVG background composition for the product → rendered to PNG via resvg → saved as a new image asset. User then layers headline box + free text boxes (F7) on top. Text edits are instant (client-side only); server only called for final export. Prompt reworked from "design a complete ad" to "design a rich editorial background — no text, no UI elements". | open | [plan](superpowers/plans/2026-03-19-f8-ai-style.md) |
+| F9 | Background approve baking | Approve is instant for the user — item moves to approved immediately and the PNG bake (reposition) happens silently in the background. Show a subtle error state on the queue item if baking fails. | open | — |
 | F9 | Background approve baking | Approve is instant for the user — item moves to approved immediately and the PNG bake (reposition) happens silently in the background. Show a subtle error state on the queue item if baking fails. | open | — |
 | F6 | Auto font variation by persona | Automatically vary fonts across ads based on persona, reducing need for manual font selection. | open | — |
+
 | TR | Translate approved ads | One-click translation of all approved EN ads into SE, GR, FR, ES. Collapsible language groups in left panel. | open | [plan](superpowers/plans/2026-03-17-translate-approved.md) |
 
 ---
@@ -54,3 +54,5 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 | B3 | Own text sometimes doesn't apply | Cannot reproduce — monitor if reported again |
 | F3 | Line break control on headlines | Double-click headline to enter edit mode; arrow keys move cursor; Enter inserts line break; persists to PNG via reposition |
 | F1+F4 | Persona-based testimonial quotes | Testimonial layouts generate real review quotes per persona via Claude Haiku. Shows reviewer name + "Verified customer". Persona switching fetches correct quote. |
+| F7 | Free-form text boxes + hide headline | `DraggableTextBlock` component: drag X/Y, resize, delete, inline edit, color picker, font size, bold, bullet toggle. Headline box hide/show toggle. Text boxes baked into PNG via reposition route. |
+| F8 | AI Style background generation | Layout pill "AI Style": Claude Sonnet generates a no-text HTML background for the product image. User layers headline + free text boxes on top. Baked into PNG on approve. |
