@@ -1,5 +1,14 @@
-import { NextResponse } from "next/server";
-import { getAllPersonas, getAllGlobalPersonaHeadlines } from "@/lib/db";
+import { NextResponse, NextRequest } from "next/server";
+import { getAllPersonas, getAllGlobalPersonaHeadlines, clearGlobalPersonaHeadlines } from "@/lib/db";
+
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  if (body.action === "clear") {
+    await clearGlobalPersonaHeadlines();
+    return NextResponse.json({ ok: true });
+  }
+  return NextResponse.json({ error: "unknown action" }, { status: 400 });
+}
 
 export async function GET() {
   const allPersonas = await getAllPersonas();
@@ -38,8 +47,27 @@ export async function GET() {
   </style>
 </head>
 <body>
-  <h1>Persona Headlines</h1>
-  <p class="sub">${allPersonas.length} personas — global, not per-image</p>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:32px">
+    <div>
+      <h1 style="margin:0 0 4px">Persona Headlines</h1>
+      <p class="sub" style="margin:0">${allPersonas.length} personas — global, not per-image</p>
+    </div>
+    <button onclick="clearHeadlines()" style="background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer">
+      Clear Headlines
+    </button>
+  </div>
+  <div id="msg"></div>
+  <script>
+    async function clearHeadlines() {
+      if (!confirm('Clear all headlines? They will regenerate on next upload.')) return;
+      const btn = event.target;
+      btn.textContent = 'Clearing…';
+      btn.disabled = true;
+      await fetch('/api/debug/copy', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({action:'clear'}) });
+      document.getElementById('msg').innerHTML = '<p style="color:#86efac;background:#052e16;border:1px solid #166534;border-radius:8px;padding:10px 16px;font-size:13px;margin-bottom:24px">Headlines cleared. Upload any image to regenerate.</p>';
+      btn.textContent = 'Cleared ✓';
+    }
+  </script>
   <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden">
     <thead>
       <tr style="background:#0f172a">

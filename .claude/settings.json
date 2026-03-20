@@ -1,0 +1,12 @@
+{
+  "allowedTools": [
+    "Bash(grep:*)",
+    "Bash(find:*)",
+    "Bash(ls:*)",
+    "Bash(cat:*)",
+    "Bash(wc:*)",
+    "Grep",
+    "Read",
+    "Glob"
+  ]
+}
