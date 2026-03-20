@@ -1127,6 +1127,7 @@ export default function Home() {
   const handleTranslate = useCallback(async () => {
     if (translateSelectedLangs.size === 0) return;
     setTranslateLoading(true);
+    setTranslatePickerOpen(false);  // close dropdown immediately so spinner on main button is visible
     setTranslateError(null);
     try {
       const res = await fetch("/api/translate", {
@@ -1145,6 +1146,7 @@ export default function Home() {
         templateId: string; primarySlotId: string; lang: string; pngUrl: string;
         headlineText?: string; headlineYOverride?: number; headlineFontScale?: number;
         brandNameY?: number; brandNameFontScale?: number; subjectPos: string;
+        headlineColor?: string;
         sourceResultId: string;
       };
       const data = await res.json() as { translations: { lang: string; results: TResult[] }[] };
@@ -1166,9 +1168,9 @@ export default function Home() {
             headlineText: t.headlineText, headlineYOverride: t.headlineYOverride,
             headlineFontScale: t.headlineFontScale, brandNameY: t.brandNameY,
             brandNameFontScale: t.brandNameFontScale, subjectPos: t.subjectPos,
-            lang: t.lang,
+            headlineColor: t.headlineColor, lang: t.lang,
           };
-          return [{ ...source, id: t.id, result, lang: t.lang as Language, status: "done" as const, approved: false, translationSourceId: t.sourceResultId }];
+          return [{ ...source, id: t.id, result, lang: t.lang as Language, status: "done" as const, approved: false, translationSourceId: t.sourceResultId, headlineColor: t.headlineColor }];
         });
         return [...kept, ...additions];
       });
@@ -2011,23 +2013,33 @@ export default function Home() {
                 {/* Stage: Translate — only shown when there are approved ads */}
                 {approvedCount > 0 && (
                   <div ref={translatePickerRef} className="relative flex flex-col justify-center gap-1.5 px-5 border-l-2 border-white/[0.08] shrink-0">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Translate</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
+                      {translateLoading ? "Translating…" : "Translate"}
+                    </span>
                     <div className="flex items-center">
                       <button
                         onClick={(e) => {
+                          if (translateLoading) return;
                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                           setTranslatePickerPos({ top: rect.bottom + 8, left: rect.left });
                           setTranslatePickerOpen((v) => !v);
                         }}
-                        className={"flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium border transition " + (translatePickerOpen ? pillActive : pillInactive)}
+                        disabled={translateLoading}
+                        className={"flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-60 " + (translatePickerOpen ? pillActive : pillInactive)}
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                        </svg>
-                        <span>Translate</span>
-                        <svg className={"h-3.5 w-3.5 transition-transform " + (translatePickerOpen ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                        </svg>
+                        {translateLoading ? (
+                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                        ) : (
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                          </svg>
+                        )}
+                        <span>{translateLoading ? "Translating…" : "Translate"}</span>
+                        {!translateLoading && (
+                          <svg className={"h-3.5 w-3.5 transition-transform " + (translatePickerOpen ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        )}
                       </button>
                     </div>
                     {translatePickerOpen && translatePickerPos && (

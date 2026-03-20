@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
       brandNameY?: number;
       brandNameFontScale?: number;
       subjectPos: string;
+      headlineColor?: string;
       approved: boolean;
       sourceResultId: string;
     };
@@ -104,6 +105,10 @@ export async function POST(req: NextRequest) {
           brandNameY: newSpec.brandNameY,
           brandNameFontScale: newSpec.brandNameFontScale,
           subjectPos: cssSubjectPos,
+          // Carry headlineColor explicitly so the canvas initializes with the right color.
+          // Falls back to surpriseSpec.textColor (e.g. "#ffffff" for clean_headline) so
+          // the approve bake always produces the correct text color.
+          headlineColor: newSpec.headlineColor ?? newSpec.surpriseSpec?.textColor,
           approved: false,
           sourceResultId: item.resultId,
         });
