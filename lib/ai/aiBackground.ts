@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import type { Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
-const MODEL = "gpt-4o";
+const MODEL = "gpt-4.1";
 
 // Random seeds injected into the prompt to prevent the model from defaulting
 // to the same safe layout. Mood words and color directions are combined
@@ -51,6 +51,10 @@ export async function generateAIBackground(
     max_tokens: 4096,
     messages: [
       {
+        role: "system",
+        content: "You are a professional creative director at a beauty brand agency. You write HTML/CSS compositions for product photography. You always respond with complete, valid HTML code only.",
+      },
+      {
         role: "user",
         content: [
           {
@@ -59,7 +63,10 @@ export async function generateAIBackground(
           },
           {
             type: "text",
-            text: `You are a world-class art director creating a background composition for this product image.
+            text: `Create an HTML background composition for this product photo.
+
+CONTEXT:
+This is a cosmetic product (nail polish, press-on nails, or nail art). Generate a premium editorial background layout for it.
 
 CONTEXT:
 This is a nail product — nail polish, gel, press-ons, or nail art. The background should feel like a premium beauty or nail brand editorial: tactile, close-up, feminine or bold depending on the mood, with a strong sense of texture and color.
@@ -99,7 +106,14 @@ Start with <!DOCTYPE html> and end with </html>.`,
     ],
   });
 
-  let html = (response.choices[0].message.content ?? "").trim();
-  html = html.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
+  const raw = (response.choices[0].message.content ?? "").trim();
+
+  // Detect model refusals before returning — prevents the refusal text from
+  // being rendered as HTML and showing as a white page with an error message.
+  if (!raw.toLowerCase().includes("<!doctype") && !raw.toLowerCase().includes("<html")) {
+    throw new Error(`Model refused or returned non-HTML response: ${raw.slice(0, 120)}`);
+  }
+
+  let html = raw.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
   return html;
 }
