@@ -28,14 +28,13 @@ export async function POST(req: NextRequest) {
 
     const { w, h } = FORMAT_DIMS[format as Format];
     const rawBuffer = await readStorage("uploads", imageRow.url);
-    const mimeType: "image/jpeg" | "image/png" | "image/webp" =
-      imageRow.url.match(/\.png$/i) ? "image/png"
-      : imageRow.url.match(/\.webp$/i) ? "image/webp"
-      : "image/jpeg";
 
-    // Resize product image for the vision step (square crop is fine for nail analysis)
-    const resized = await sharp(rawBuffer).resize(1024, 1024, { fit: "cover" }).jpeg({ quality: 85 }).toBuffer();
-    const imageBase64 = resized.toString("base64");
+    // Resize product image for the vision step (square, fine for nail color analysis)
+    const visionBuffer = await sharp(rawBuffer)
+      .resize(1024, 1024, { fit: "cover" })
+      .jpeg({ quality: 85 })
+      .toBuffer();
+    const imageBase64 = visionBuffer.toString("base64");
 
     // 2. Load persona context if available
     const personaRow = personaId ? await getPersona(personaId) : undefined;
@@ -48,23 +47,55 @@ export async function POST(req: NextRequest) {
         }
       : undefined;
 
-    // 3. Generate new photorealistic image via gpt-image-1 (two-step: vision → image gen)
-    console.log("[ai-style] Generating realistic image via gpt-image-1...");
+    // 3. Generate photorealistic background via gpt-image-1 (no hands, no product)
+    console.log("[ai-style] Generating background via gpt-image-1...");
     const bgPngBuffer = await generateAIBackground(imageBase64, "image/jpeg", format as Format, personaContext);
 
-    // 4. Resize to exact format dimensions and save
-    const bgResized = await sharp(bgPngBuffer).resize(w, h, { fit: "cover" }).png().toBuffer();
+    // 4. Resize background to exact canvas dimensions
+    const bgResized = await sharp(bgPngBuffer)
+      .resize(w, h, { fit: "cover" })
+      .png()
+      .toBuffer();
+
+    // 5. Save the clean background (used as aiBgImagePath for client canvas re-use)
     const bgId = newId("bg");
     const bgUrl = await save("generated", `${bgId}.png`, bgResized);
-    console.log(`[ai-style] Image saved: ${bgUrl}`);
+    console.log(`[ai-style] Background saved: ${bgUrl}`);
 
-    // 5. Pick headline from global persona headlines
+    // 6. Composite product image on top of background
+    // Fit product within 82% of canvas dimensions, maintaining aspect ratio
+    const maxProductW = Math.round(w * 0.82);
+    const maxProductH = Math.round(h * 0.82);
+    const productResized = await sharp(rawBuffer)
+      .resize(maxProductW, maxProductH, { fit: "inside" })
+      .png()
+      .toBuffer();
+    const productMeta = await sharp(productResized).metadata();
+    const productW = productMeta.width ?? maxProductW;
+    const productH = productMeta.height ?? maxProductH;
+
+    // Center the product on the canvas
+    const left = Math.round((w - productW) / 2);
+    const top = Math.round((h - productH) / 2);
+
+    const compositedBuffer = await sharp(bgResized)
+      .composite([{ input: productResized, left, top }])
+      .png()
+      .toBuffer();
+
+    // 7. Save composited result (background + product, no headline yet)
+    const compId = newId("bg");
+    const compUrl = await save("generated", `${compId}.png`, compositedBuffer);
+
+    // 8. Pick headline from global persona headlines
     const FALLBACK_HEADLINE = "The nails made for you";
     const personaHls = personaId ? await getGlobalPersonaHeadlines(personaId, lang) : [];
     const headline = personaHls[0]?.headline ?? FALLBACK_HEADLINE;
     const primarySlotId = personaId ? `${personaId}:${personaHls[0]?.tone ?? "default"}` : "default";
 
-    // 6. Build AdSpec
+    // 9. Build AdSpec
+    // aiBgImagePath = clean background (no product) so /api/reposition can re-composite on approve
+    // pngUrl = composited result (background + product) shown in the UI
     const adSpecId = newId("as");
     const adSpec: AdSpec = {
       id: adSpecId,
@@ -89,7 +120,7 @@ export async function POST(req: NextRequest) {
       aiBgImagePath: bgUrl,
     };
 
-    // 7. Persist AdSpec + RenderResult
+    // 10. Persist AdSpec + RenderResult
     const resultId = newId("rr");
     await insertAdSpec(adSpecId, imageId, JSON.stringify(adSpec));
     await insertRenderResult({
@@ -99,11 +130,11 @@ export async function POST(req: NextRequest) {
       familyId: "ai",
       templateId: "ai_background",
       primarySlotId,
-      pngUrl: bgUrl,
+      pngUrl: compUrl,
       aiBgPngUrl: bgUrl,
     });
 
-    // 8. Return result
+    // 11. Return result
     return NextResponse.json({
       ok: true,
       result: {
@@ -115,7 +146,7 @@ export async function POST(req: NextRequest) {
         primarySlotId,
         format,
         lang,
-        pngUrl: bgUrl,
+        pngUrl: compUrl,
         aiBgPngUrl: bgUrl,
         approved: false,
         createdAt: new Date().toISOString(),
