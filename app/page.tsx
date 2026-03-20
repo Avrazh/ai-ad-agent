@@ -1254,7 +1254,7 @@ export default function Home() {
     updateItem(selectedItemId, { hideHeadline });
   }, [selectedItemId, updateItem]);
 
-  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string) => {
+  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string, approveAfter = false) => {
     if (!selectedItem?.result || detailLoading) return;
     setDetailLoading(true);
     try {
@@ -1265,7 +1265,7 @@ export default function Home() {
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
-      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: false, overrideHeadline: undefined });
+      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: approveAfter, overrideHeadline: undefined });
       return data.result.id as string;
     } catch (err) {
       console.error("[reposition]", err);
@@ -2254,7 +2254,7 @@ export default function Home() {
                           const scale = selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0;
                           const bY = selectedItem.brandNameY ?? selectedItem.result.brandNameY;
                           const bScale = selectedItem.brandNameFontScale ?? selectedItem.result.brandNameFontScale;
-                          const newId = await handleReposition(y, scale, bY, bScale, selectedItem.headlineColor ?? selectedItem.result?.headlineColor, selectedItem.brandColor ?? selectedItem.result?.brandColor, selectedItem.overrideHeadline);
+                          const newId = await handleReposition(y, scale, bY, bScale, selectedItem.headlineColor ?? selectedItem.result?.headlineColor, selectedItem.brandColor ?? selectedItem.result?.brandColor, selectedItem.overrideHeadline, true);
                           await handleApprove(selectedItem.id, newId ?? selectedItem.result.id, true);
                         } else {
                           await handleApprove(selectedItem.id, selectedItem.result.id, false);
