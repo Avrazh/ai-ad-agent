@@ -2008,9 +2008,9 @@ export default function Home() {
                   />
                 ) : (
                 <>{/* Ad image — full width, fills all remaining space */}
-                <div className="flex-1 flex flex-row items-center p-4 overflow-hidden gap-2">
-                  {/* Left arrow — always reserves space to keep image centered */}
-                  <div className="shrink-0 w-12 flex justify-center">
+                <div className="flex-1 flex flex-row items-center p-4 overflow-hidden">
+                  {/* Left arrow — flex-1 spacer keeps image centered */}
+                  <div className="flex-1 flex justify-end pr-3">
                     {prevItem && (
                       <button
                         onClick={() => setSelectedItemId(prevItem.id)}
@@ -2202,7 +2202,7 @@ export default function Home() {
                   </div>{/* end image content */}
 
                   {/* Right arrow — always reserves space to keep image centered */}
-                  <div className="shrink-0 w-12 flex justify-center">
+                  <div className="flex-1 flex justify-start pl-3">
                     {nextItem && (
                       <button
                         onClick={() => setSelectedItemId(nextItem.id)}
