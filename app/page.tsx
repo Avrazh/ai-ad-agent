@@ -724,7 +724,7 @@ export default function Home() {
         }
         const data = await res.json();
         const result: RenderResultItem = data.results[0];
-        updateItem(item.id, { result, approved: false, usedFamilyId: "ai" as FamilyId, lang: langOverride ?? selectedLangRef.current, usedSurpriseSpec: spec });
+        updateItem(item.id, { result, approved: false, usedFamilyId: result.familyId as FamilyId, lang: langOverride ?? selectedLangRef.current, usedSurpriseSpec: spec });
       } catch (err) {
         console.error("Preview layout error:", err);
       } finally {
