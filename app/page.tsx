@@ -494,45 +494,6 @@ export default function Home() {
           ...(firstHeadline ? { defaultHeadline: firstHeadline } : {}),
         });
 
-        // Step 3 — auto-render with clean_headline layout, center crop, default headline position
-        updateItem(item.id, { status: "generating" });
-        try {
-          const defaultSpec = LAYOUT_PREVIEWS.find((p) => p.layout === "clean_headline")!.spec;
-          const autoSpec = { ...defaultSpec, headlineYOverride: 0.1484, headlineFontScale: 1.0 };
-          const autoRes = await fetch("/api/generate", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageId: uploaded.imageId,
-              imageUrl: uploaded.url,
-              imageWidth: uploaded.width,
-              imageHeight: uploaded.height,
-              forceSurpriseSpec: autoSpec,
-              lang: selectedLangRef.current,
-              format: selectedFormatRef.current,
-              showBrand: false,
-              cropX: 0.5,
-              headline: firstHeadline,
-            }),
-          });
-          if (autoRes.ok) {
-            const autoData = await autoRes.json();
-            const autoResult: RenderResultItem = autoData.results[0];
-            updateItem(item.id, {
-              status: "done",
-              result: autoResult,
-              approved: false,
-              usedFamilyId: "ai" as FamilyId,
-              usedSurpriseSpec: autoSpec,
-              cropX: 0.5,
-            });
-
-          } else {
-            updateItem(item.id, { status: "analyzed" });
-          }
-        } catch {
-          updateItem(item.id, { status: "analyzed" });
-        }
 
       } catch (err) {
         updateItem(item.id, {
