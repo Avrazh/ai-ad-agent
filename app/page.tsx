@@ -215,6 +215,16 @@ const FAMILY_LABELS_STATIC: Record<string, string> = {
   ai: "AI Style",
 };
 
+const LAYOUT_LABELS: Record<string, string> = {
+  clean_headline: "Headline",
+  split_right: "Split",
+  full_overlay: "Overlay",
+  bottom_bar: "Bottom Bar",
+  frame_overlay: "Frame",
+  postcard: "Postcard",
+  vertical_text: "Vertical",
+};
+
 const QueueItemRow = memo(function QueueItemRow({
   item,
   isSelected,
@@ -259,7 +269,13 @@ const QueueItemRow = memo(function QueueItemRow({
           )}
           {(item.status === "done" || item.status === "analyzed") && item.result && (
             <span className="text-gray-600">
-              {FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId}{" "}
+              {item.result.templateId === "ai_background"
+                ? "AI Style"
+                : item.result.templateId === "ai_surprise_svg"
+                ? "AI Creative"
+                : item.usedSurpriseSpec?.layout
+                ? (LAYOUT_LABELS[item.usedSurpriseSpec.layout] ?? "Layout")
+                : (FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId)}{" "}
               · {item.result.format}
             </span>
           )}
