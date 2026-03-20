@@ -370,6 +370,7 @@ export default function Home() {
   const [selectedTranslatedItemId, setSelectedTranslatedItemId] = useState<string | null>(null);
   const [translatePickerOpen, setTranslatePickerOpen] = useState(false);
   const [translatePickerPos, setTranslatePickerPos] = useState<{ top: number; left: number } | null>(null);
+  const [translateError, setTranslateError] = useState<string | null>(null);
   const [translateLoading, setTranslateLoading] = useState(false);
   const [translateSelectedLangs, setTranslateSelectedLangs] = useState<Set<string>>(new Set());
   const [expandedLangGroups, setExpandedLangGroups] = useState<Set<string>>(new Set(["en"]));
@@ -1162,13 +1163,19 @@ export default function Home() {
   const handleTranslate = useCallback(async () => {
     if (translateSelectedLangs.size === 0) return;
     setTranslateLoading(true);
+    setTranslateError(null);
     try {
       const res = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ languages: [...translateSelectedLangs] }),
       });
-      if (!res.ok) throw new Error("Translation failed");
+      if (res.status === 404) throw new Error("Translation is not yet available.");
+      if (!res.ok) {
+        const ct = res.headers.get("content-type") ?? "";
+        const d = ct.includes("application/json") ? await res.json() : {};
+        throw new Error(d.error || "Translation failed");
+      }
       const data = await res.json() as {
         translations: { lang: string; results: TranslatedItem[] }[];
       };
@@ -1187,6 +1194,7 @@ export default function Home() {
       setTranslateSelectedLangs(new Set());
     } catch (err) {
       console.error("[translate]", err);
+      setTranslateError(err instanceof Error ? err.message : "Translation failed");
     } finally {
       setTranslateLoading(false);
     }
@@ -2106,6 +2114,9 @@ export default function Home() {
                             );
                           })}
                         </div>
+                        {translateError && (
+                          <p className="text-[11px] text-red-400 mb-2">{translateError}</p>
+                        )}
                         <button
                           onClick={handleTranslate}
                           disabled={translateSelectedLangs.size === 0 || translateLoading}
