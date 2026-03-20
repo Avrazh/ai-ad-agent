@@ -2025,7 +2025,7 @@ export default function Home() {
                   </div>
 
                   {/* Image content */}
-                  <div className="relative flex-1 h-full flex items-center justify-center min-w-0">
+                  <div className="relative h-full flex items-center justify-center" style={{ aspectRatio: (selectedItem.result?.format ?? selectedFormat).replace(":", "/"), maxWidth: "100%" }}>
                   {selectedItem.splitEditing ? (
                     <div className="w-full h-full flex items-center justify-center overflow-auto">
                       <div className="w-full max-w-xs">
