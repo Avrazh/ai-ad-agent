@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
       ...oldSpec,
       id: newSpecId,
       headlineYOverride,
+      headlineFontScale: fontScale,
       ...(brandNameY !== undefined ? { brandNameY } : {}),
       ...(brandNameFontScale !== undefined ? { brandNameFontScale } : {}),
       ...(showBrand !== undefined ? { showBrand } : {}),

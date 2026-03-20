@@ -121,6 +121,7 @@ type QueueItem = {
   overrideHeadline?: string;    // user-inserted line breaks; cleared on new headline
   textBoxes?: import("@/lib/types").TextBox[]; // user-added text overlays (local until approve)
   hideHeadline?: boolean;       // hide headline overlay (local until approve)
+  aiBgPngUrl?: string;          // original clean background PNG for ai_background (never overwritten by baked result)
   splitConfig?: SplitConfig;   // config for split scene editor
   splitEditing?: boolean;      // true when split scene editor is open
   error?: string;
@@ -603,6 +604,43 @@ export default function Home() {
       }
     },
     [detailLoading, updateItem]
+  );
+
+  // ── AI Style — Claude generates no-text background; user adds text on top ──
+  const handleAIStyle = useCallback(
+    async (item: QueueItem) => {
+      if (!item.imageId || detailLoading) return;
+      setDetailLoading(true);
+      try {
+        const res = await fetch("/api/ai-style", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageId: item.imageId,
+            lang: selectedLang,
+            format: selectedFormat,
+            personaId: personaByImage[item.id] ?? personas[0]?.id,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || "AI Style failed");
+        updateItem(item.id, {
+          result: data.result,
+          approved: false,
+          usedFamilyId: "ai" as FamilyId,
+          usedSurpriseSpec: undefined,
+          lang: selectedLang,
+          textBoxes: [],
+          hideHeadline: false,
+          aiBgPngUrl: data.result.pngUrl,
+        });
+      } catch (err) {
+        console.error("[ai-style]", err);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [detailLoading, updateItem, selectedLang, selectedFormat, personaByImage, personas],
   );
 
   // ── Surprise Me — Claude generates full SVG ad (no Satori, no predefined layout) ──
@@ -1152,6 +1190,7 @@ export default function Home() {
     : TONES;
 
   const isSplitScene = selectedItem?.result?.templateId === "split_scene";
+  const isAIBackground = selectedItem?.result?.templateId === "ai_background";
 
   const isCleanHeadline =
     !!selectedItem?.result &&
@@ -1165,13 +1204,14 @@ export default function Home() {
     !!selectedItem?.result &&
     (selectedItem.usedSurpriseSpec?.layout === "clean_headline" ||
      selectedItem.result.templateId === "star_review" ||
-     selectedItem.result.templateId === "split_scene");
+     selectedItem.result.templateId === "split_scene" ||
+     selectedItem.result.templateId === "ai_background");
 
   const initialHeadlineY = selectedItem?.headlineY
     ?? (selectedItem?.result
       ? (selectedItem.result.headlineYOverride
           ?? selectedItem.usedSurpriseSpec?.headlineYOverride
-          ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : selectedItem.result.templateId === "split_scene" ? 0.82 : 0.1484))
+          ?? (selectedItem.result.templateId === "star_review" ? 0.2005 : selectedItem.result.templateId === "split_scene" ? 0.82 : selectedItem.result.templateId === "ai_background" ? 0.65 : 0.1484))
       : 0.1484);
 
   // ── Reposition headline ───────────────────────────────────
@@ -1216,7 +1256,7 @@ export default function Home() {
     updateItem(selectedItemId, { hideHeadline });
   }, [selectedItemId, updateItem]);
 
-  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string) => {
+  const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string, approveAfter = false) => {
     if (!selectedItem?.result || detailLoading) return;
     setDetailLoading(true);
     try {
@@ -1227,7 +1267,7 @@ export default function Home() {
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
-      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: false, overrideHeadline: undefined });
+      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: approveAfter, overrideHeadline: undefined });
       return data.result.id as string;
     } catch (err) {
       console.error("[reposition]", err);
@@ -1950,6 +1990,29 @@ export default function Home() {
                       </button>
                     );
                   })()}
+
+                  {/* Divider before AI Style */}
+                  <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" />
+
+                  {/* AI Style pill — Claude-generated background, user adds text */}
+                  {(() => {
+                    const isActive = selectedItem.result?.templateId === "ai_background";
+                    return (
+                      <button
+                        key="ai_background"
+                        onClick={() => { handleAIStyle(selectedItem); setLayoutPanelOpen(false); }}
+                        disabled={detailLoading || !selectedItem.imageId}
+                        className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-indigo-500/20 hover:border-indigo-500/50 bg-indigo-500/5")}
+                      >
+                        <div className="w-[80px] h-[100px] rounded-lg overflow-hidden bg-white/[0.04] flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1a1040 0%, #0d0d1a 100%)" }}>
+                          {detailLoading && isActive
+                            ? <div className="h-4 w-4 animate-spin rounded-full border border-indigo-400/50 border-t-transparent" />
+                            : <span style={{ fontSize: 28 }}>✦</span>}
+                        </div>
+                        <span className={"text-[10px] shrink-0 font-medium " + (isActive ? "text-indigo-300" : "text-indigo-400")}>AI Style</span>
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -2098,6 +2161,37 @@ export default function Home() {
                           onTextBoxesChange={handleTextBoxesChange}
                           onHideHeadlineChange={handleHideHeadlineChange}
                         />
+                      ) : isAIBackground && !selectedItem.approved ? (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.aiBgPngUrl ?? selectedItem.result.pngUrl}
+                          subjectPos="50% 50%"
+                          headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? ""}
+                          spec={{ font: "serif", fontWeight: 700, textAlign: "center" }}
+                          format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
+                          initialY={initialHeadlineY}
+                          initialFontScale={selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0}
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
+                          initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
+                          onColorChange={(hColor, bColor) => {
+                            updateItem(selectedItemId!, {
+                              ...(hColor !== null ? { headlineColor: hColor } : {}),
+                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
+                            });
+                          }}
+                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
+                        />
                       ) : (
                         <img
                           ref={adImgRef}
@@ -2162,7 +2256,7 @@ export default function Home() {
                           const scale = selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0;
                           const bY = selectedItem.brandNameY ?? selectedItem.result.brandNameY;
                           const bScale = selectedItem.brandNameFontScale ?? selectedItem.result.brandNameFontScale;
-                          const newId = await handleReposition(y, scale, bY, bScale, selectedItem.headlineColor ?? selectedItem.result?.headlineColor, selectedItem.brandColor ?? selectedItem.result?.brandColor, selectedItem.overrideHeadline);
+                          const newId = await handleReposition(y, scale, bY, bScale, selectedItem.headlineColor ?? selectedItem.result?.headlineColor, selectedItem.brandColor ?? selectedItem.result?.brandColor, selectedItem.overrideHeadline, true);
                           await handleApprove(selectedItem.id, newId ?? selectedItem.result.id, true);
                         } else {
                           await handleApprove(selectedItem.id, selectedItem.result.id, false);
