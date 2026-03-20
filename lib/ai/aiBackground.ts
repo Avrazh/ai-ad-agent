@@ -61,8 +61,12 @@ export async function generateAIBackground(
           type: "text",
           text: `You are a world-class art director creating a background composition for this product image.
 
+CONTEXT:
+This is a nail product — nail polish, gel, press-ons, or nail art. The background should feel like a premium beauty or nail brand editorial: tactile, close-up, feminine or bold depending on the mood, with a strong sense of texture and color.
+
 STEP 1 — READ THE IMAGE:
 Study the product carefully: its shape, where the visual weight sits, what's in focus, how much negative space surrounds it, whether it's better featured centered or offset, portrait or landscape in feel.
+Consider nail-specific context: the product likely has a strong color story — let that drive everything.
 Let those observations drive your layout decisions.
 
 STEP 2 — APPLY THIS CREATIVE DIRECTION:
@@ -72,7 +76,7 @@ Color: ${colorDir}
 Use the mood and color direction to set the atmosphere and palette, but let the image's own composition tell you where to place it and how to structure the canvas around it.
 
 STEP 3 — BUILD IT:
-Lean minimalist — fewer elements, more intentional negative space, nothing decorative that doesn't serve the composition. The result should feel like it was designed specifically for this product, not a generic template.
+Think beauty editorial — the kind of background you'd see in a Vogue beauty spread or a premium nail brand lookbook. Abstract shapes, soft gradients, bold color blocks, or textural overlays all work. Lean minimalist — fewer elements, more intentional negative space, nothing decorative that doesn't serve the composition. The result should feel like it was designed specifically for this nail product, not a generic template.
 
 RULES:
 - Include ZERO text, letters, words, numbers, labels, watermarks, or placeholder text
