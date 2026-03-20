@@ -21,7 +21,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "no valid language codes" }, { status: 400 });
     }
 
-    const approved = await getApprovedResults();
+    // Only translate EN originals — skip already-translated results so approving
+    // a translated ad doesn't feed it back into the next translate run.
+    const approved = (await getApprovedResults()).filter(
+      (a) => !a.spec.lang || a.spec.lang === "en"
+    );
     if (approved.length === 0) {
       return NextResponse.json({ error: "no approved results to translate" }, { status: 400 });
     }
