@@ -34,7 +34,7 @@ export type SafeZones = {
 };
 
 export type Angle = "benefit" | "curiosity" | "urgency" | "emotional" | "aspirational" | "story" | "contrast";
-export type Language = "en" | "de" | "fr" | "es";
+export type Language = "en" | "de" | "fr" | "es" | "sv";
 // ── Image context tags ───────────────────────────────────────
 // Extracted once per image via Claude Haiku vision, stored in images.tags JSON column.
 // Used for persona-aware copy generation without re-analyzing the image.

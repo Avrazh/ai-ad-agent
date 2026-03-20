@@ -607,6 +607,26 @@ export async function getActiveResults(imageId: string) {
   }));
 }
 
+export async function getApprovedResults(): Promise<
+  { resultId: string; imageId: string; pngUrl: string; spec: import("@/lib/types").AdSpec }[]
+> {
+  await ensureMigrated();
+  const client = getClient();
+  const result = await client.execute(`
+    SELECT r.id as result_id, r.image_id, r.png_url, s.data as spec_data
+    FROM render_results r
+    JOIN ad_specs s ON r.ad_spec_id = s.id
+    WHERE r.approved = 1 AND r.replaced_by IS NULL
+    ORDER BY r.created_at ASC
+  `);
+  return result.rows.map((row) => ({
+    resultId: row.result_id as string,
+    imageId: row.image_id as string,
+    pngUrl: row.png_url as string,
+    spec: JSON.parse(row.spec_data as string) as import("@/lib/types").AdSpec,
+  }));
+}
+
 export async function setApproval(resultId: string, approved: boolean) {
   await ensureMigrated();
   const client = getClient();
