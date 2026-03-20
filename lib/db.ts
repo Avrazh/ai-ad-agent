@@ -422,6 +422,12 @@ export async function getGlobalPersonaHeadlines(
   }));
 }
 
+export async function clearGlobalPersonaHeadlines(): Promise<void> {
+  await ensureMigrated();
+  const client = getClient();
+  await client.execute(`DELETE FROM global_persona_headlines`);
+}
+
 export async function getPersonaQuote(
   personaId: string,
   lang = "en"
