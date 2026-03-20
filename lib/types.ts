@@ -154,6 +154,7 @@ export type AdSpec = {
   cropX?: number;               // user-chosen horizontal crop center (0-1); overrides auto-detect
   headlineFont?: string;        // user-selected headline font family (e.g. "Montserrat", "Playfair Display")
   headlineColor?: string;       // user-set text color for headline overlay (overrides auto-detect)
+  headlineFontScale?: number;   // multiplier for headline font size; 1.0 = default
   // Split scene -- own photos
   splitSecondImageId?: string;  // imageId of the second panel image
   splitDividerX?: number;       // 0-1 normalized divider position (default 0.5)
