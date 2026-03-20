@@ -12,6 +12,49 @@ const FORMAT_TO_SIZE: Record<Format, "1024x1024" | "1024x1536" | "1536x1024"> = 
   "9:16": "1024x1536",
 };
 
+const BACKGROUND_ARCHETYPES = [
+  {
+    name: "marble luxury",
+    description: "Cold white marble surface with soft grey veining and subtle reflections, clean editorial luxury, high-end beauty product photography backdrop",
+  },
+  {
+    name: "golden hour outdoor",
+    description: "Warm golden hour sunlight, blurred lush garden background, soft bokeh of green leaves and flowers, dreamy lifestyle beauty atmosphere",
+  },
+  {
+    name: "dark moody studio",
+    description: "Deep charcoal or near-black background, dramatic single-source side lighting casting strong shadows, high contrast editorial beauty feel",
+  },
+  {
+    name: "pastel flat lay",
+    description: "Soft pastel surface (pink, cream, or lavender), scattered dried petals or ribbon as small props, overhead flat lay angle, soft diffused light",
+  },
+  {
+    name: "urban editorial",
+    description: "Cool grey concrete or stone texture, subtle industrial graphic feel, clean hard lines, cold tones — street fashion energy",
+  },
+  {
+    name: "silk and fabric",
+    description: "Draped silk or satin fabric with rich soft folds, luxurious tactile quality, warm or jewel-toned backdrop, sensuous and editorial",
+  },
+  {
+    name: "minimalist white",
+    description: "Pure white or off-white background, single crisp soft shadow, clean commercial product photography, very minimal and airy",
+  },
+  {
+    name: "neon night",
+    description: "Very dark background washed with colored neon light (pink, purple, or electric blue glow), high energy nightlife aesthetic, soft bokeh light effects",
+  },
+  {
+    name: "wood and nature",
+    description: "Warm wood grain surface, dried flowers or eucalyptus sprigs, organic earthy textures, soft diffused natural light, calm and grounded",
+  },
+  {
+    name: "glassy reflection",
+    description: "Glossy glass or mirror surface with sharp reflections and soft depth, sleek and minimal, high-end product shot aesthetic",
+  },
+];
+
 export type PersonaContext = {
   name: string;
   visualWorld: string;
@@ -20,10 +63,11 @@ export type PersonaContext = {
 };
 
 /**
- * Two-step image generation:
- * 1. GPT-4.1 vision analyzes the nail product and writes a DALL-E scene prompt
- *    tailored to the persona's visual world.
- * 2. DALL-E 3 generates a new photorealistic lifestyle photo.
+ * Two-step background generation:
+ * 1. GPT-4.1 vision reads the nail product colors/mood + a randomly picked
+ *    archetype, then writes a background-only scene prompt.
+ * 2. gpt-image-1 generates the photorealistic background (no hands, no product).
+ * The product image is composited on top by the client canvas.
  * Returns a PNG Buffer ready to be saved.
  */
 export async function generateAIBackground(
@@ -38,45 +82,44 @@ export async function generateAIBackground(
   const client = new OpenAI({ apiKey });
   const imageSize = FORMAT_TO_SIZE[format];
 
-  // ── Step 1: GPT-4.1 vision → scene prompt ────────────────────────────────
+  const archetype = BACKGROUND_ARCHETYPES[Math.floor(Math.random() * BACKGROUND_ARCHETYPES.length)];
+
   const personaBlock = persona
     ? `Target persona: ${persona.name}
 Visual world: ${persona.visualWorld}
-Nail preference: ${persona.nailPreference}
-Motivation: ${persona.motivation}`
-    : `Target: luxury nail brand, aspirational woman, mid-20s to 40s`;
+Nail preference: ${persona.nailPreference}`
+    : `Target: luxury nail brand, aspirational aesthetic`;
 
+  // ── Step 1: GPT-4.1 vision → background scene prompt ─────────────────────
   const visionResponse = await client.chat.completions.create({
     model: MODEL_VISION,
-    max_tokens: 500,
+    max_tokens: 300,
     messages: [
       {
         role: "system",
         content:
-          "You are a beauty product photographer and creative director. " +
-          "You write precise, visual DALL-E image generation prompts. " +
-          "You output only the prompt text — no explanation, no preamble.",
+          "You are a beauty art director. You write short, precise image generation prompts for photorealistic backgrounds. Output only the prompt — no explanation.",
       },
       {
         role: "user",
         content: [
           {
             type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "high" },
+            image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "low" },
           },
           {
             type: "text",
-            text: `Study this nail product image carefully. Note the exact nail color, finish (matte/glossy/glitter/metallic), shape, and any nail art or pattern.
+            text: `Look at this nail product. Note its dominant colors and overall mood.
 
 ${personaBlock}
 
-Write a single DALL-E image generation prompt (120–160 words) that:
-- Shows a close-up of a woman's hand with nails that match exactly what you see in this image (same color, finish, shape, and any design details)
-- Places the hand in a lifestyle scene that fits the persona's visual world — aspirational, editorial, high-end
-- Describes the background, lighting, props, and mood in detail
-- Uses photorealistic, high-quality beauty photography style
-- Specifies the camera angle (e.g. close-up from above, side angle, dramatic low light)
-- Does NOT include any text, logos, or watermarks in the scene
+Background archetype to use: "${archetype.name}" — ${archetype.description}
+
+Write a 60–80 word image generation prompt for a photorealistic background scene that:
+- Executes the archetype above precisely
+- Uses colors that complement the nail product palette
+- Contains absolutely NO hands, NO nails, NO people, NO product — pure background only
+- Ends with this exact sentence: "Use a different composition than a centered product shot."
 
 Output only the prompt.`,
           },
@@ -85,15 +128,15 @@ Output only the prompt.`,
     ],
   });
 
-  const dallePrompt = (visionResponse.choices[0].message.content ?? "").trim();
-  if (!dallePrompt) throw new Error("Vision step returned empty prompt");
+  const bgPrompt = (visionResponse.choices[0].message.content ?? "").trim();
+  if (!bgPrompt) throw new Error("Vision step returned empty prompt");
 
-  console.log(`[ai-style] DALL-E prompt: ${dallePrompt.slice(0, 120)}...`);
+  console.log(`[ai-style] Archetype: "${archetype.name}" | Prompt: ${bgPrompt.slice(0, 100)}...`);
 
-  // ── Step 2: gpt-image-1 → image ──────────────────────────────────────────
+  // ── Step 2: gpt-image-1 → background image ───────────────────────────────
   const imageResponse = await client.images.generate({
     model: MODEL_IMAGE,
-    prompt: dallePrompt,
+    prompt: bgPrompt,
     n: 1,
     size: imageSize,
     quality: "high",
