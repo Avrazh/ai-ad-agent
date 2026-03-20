@@ -33,6 +33,18 @@ export async function GET() {
     })
   ).join("");
 
+  const quoteRows = allPersonas.map((p) => {
+    const quote = (globalHls[p.id]?.["quote"] ?? [])[0] ?? "";
+    return `<tr style="background:#111827">
+      <td style="padding:5px 10px;color:#6b7280;font-size:11px;white-space:nowrap;vertical-align:top">${p.id}</td>
+      <td style="padding:5px 10px;color:#94a3b8;font-size:11px;white-space:nowrap;vertical-align:top">${p.name}</td>
+      <td style="padding:5px 10px;vertical-align:top">${quote
+        ? `<div style="color:#f1f5f9;font-size:13px">${quote}</div>`
+        : `<em style="color:#4b5563">—</em>`
+      }</td>
+    </tr>`;
+  }).join("");
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -78,6 +90,19 @@ export async function GET() {
       </tr>
     </thead>
     <tbody>${phRows}</tbody>
+  </table>
+
+  <h2 style="font-size:16px;font-weight:700;margin:40px 0 4px">Testimonial Quotes</h2>
+  <p class="sub">One review quote per persona — used in star/quote layouts</p>
+  <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden">
+    <thead>
+      <tr style="background:#0f172a">
+        <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Persona ID</th>
+        <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Name</th>
+        <th style="padding:5px 10px;text-align:left;color:#475569;font-size:11px;font-weight:500">Quote</th>
+      </tr>
+    </thead>
+    <tbody>${quoteRows}</tbody>
   </table>
 </body>
 </html>`;
