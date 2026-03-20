@@ -1326,7 +1326,7 @@ export default function Home() {
       setDetailLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedItem, detailLoading, updateItem]);
+  }, [selectedItem, detailLoading, updateItem, showBrand]);
 
   // ── Crop render (from CropEditor) ──────────────────────
   const handleCropRender = useCallback(
