@@ -35,25 +35,6 @@ type RenderResultItem = {
   hideHeadline?: boolean;
 };
 
-type TranslatedItem = {
-  id: string;
-  adSpecId: string;
-  imageId: string;
-  familyId: string;
-  templateId: string;
-  primarySlotId: string;
-  lang: string;
-  pngUrl: string;
-  headlineText?: string;
-  headlineYOverride?: number;
-  headlineFontScale?: number;
-  brandNameY?: number;
-  brandNameFontScale?: number;
-  subjectPos?: string;
-  approved: boolean;
-  sourceResultId: string;
-};
-
 type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
 
 type SurpriseLayout =
@@ -142,6 +123,7 @@ type QueueItem = {
   textBoxes?: import("@/lib/types").TextBox[]; // user-added text overlays (local until approve)
   hideHeadline?: boolean;       // hide headline overlay (local until approve)
   aiBgPngUrl?: string;          // original clean background PNG for ai_background (never overwritten by baked result)
+  translationSourceId?: string; // set on translated items; ID of the EN source result
   splitConfig?: SplitConfig;   // config for split scene editor
   splitEditing?: boolean;      // true when split scene editor is open
   error?: string;
@@ -366,8 +348,6 @@ export default function Home() {
   const [personaHeadlineMap, setPersonaHeadlineMap] = useState<Record<string, Record<string, string>>>({});
   const [personaByImage, setPersonaByImage] = useState<Record<string, string>>({});
   const [toneByImage, setToneByImage] = useState<Record<string, string>>({});
-  const [translatedItems, setTranslatedItems] = useState<TranslatedItem[]>([]);
-  const [selectedTranslatedItemId, setSelectedTranslatedItemId] = useState<string | null>(null);
   const [translatePickerOpen, setTranslatePickerOpen] = useState(false);
   const [translatePickerPos, setTranslatePickerPos] = useState<{ top: number; left: number } | null>(null);
   const [translateError, setTranslateError] = useState<string | null>(null);
@@ -1079,22 +1059,6 @@ export default function Home() {
     [updateItem]
   );
 
-    const handleApproveTranslated = useCallback(
-    async (itemId: string, approved: boolean) => {
-      try {
-        await fetch("/api/approve", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId: itemId, approved }),
-        });
-        setTranslatedItems((prev) =>
-          prev.map((i) => (i.id === itemId ? { ...i, approved } : i))
-        );
-      } catch { /* silent */ }
-    },
-    []
-  );
-
   // ── Download ────────────────────────────────────────────
   const LAYOUT_SHORT: Record<string, string> = {
     // ai_surprise layout pill variants (from usedSurpriseSpec.layout)
@@ -1176,14 +1140,37 @@ export default function Home() {
         const d = ct.includes("application/json") ? await res.json() : {};
         throw new Error(d.error || "Translation failed");
       }
-      const data = await res.json() as {
-        translations: { lang: string; results: TranslatedItem[] }[];
+      type TResult = {
+        id: string; adSpecId: string; imageId: string; familyId: string;
+        templateId: string; primarySlotId: string; lang: string; pngUrl: string;
+        headlineText?: string; headlineYOverride?: number; headlineFontScale?: number;
+        brandNameY?: number; brandNameFontScale?: number; subjectPos: string;
+        sourceResultId: string;
       };
-      const newItems: TranslatedItem[] = data.translations.flatMap((t) => t.results);
-      setTranslatedItems((prev) => {
-        const incoming = new Set(newItems.map((i) => `${i.sourceResultId}:${i.lang}`));
-        const kept = prev.filter((i) => !incoming.has(`${i.sourceResultId}:${i.lang}`));
-        return [...kept, ...newItems];
+      const data = await res.json() as { translations: { lang: string; results: TResult[] }[] };
+      const allResults = data.translations.flatMap((t) => t.results);
+      setQueue((prev) => {
+        const dedupeKeys = new Set(allResults.map((r) => `${r.sourceResultId}:${r.lang}`));
+        const kept = prev.filter((q) => {
+          if (!q.translationSourceId) return true;
+          return !dedupeKeys.has(`${q.translationSourceId}:${q.lang ?? ""}`);
+        });
+        const additions = allResults.flatMap((t) => {
+          const source = prev.find((q) => q.result?.id === t.sourceResultId);
+          if (!source) return [];
+          const result: RenderResultItem = {
+            id: t.id, adSpecId: t.adSpecId, imageId: t.imageId,
+            familyId: t.familyId, templateId: t.templateId, primarySlotId: t.primarySlotId,
+            format: source.result?.format ?? "9:16", pngUrl: t.pngUrl,
+            approved: false, createdAt: new Date().toISOString(),
+            headlineText: t.headlineText, headlineYOverride: t.headlineYOverride,
+            headlineFontScale: t.headlineFontScale, brandNameY: t.brandNameY,
+            brandNameFontScale: t.brandNameFontScale, subjectPos: t.subjectPos,
+            lang: t.lang,
+          };
+          return [{ ...source, id: t.id, result, lang: t.lang as Language, status: "done" as const, approved: false, translationSourceId: t.sourceResultId }];
+        });
+        return [...kept, ...additions];
       });
       setExpandedLangGroups((prev) => {
         const next = new Set(prev);
@@ -1233,7 +1220,6 @@ export default function Home() {
   const visibleQueueItems = queue.filter((item) => item.status !== "idle");
 
   const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
-  const selectedTranslatedItem = translatedItems.find((i) => i.id === selectedTranslatedItemId) ?? null;
   const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
   const showBrand = selectedItemId != null ? (brandByImage[selectedItemId] ?? false) : false;
   const activeLayout = selectedItem?.usedSurpriseSpec?.layout ?? null;
@@ -1588,7 +1574,7 @@ export default function Home() {
           {visibleQueueItems.length > 0 && (
             <div>
               {/* EN group header — only shown when there are translated items */}
-              {translatedItems.length > 0 && (
+              {queue.some((q) => q.translationSourceId) && (
                 <button
                   onClick={() => setExpandedLangGroups((prev) => {
                     const next = new Set(prev);
@@ -1604,13 +1590,13 @@ export default function Home() {
                 </button>
               )}
               {/* EN items */}
-              {(expandedLangGroups.has("en") || translatedItems.length === 0) && visibleQueueItems.map((item) => (
+              {(expandedLangGroups.has("en") || !queue.some((q) => q.translationSourceId)) && visibleQueueItems.filter((q) => !q.translationSourceId).map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => { setSelectedItemId(item.id); setSelectedTranslatedItemId(null); }}
+                  onClick={() => setSelectedItemId(item.id)}
                   className={
                     "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
-                    (selectedItemId === item.id && !selectedTranslatedItemId
+                    (selectedItemId === item.id
                       ? "bg-indigo-500/[0.08] border-indigo-500/60"
                       : "hover:bg-white/[0.03] border-transparent")
                   }
@@ -1662,9 +1648,9 @@ export default function Home() {
 
               {/* Translated language groups */}
               {TRANSLATION_TARGETS.filter((langConfig) =>
-                translatedItems.some((i) => i.lang === langConfig.code)
+                queue.some((q) => q.lang === langConfig.code && q.translationSourceId)
               ).map((langConfig) => {
-                const langItems = translatedItems.filter((i) => i.lang === langConfig.code);
+                const langItems = queue.filter((q) => q.lang === langConfig.code && q.translationSourceId);
                 const isExpanded = expandedLangGroups.has(langConfig.code);
                 return (
                   <div key={langConfig.code}>
@@ -1684,24 +1670,24 @@ export default function Home() {
                     {isExpanded && langItems.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => { setSelectedTranslatedItemId(item.id); setSelectedItemId(null); }}
+                        onClick={() => setSelectedItemId(item.id)}
                         className={
                           "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
-                          (selectedTranslatedItemId === item.id
+                          (selectedItemId === item.id
                             ? "bg-indigo-500/[0.08] border-indigo-500/60"
                             : "hover:bg-white/[0.03] border-transparent")
                         }
                       >
                         <img
-                          src={item.pngUrl}
+                          src={item.result?.pngUrl ?? item.previewUrl}
                           alt=""
                           loading="lazy"
                           className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-[11px] text-gray-600 truncate">{item.templateId}</p>
-                          {item.headlineText && (
-                            <p className="text-[10px] text-gray-700 truncate mt-0.5">{item.headlineText}</p>
+                          <p className="text-[11px] text-gray-600 truncate">{item.result?.templateId ?? "--"}</p>
+                          {item.result?.headlineText && (
+                            <p className="text-[10px] text-gray-700 truncate mt-0.5">{item.result.headlineText}</p>
                           )}
                         </div>
                         {item.approved && (
@@ -1745,50 +1731,7 @@ export default function Home() {
 
       {/* ════ RIGHT PANEL — Stage Bar Design ══════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {selectedTranslatedItem ? (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="shrink-0 border-b border-white/[0.06] px-6 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-widest">
-                  {TRANSLATION_TARGETS.find((t) => t.code === selectedTranslatedItem.lang)?.label ?? selectedTranslatedItem.lang}
-                </span>
-                <span className="text-xs text-gray-700">· Translated</span>
-              </div>
-              <button
-                onClick={() => handleApproveTranslated(selectedTranslatedItem.id, !selectedTranslatedItem.approved)}
-                className={
-                  "flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold border transition " +
-                  (selectedTranslatedItem.approved
-                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400"
-                    : "bg-white/[0.06] border-white/20 text-gray-300 hover:bg-emerald-500/20 hover:border-emerald-500/40 hover:text-emerald-400")
-                }
-              >
-                {selectedTranslatedItem.approved ? (
-                  <>
-                    <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                    Approved
-                  </>
-                ) : "Approve"}
-              </button>
-            </div>
-            <div className="flex-1 flex items-center justify-center p-6 overflow-hidden">
-              <img
-                src={selectedTranslatedItem.pngUrl}
-                alt="Translated ad"
-                className="max-h-full max-w-full rounded-xl shadow-2xl object-contain"
-                style={{ aspectRatio: "9/16" }}
-              />
-            </div>
-            <div className="shrink-0 border-t border-white/[0.06] px-6 py-3">
-              <p className="text-xs text-gray-600 truncate">
-                <span className="text-gray-500 font-medium">Headline: </span>
-                {selectedTranslatedItem.headlineText ?? "--"}
-              </p>
-            </div>
-          </div>
-        ) : !selectedItem ? (
+        {!selectedItem ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <div className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center">
