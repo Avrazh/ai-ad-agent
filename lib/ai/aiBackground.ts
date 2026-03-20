@@ -1,16 +1,8 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type { Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
-const MODEL_VISION = "gpt-4.1";
-const MODEL_IMAGE = "gpt-image-1";
-
-// gpt-image-1 supported sizes mapped to our formats
-const FORMAT_TO_SIZE: Record<Format, "1024x1024" | "1024x1536" | "1536x1024"> = {
-  "1:1": "1024x1024",
-  "4:5": "1024x1536",
-  "9:16": "1024x1536",
-};
+const MODEL = "claude-sonnet-4-6";
 
 const BACKGROUND_ARCHETYPES = [
   {
@@ -63,24 +55,21 @@ export type PersonaContext = {
 };
 
 /**
- * Two-step background generation:
- * 1. GPT-4.1 vision reads the nail product colors/mood + a randomly picked
- *    archetype, then writes a background-only scene prompt.
- * 2. gpt-image-1 generates the photorealistic background (no hands, no product).
- * The product image is composited on top by the client canvas.
- * Returns a PNG Buffer ready to be saved.
+ * Calls Claude Sonnet with the product image and a randomly picked archetype.
+ * Generates a complete HTML/CSS ad composition with the product image embedded.
+ * The __PRODUCT_IMAGE__ placeholder must be replaced by the caller.
  */
 export async function generateAIBackground(
   imageBase64: string,
   mimeType: "image/jpeg" | "image/png" | "image/webp",
   format: Format,
   persona?: PersonaContext,
-): Promise<Buffer> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
 
-  const client = new OpenAI({ apiKey });
-  const imageSize = FORMAT_TO_SIZE[format];
+  const { w, h } = FORMAT_DIMS[format];
+  const client = new Anthropic({ apiKey });
 
   const archetype = BACKGROUND_ARCHETYPES[Math.floor(Math.random() * BACKGROUND_ARCHETYPES.length)];
 
@@ -90,60 +79,55 @@ Visual world: ${persona.visualWorld}
 Nail preference: ${persona.nailPreference}`
     : `Target: luxury nail brand, aspirational aesthetic`;
 
-  // ── Step 1: GPT-4.1 vision → background scene prompt ─────────────────────
-  const visionResponse = await client.chat.completions.create({
-    model: MODEL_VISION,
-    max_tokens: 300,
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
     messages: [
-      {
-        role: "system",
-        content:
-          "You are a beauty art director. You write short, precise image generation prompts for photorealistic backgrounds. Output only the prompt — no explanation.",
-      },
       {
         role: "user",
         content: [
           {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "low" },
+            type: "image",
+            source: { type: "base64", media_type: mimeType, data: imageBase64 },
           },
           {
             type: "text",
-            text: `Look at this nail product. Note its dominant colors and overall mood.
+            text: `You are a senior art director for Switch Nails, a premium press-on nail brand. Create a high-quality ecommerce ad composition as a complete HTML page.
 
 ${personaBlock}
 
-Background archetype to use: "${archetype.name}" — ${archetype.description}
+ARCHETYPE — execute this visual style precisely:
+"${archetype.name}": ${archetype.description}
 
-Write a 60–80 word image generation prompt for a photorealistic background scene that:
-- Executes the archetype above precisely
-- Uses colors that complement the nail product palette
-- Contains absolutely NO hands, NO nails, NO people, NO product — pure background only
-- Ends with this exact sentence: "Use a different composition than a centered product shot."
+Use a different composition than a centered product shot.
 
-Output only the prompt.`,
+PRODUCT IMAGE:
+- Must appear using EXACTLY this src: __PRODUCT_IMAGE__
+- Keep the nail product clearly visible and the hero of the composition
+- No borders, frames, or rectangular mats around the product image
+
+STRICT RULES:
+- No text, typography, logos, or UI elements
+- No external resources, no @import, no Google Fonts
+- No html/css comments
+
+CANVAS:
+- ${w}px × ${h}px
+- <body> must be exactly ${w}px × ${h}px, overflow:hidden, margin:0, padding:0
+- All elements position:absolute
+
+Return ONLY raw HTML starting with <!DOCTYPE html> and ending with </html>.`,
           },
         ],
       },
     ],
   });
 
-  const bgPrompt = (visionResponse.choices[0].message.content ?? "").trim();
-  if (!bgPrompt) throw new Error("Vision step returned empty prompt");
+  const raw = (response.content[0].type === "text" ? response.content[0].text : "").trim();
 
-  console.log(`[ai-style] Archetype: "${archetype.name}" | Prompt: ${bgPrompt.slice(0, 100)}...`);
+  if (!raw.toLowerCase().includes("<!doctype") && !raw.toLowerCase().includes("<html")) {
+    throw new Error(`Model returned non-HTML: ${raw.slice(0, 120)}`);
+  }
 
-  // ── Step 2: gpt-image-1 → background image ───────────────────────────────
-  const imageResponse = await client.images.generate({
-    model: MODEL_IMAGE,
-    prompt: bgPrompt,
-    n: 1,
-    size: imageSize,
-    quality: "high",
-  });
-
-  const b64 = imageResponse.data?.[0]?.b64_json;
-  if (!b64) throw new Error("gpt-image-1 returned no image data");
-
-  return Buffer.from(b64, "base64");
+  return raw.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
 }
