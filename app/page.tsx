@@ -121,6 +121,7 @@ type QueueItem = {
   overrideHeadline?: string;    // user-inserted line breaks; cleared on new headline
   textBoxes?: import("@/lib/types").TextBox[]; // user-added text overlays (local until approve)
   hideHeadline?: boolean;       // hide headline overlay (local until approve)
+  aiBgPngUrl?: string;          // original clean background PNG for ai_background (never overwritten by baked result)
   splitConfig?: SplitConfig;   // config for split scene editor
   splitEditing?: boolean;      // true when split scene editor is open
   error?: string;
@@ -631,6 +632,7 @@ export default function Home() {
           lang: selectedLang,
           textBoxes: [],
           hideHeadline: false,
+          aiBgPngUrl: data.result.pngUrl,
         });
       } catch (err) {
         console.error("[ai-style]", err);
@@ -2162,7 +2164,7 @@ export default function Home() {
                       ) : isAIBackground && !selectedItem.approved ? (
                         <LiveAdCanvas
                           key={selectedItemId ?? ""}
-                          imageUrl={selectedItem.result.pngUrl}
+                          imageUrl={selectedItem.aiBgPngUrl ?? selectedItem.result.pngUrl}
                           subjectPos="50% 50%"
                           headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? ""}
                           spec={{ font: "serif", fontWeight: 700, textAlign: "center" }}
