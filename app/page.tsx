@@ -1718,18 +1718,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ── Download All Approved — fixed top-right ─────── */}
-      {approvedCount > 0 && !processing && (
-        <button
-          onClick={handleDownloadAll}
-          className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_0_20px_rgba(99,102,241,0.35)] hover:from-indigo-400 hover:to-violet-400 transition"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
-          </svg>
-          Download All Approved ({approvedCount})
-        </button>
-      )}
 
       {/* ════ RIGHT PANEL — Stage Bar Design ══════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -2483,6 +2471,69 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* ════ RIGHT PANEL — Approved ════════════════════════ */}
+      {approvedCount > 0 && (
+        <div className="w-[240px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-hidden">
+
+          {/* Header */}
+          <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-center gap-2">
+            <svg className="h-3.5 w-3.5 text-emerald-400 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Approved</span>
+            <span className="ml-auto text-xs font-semibold text-gray-600">{approvedCount}</span>
+          </div>
+
+          {/* Scrollable list */}
+          <div className="flex-1 overflow-y-auto py-2">
+            {queue.filter((q) => q.approved).map((item) => (
+              <div
+                key={item.id}
+                onClick={() => setSelectedItemId(item.id)}
+                className={"flex gap-2.5 items-center px-3 py-2.5 cursor-pointer transition hover:bg-white/[0.03] " + (selectedItemId === item.id ? "bg-white/[0.05]" : "")}
+              >
+                {/* Thumbnail */}
+                <div className="w-10 h-14 rounded-md overflow-hidden shrink-0 bg-white/[0.04]">
+                  {item.result?.pngUrl && (
+                    <img src={item.result.pngUrl} alt="" className="w-full h-full object-cover" />
+                  )}
+                </div>
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-300 truncate">{item.file.name.replace(/\.[^.]+$/, "")}</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5">{item.result?.format ?? selectedFormat} · {(item.lang ?? selectedLang).toUpperCase()}</p>
+                </div>
+                {/* Download */}
+                {item.result && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDownload(item.result!.pngUrl, item); }}
+                    className="shrink-0 p-1 rounded text-gray-600 hover:text-gray-300 transition"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Download All */}
+          <div className="shrink-0 px-4 py-4 border-t border-white/[0.06]">
+            <button
+              onClick={handleDownloadAll}
+              className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-4 py-2.5 text-sm font-semibold text-white hover:from-indigo-400 hover:to-violet-400 transition flex items-center justify-center gap-2"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+              </svg>
+              Download All ({approvedCount})
+            </button>
+          </div>
+
+        </div>
+      )}
 
       {/* ── Developer Feedback Modal ─────────────────────── */}
       {feedbackOpen && (
