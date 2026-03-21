@@ -44,12 +44,37 @@ export async function POST(req: NextRequest) {
     console.log("[ai-style] Generating background via gpt-image-1...");
     const bgPngBuffer = await generateAIBackground(format as Format, personaContext);
 
-    // 5. Save PNG
-    const bgId = newId("bg");
-    const bgUrl = await save("generated", `${bgId}.png`, bgPngBuffer);
-    console.log(`[ai-style] Saved: ${bgUrl}`);
+    // 4. Resize background to exact canvas dimensions
+    const bgResized = await sharp(bgPngBuffer).resize(w, h, { fit: "cover" }).png().toBuffer();
 
-    // 6. Pick headline
+    // 5. Save clean background (used as aiBgImagePath for canvas re-use)
+    const bgId = newId("bg");
+    const bgUrl = await save("generated", `${bgId}.png`, bgResized);
+
+    // 6. Composite product image on top of background
+    const maxProductW = Math.round(w * 0.82);
+    const maxProductH = Math.round(h * 0.82);
+    const productResized = await sharp(rawBuffer)
+      .resize(maxProductW, maxProductH, { fit: "inside" })
+      .png()
+      .toBuffer();
+    const productMeta = await sharp(productResized).metadata();
+    const productW = productMeta.width ?? maxProductW;
+    const productH = productMeta.height ?? maxProductH;
+    const left = Math.round((w - productW) / 2);
+    const top = Math.round((h - productH) / 2);
+
+    const compositedBuffer = await sharp(bgResized)
+      .composite([{ input: productResized, left, top }])
+      .png()
+      .toBuffer();
+
+    const compId = newId("bg");
+    const compUrl = await save("generated", `${compId}.png`, compositedBuffer);
+    console.log(`[ai-style] Saved composited result: ${compUrl}`);
+
+    // 7. Pick headline
+
     const FALLBACK_HEADLINE = "The nails made for you";
     const personaHls = personaId ? await getGlobalPersonaHeadlines(personaId, lang) : [];
     const headline = personaHls[0]?.headline ?? FALLBACK_HEADLINE;
@@ -90,7 +115,7 @@ export async function POST(req: NextRequest) {
       familyId: "ai",
       templateId: "ai_background",
       primarySlotId,
-      pngUrl: bgUrl,
+      pngUrl: compUrl,
       aiBgPngUrl: bgUrl,
     });
 
@@ -106,7 +131,7 @@ export async function POST(req: NextRequest) {
         primarySlotId,
         format,
         lang,
-        pngUrl: bgUrl,
+        pngUrl: compUrl,
         aiBgPngUrl: bgUrl,
         approved: false,
         createdAt: new Date().toISOString(),
