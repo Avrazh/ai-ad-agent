@@ -2149,25 +2149,17 @@ export default function Home() {
                   {/* Divider before AI Style */}
                   <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" />
 
-                  {/* AI Style pill — Claude-generated background, user adds text */}
-                  {(() => {
-                    const isActive = selectedItem.result?.templateId === "ai_background";
-                    return (
-                      <button
-                        key="ai_background"
-                        onClick={() => { handleAIStyle(selectedItem); setLayoutPanelOpen(false); }}
-                        disabled={detailLoading || !selectedItem.imageId}
-                        className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-indigo-500/20 hover:border-indigo-500/50 bg-indigo-500/5")}
-                      >
-                        <div className="w-[80px] h-[100px] rounded-lg overflow-hidden bg-white/[0.04] flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1a1040 0%, #0d0d1a 100%)" }}>
-                          {detailLoading && isActive
-                            ? <div className="h-4 w-4 animate-spin rounded-full border border-indigo-400/50 border-t-transparent" />
-                            : <span style={{ fontSize: 28 }}>✦</span>}
-                        </div>
-                        <span className={"text-[10px] shrink-0 font-medium " + (isActive ? "text-indigo-300" : "text-indigo-400")}>AI Style</span>
-                      </button>
-                    );
-                  })()}
+                  {/* AI Style pill — coming soon */}
+                  <div
+                    title="Coming soon"
+                    className="relative flex flex-col items-center gap-1 rounded-xl border p-1.5 border-indigo-500/10 bg-indigo-500/[0.03] opacity-50 cursor-not-allowed shrink-0"
+                  >
+                    <div className="w-[80px] h-[100px] rounded-lg overflow-hidden flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1a1040 0%, #0d0d1a 100%)" }}>
+                      <span style={{ fontSize: 28 }}>✦</span>
+                    </div>
+                    <span className="text-[10px] shrink-0 font-medium text-indigo-400">AI Style</span>
+                    <span className="text-[9px] text-indigo-400/60 leading-tight text-center">coming soon</span>
+                  </div>
                 </div>
               </div>
             )}
