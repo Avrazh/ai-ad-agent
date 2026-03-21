@@ -2183,7 +2183,9 @@ export default function Home() {
             )}
 
 
-            {/* ── MAIN CONTENT ─────────────────────────────── */}
+            {/* ── MAIN CONTENT + RIGHT PANEL ROW ───────────── */}
+            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
             {(selectedItem.status === "done" || selectedItem.status === "analyzed") && selectedItem.imageId ? (
               <div className="flex-1 flex flex-col overflow-hidden">
 
@@ -2468,13 +2470,11 @@ export default function Home() {
                 </p>
               </div>
             )}
-          </div>
-        )}
-      </div>
+            </div>{/* end main content */}
 
-      {/* ════ RIGHT PANEL — Approved ════════════════════════ */}
-      {approvedCount > 0 && (
-        <div className="w-[240px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-hidden">
+            {/* ════ RIGHT PANEL — Approved ════════════════════════ */}
+            {approvedCount > 0 && (
+            <div className="w-[240px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-hidden">
 
           {/* Header */}
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-center gap-2">
@@ -2532,8 +2532,12 @@ export default function Home() {
             </button>
           </div>
 
-        </div>
-      )}
+            </div>
+            )}{/* end right panel */}
+            </div>{/* end flex row */}
+          </div>
+        )}
+      </div>
 
       {/* ── Developer Feedback Modal ─────────────────────── */}
       {feedbackOpen && (
