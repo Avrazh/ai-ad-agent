@@ -2,7 +2,14 @@ import OpenAI from "openai";
 import type { Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
-const MODEL = "gpt-4.1";
+const MODEL_IMAGE = "gpt-image-1";
+
+// gpt-image-1 supported sizes mapped to our formats
+const FORMAT_TO_SIZE: Record<Format, "1024x1024" | "1024x1536" | "1536x1024"> = {
+  "1:1": "1024x1024",
+  "4:5": "1024x1536",
+  "9:16": "1024x1536",
+};
 
 const BACKGROUND_ARCHETYPES = [
   {
@@ -55,83 +62,40 @@ export type PersonaContext = {
 };
 
 /**
- * Calls Claude Sonnet with the product image and a randomly picked archetype.
- * Generates a complete HTML/CSS ad composition with the product image embedded.
- * The __PRODUCT_IMAGE__ placeholder must be replaced by the caller.
+ * Generates a photorealistic background using gpt-image-1.
+ * One of 10 archetypes is picked randomly each call for visual variety.
+ * Persona context shapes the color palette and mood within the archetype.
+ * Returns a PNG Buffer — the caller composites the product image on top.
  */
 export async function generateAIBackground(
-  imageBase64: string,
-  mimeType: "image/jpeg" | "image/png" | "image/webp",
   format: Format,
   persona?: PersonaContext,
-): Promise<string> {
+): Promise<Buffer> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
-  const { w, h } = FORMAT_DIMS[format];
   const client = new OpenAI({ apiKey });
-
+  const imageSize = FORMAT_TO_SIZE[format];
   const archetype = BACKGROUND_ARCHETYPES[Math.floor(Math.random() * BACKGROUND_ARCHETYPES.length)];
 
-  const personaBlock = persona
-    ? `Target persona: ${persona.name}
-Visual world: ${persona.visualWorld}
-Nail preference: ${persona.nailPreference}`
-    : `Target: luxury nail brand, aspirational aesthetic`;
+  const personaLine = persona
+    ? `Color palette and mood should fit this persona: ${persona.name} — ${persona.visualWorld}.`
+    : `Color palette and mood should feel luxurious and aspirational.`;
 
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    max_tokens: 4096,
-    messages: [
-      {
-        role: "system",
-        content: "You are a senior art director for Switch Nails, a premium press-on nail brand. You create bold, high-end ad compositions. You respond with complete valid HTML only — no explanation, no markdown.",
-      },
-      {
-        role: "user",
-        content: [
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "high" },
-          },
-          {
-            type: "text",
-            text: `Create a high-quality ecommerce ad composition as a complete HTML page.
+  const prompt = `Photorealistic beauty product photography background. Style: "${archetype.name}" — ${archetype.description}. ${personaLine} No people, no hands, no products, no text, no logos. Use a different composition than a centered layout. Pure background scene only, high-end editorial quality.`;
 
-${personaBlock}
+  console.log(`[ai-style] Archetype: "${archetype.name}"`);
 
-ARCHETYPE — execute this visual style precisely:
-"${archetype.name}": ${archetype.description}
-
-Use a different composition than a centered product shot.
-
-PRODUCT IMAGE:
-- Must appear using EXACTLY this src: __PRODUCT_IMAGE__
-- Keep the nail product clearly visible and the hero of the composition
-- No borders, frames, or rectangular mats around the product image
-
-STRICT RULES:
-- No text, typography, logos, or UI elements
-- No external resources, no @import, no Google Fonts
-- No html/css comments
-
-CANVAS:
-- ${w}px × ${h}px
-- <body> must be exactly ${w}px × ${h}px, overflow:hidden, margin:0, padding:0
-- All elements position:absolute
-
-Return ONLY raw HTML starting with <!DOCTYPE html> and ending with </html>.`,
-          },
-        ],
-      },
-    ],
+  const imageResponse = await client.images.generate({
+    model: MODEL_IMAGE,
+    prompt,
+    n: 1,
+    size: imageSize,
+    quality: "high",
   });
 
-  const raw = (response.choices[0].message.content ?? "").trim();
+  const b64 = imageResponse.data?.[0]?.b64_json;
+  if (!b64) throw new Error("gpt-image-1 returned no image data");
 
-  if (!raw.toLowerCase().includes("<!doctype") && !raw.toLowerCase().includes("<html")) {
-    throw new Error(`Model returned non-HTML: ${raw.slice(0, 120)}`);
-  }
-
-  return raw.replace(/^```html?\n?/i, "").replace(/\n?```$/i, "").trim();
+  return Buffer.from(b64, "base64");
 }

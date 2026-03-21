@@ -4,7 +4,6 @@ import { newId } from "@/lib/ids";
 import { insertAdSpec, insertRenderResult, getImage, getPersona, getGlobalPersonaHeadlines } from "@/lib/db";
 import { read as readStorage, save } from "@/lib/storage";
 import { generateAIBackground } from "@/lib/ai/aiBackground";
-import { renderHtmlToPng } from "@/lib/render/renderAd";
 import { FORMAT_DIMS } from "@/lib/types";
 import type { Format, Language, AdSpec } from "@/lib/types";
 
@@ -30,10 +29,6 @@ export async function POST(req: NextRequest) {
     const { w, h } = FORMAT_DIMS[format as Format];
     const rawBuffer = await readStorage("uploads", imageRow.url);
 
-    // Resize for vision analysis
-    const resized = await sharp(rawBuffer).resize(w, h, { fit: "cover" }).jpeg({ quality: 85 }).toBuffer();
-    const imageBase64 = resized.toString("base64");
-
     // 2. Load persona context if available
     const personaRow = personaId ? await getPersona(personaId) : undefined;
     const personaContext = personaRow
@@ -45,19 +40,9 @@ export async function POST(req: NextRequest) {
         }
       : undefined;
 
-    // 3. Generate HTML composition via Claude Sonnet
-    console.log("[ai-style] Generating HTML composition...");
-    let backgroundHtml = await generateAIBackground(imageBase64, "image/jpeg", format as Format, personaContext);
-
-    // Replace product image placeholder with actual base64
-    backgroundHtml = backgroundHtml.replace(
-      /__PRODUCT_IMAGE__/g,
-      `data:image/jpeg;base64,${imageBase64}`,
-    );
-
-    // 4. Render HTML to PNG via Puppeteer
-    console.log("[ai-style] Rendering via Puppeteer...");
-    const bgPngBuffer = await renderHtmlToPng(backgroundHtml, w, h);
+    // 3. Generate photorealistic background via gpt-image-1
+    console.log("[ai-style] Generating background via gpt-image-1...");
+    const bgPngBuffer = await generateAIBackground(format as Format, personaContext);
 
     // 5. Save PNG
     const bgId = newId("bg");
