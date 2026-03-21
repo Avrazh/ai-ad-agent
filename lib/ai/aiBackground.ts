@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type { Format } from "@/lib/types";
 import { FORMAT_DIMS } from "@/lib/types";
 
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "gpt-4.1";
 
 const BACKGROUND_ARCHETYPES = [
   {
@@ -65,11 +65,11 @@ export async function generateAIBackground(
   format: Format,
   persona?: PersonaContext,
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
 
   const { w, h } = FORMAT_DIMS[format];
-  const client = new Anthropic({ apiKey });
+  const client = new OpenAI({ apiKey });
 
   const archetype = BACKGROUND_ARCHETYPES[Math.floor(Math.random() * BACKGROUND_ARCHETYPES.length)];
 
@@ -79,20 +79,24 @@ Visual world: ${persona.visualWorld}
 Nail preference: ${persona.nailPreference}`
     : `Target: luxury nail brand, aspirational aesthetic`;
 
-  const response = await client.messages.create({
+  const response = await client.chat.completions.create({
     model: MODEL,
     max_tokens: 4096,
     messages: [
       {
+        role: "system",
+        content: "You are a senior art director for Switch Nails, a premium press-on nail brand. You create bold, high-end ad compositions. You respond with complete valid HTML only — no explanation, no markdown.",
+      },
+      {
         role: "user",
         content: [
           {
-            type: "image",
-            source: { type: "base64", media_type: mimeType, data: imageBase64 },
+            type: "image_url",
+            image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: "high" },
           },
           {
             type: "text",
-            text: `You are a senior art director for Switch Nails, a premium press-on nail brand. Create a high-quality ecommerce ad composition as a complete HTML page.
+            text: `Create a high-quality ecommerce ad composition as a complete HTML page.
 
 ${personaBlock}
 
@@ -123,7 +127,7 @@ Return ONLY raw HTML starting with <!DOCTYPE html> and ending with </html>.`,
     ],
   });
 
-  const raw = (response.content[0].type === "text" ? response.content[0].text : "").trim();
+  const raw = (response.choices[0].message.content ?? "").trim();
 
   if (!raw.toLowerCase().includes("<!doctype") && !raw.toLowerCase().includes("<html")) {
     throw new Error(`Model returned non-HTML: ${raw.slice(0, 120)}`);
