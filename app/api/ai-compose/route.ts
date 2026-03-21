@@ -117,11 +117,10 @@ async function runWithGPT41(imageA: string, imageB: string, creativeDirection: s
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageA, imageB, prompt = "", model = "claude" } = (await req.json()) as {
+    const { imageA, imageB, prompt = "" } = (await req.json()) as {
       imageA: string;
       imageB: string;
       prompt?: string;
-      model?: "claude" | "gpt4";
     };
 
     if (!imageA || !imageB) {
@@ -132,16 +131,14 @@ export async function POST(req: NextRequest) {
       ? `\n\nCREATIVE DIRECTION (apply on top of the layout spec):\n${prompt}\n`
       : "";
 
-    const rawSvg = model === "gpt4"
-      ? await runWithGPT41(imageA, imageB, creativeDirection)
-      : await runWithClaude(imageA, imageB, creativeDirection);
+    const rawSvg = await runWithClaude(imageA, imageB, creativeDirection);
 
     // Clean up SVG
     let svg = rawSvg.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim();
     if (!svg.startsWith("<svg")) {
       const idx = svg.indexOf("<svg");
       if (idx !== -1) svg = svg.slice(idx);
-      else throw new Error(`${model === "gpt4" ? "GPT-4.1" : "Claude"} did not return valid SVG`);
+      else throw new Error("Claude did not return valid SVG");
     }
 
     // Replace placeholder with image B

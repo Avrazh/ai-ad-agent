@@ -65,7 +65,7 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
   const [posA, setPosA] = useState<NodePos>({ x: 60, y: 120 });
   const [posB, setPosB] = useState<NodePos>({ x: 60, y: 360 });
   const [posPrompt, setPosPrompt] = useState<NodePos>({ x: 360, y: 220 });
-  const [posResult, setPosResult] = useState<NodePos>({ x: 680, y: 220 });
+  const [posResult, setPosResult] = useState<NodePos>({ x: 660, y: 140 });
 
   // Image selections
   const [imageA, setImageA] = useState<{ base64: string; previewUrl: string } | null>(null);
@@ -74,9 +74,6 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
 
   // Prompt
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-
-  // Model
-  const [model, setModel] = useState<"claude" | "gpt4">("claude");
 
   // Generation state
   const [generating, setGenerating] = useState(false);
@@ -145,7 +142,7 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
       const res = await fetch("/api/ai-compose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageA: imageA.base64, imageB: imageB.base64, prompt, model }),
+        body: JSON.stringify({ imageA: imageA.base64, imageB: imageB.base64, prompt }),
       });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "Generation failed");
@@ -160,7 +157,7 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
   // Node dimensions
   const IMG_W = 130, IMG_H = 160;
   const PROMPT_W = 240, PROMPT_H = 200;
-  const RESULT_W = 140, RESULT_H = 180;
+  const RESULT_W = 340, RESULT_H = 440;
 
   // Connection anchor points (center-right / center-left of nodes)
   const anchorARight = { x: posA.x + IMG_W, y: posA.y + IMG_H / 2 };
@@ -192,9 +189,12 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
         </div>
         <button
           onClick={onClose}
-          className="text-gray-500 hover:text-gray-300 transition text-lg leading-none"
+          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-gray-400 hover:text-white border border-white/[0.08] hover:border-white/20 transition"
         >
-          ✕
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Exit Studio
         </button>
       </div>
 
@@ -273,20 +273,6 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
               <span className="text-[11px] font-semibold text-indigo-300">Prompt</span>
             </div>
             <div className="p-2" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="flex gap-1 mb-2">
-                <button
-                  onClick={() => setModel("claude")}
-                  className={"flex-1 rounded-md py-1 text-[10px] font-medium transition " + (model === "claude" ? "bg-indigo-500/25 text-indigo-300" : "text-gray-500 hover:text-gray-400 bg-white/[0.03]")}
-                >
-                  Claude
-                </button>
-                <button
-                  onClick={() => setModel("gpt4")}
-                  className={"flex-1 rounded-md py-1 text-[10px] font-medium transition " + (model === "gpt4" ? "bg-emerald-500/25 text-emerald-300" : "text-gray-500 hover:text-gray-400 bg-white/[0.03]")}
-                >
-                  GPT-4.1
-                </button>
-              </div>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -308,12 +294,6 @@ export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props)
                 ) : "✦ Generate"}
               </button>
               {error && <p className="mt-1 text-[10px] text-red-400">{error}</p>}
-              <button
-                onClick={onClose}
-                className="mt-1 w-full rounded-lg px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 border border-white/[0.07] hover:border-white/20 transition"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>
