@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const pkg = require("./package.json") as { version: string };
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: { bodySizeLimit: "20mb" },
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: pkg.version,
   },
