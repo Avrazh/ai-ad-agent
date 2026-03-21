@@ -109,7 +109,7 @@ No people, no hands, no products, no text, no logos, no watermarks. High-end edi
     prompt,
     n: 1,
     size: imageSize,
-    quality: "high",
+    quality: "low",
   });
 
   const b64 = imageResponse.data?.[0]?.b64_json;
