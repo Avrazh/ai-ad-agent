@@ -1851,7 +1851,7 @@ export default function Home() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Persona</span>
                   <button
                     ref={personaBtnRef}
-                    disabled={isSVGSurprise || detailLoading || personas.length === 0 || !selectedItem?.result}
+                    disabled={isSVGSurprise || detailLoading || personas.length === 0 || !selectedItem}
                     onClick={() => setPersonaDropdownOpen((o) => !o)}
                     className="w-52 rounded-md px-2 py-1.5 text-sm bg-[#0d1117] border border-white/[0.08] text-gray-200 disabled:opacity-30 text-left flex items-center justify-between gap-2 hover:border-white/20 transition-colors"
                   >
