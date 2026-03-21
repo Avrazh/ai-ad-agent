@@ -54,6 +54,14 @@ const BACKGROUND_ARCHETYPES = [
   },
 ];
 
+const COMPOSITION_STYLES = [
+  "off-center placement — subject pushed to one side, generous negative space on the other",
+  "diagonal composition — leading lines and elements arranged along a diagonal axis",
+  "layered depth — distinct foreground, midground, and background elements creating depth",
+  "foreground/background separation — blurred foreground element frames a sharp background scene",
+  "asymmetric balance — unequal visual weight on each side, balanced by contrast or color",
+];
+
 export type PersonaContext = {
   name: string;
   visualWorld: string;
@@ -82,7 +90,17 @@ export async function generateAIBackground(
     ? `Color palette and mood should fit this persona: ${persona.name} — ${persona.visualWorld}.`
     : `Color palette and mood should feel luxurious and aspirational.`;
 
-  const prompt = `Photorealistic beauty product photography background. Style: "${archetype.name}" — ${archetype.description}. ${personaLine} No people, no hands, no products, no text, no logos. Use a different composition than a centered layout. Pure background scene only, high-end editorial quality.`;
+  const compositionStyle = COMPOSITION_STYLES[Math.floor(Math.random() * COMPOSITION_STYLES.length)];
+
+  const prompt = `Photorealistic beauty editorial scene. Style: "${archetype.name}" — ${archetype.description}. ${personaLine}
+
+Create a full ad composition where the product is integrated naturally into the scene. Leave a clearly open area for a product overlay — do not place anything in the center of the frame.
+
+Use this composition style: ${compositionStyle}
+
+Reserve clear empty space for a product overlay, with matching lighting and perspective so the product will feel naturally placed.
+
+No people, no hands, no products, no text, no logos, no watermarks. High-end editorial quality.`;
 
   console.log(`[ai-style] Archetype: "${archetype.name}"`);
 
