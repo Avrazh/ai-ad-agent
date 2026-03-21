@@ -9,6 +9,7 @@ import { BRAND_NAME } from "@/lib/customerConfig";
 import { TRANSLATION_TARGETS } from "@/lib/languages";
 import { CropEditor } from "@/app/components/CropEditor";
 import SplitSceneEditor, { SplitConfig } from "@/app/components/SplitSceneEditor";
+import AIComposeEditor from "@/app/components/AIComposeEditor";
 
 type RenderResultItem = {
   id: string;
@@ -334,6 +335,7 @@ export default function Home() {
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
+  const [aiComposeOpen, setAiComposeOpen] = useState(false);
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const personaBtnRef = useRef<HTMLButtonElement>(null);
@@ -2161,22 +2163,19 @@ export default function Home() {
                   {/* Divider before AI Style */}
                   <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" />
 
-                  {/* AI Style pill — Claude-generated background, user adds text */}
+                  {/* Creative Layout pill — node-based editor to create layout from reference */}
                   {(() => {
-                    const isActive = selectedItem.result?.templateId === "ai_background";
+                    const isActive = aiComposeOpen;
                     return (
                       <button
-                        key="ai_background"
-                        onClick={() => { handleAIStyle(selectedItem); setLayoutPanelOpen(false); }}
-                        disabled={detailLoading || !selectedItem.imageId}
-                        className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition disabled:opacity-40 shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-indigo-500/20 hover:border-indigo-500/50 bg-indigo-500/5")}
+                        key="ai_compose"
+                        onClick={() => { setAiComposeOpen(true); setLayoutPanelOpen(false); }}
+                        className={"flex flex-col items-center gap-1 rounded-xl border p-1.5 transition shrink-0 " + (isActive ? "border-indigo-500/50 bg-indigo-500/10" : "border-indigo-500/20 hover:border-indigo-500/50 bg-indigo-500/5")}
                       >
-                        <div className="w-[80px] h-[100px] rounded-lg overflow-hidden bg-white/[0.04] flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1a1040 0%, #0d0d1a 100%)" }}>
-                          {detailLoading && isActive
-                            ? <div className="h-4 w-4 animate-spin rounded-full border border-indigo-400/50 border-t-transparent" />
-                            : <span style={{ fontSize: 28 }}>✦</span>}
+                        <div className="w-[80px] h-[100px] rounded-lg overflow-hidden flex items-center justify-center" style={{ background: "linear-gradient(135deg, #1a1040 0%, #0d0d1a 100%)" }}>
+                          <span style={{ fontSize: 28 }}>✦</span>
                         </div>
-                        <span className={"text-[10px] shrink-0 font-medium " + (isActive ? "text-indigo-300" : "text-indigo-400")}>AI Style</span>
+                        <span className={"text-[10px] shrink-0 font-medium " + (isActive ? "text-indigo-300" : "text-indigo-400")}>Creative Layout</span>
                       </button>
                     );
                   })()}
@@ -2196,7 +2195,30 @@ export default function Home() {
 
 
             {/* ── MAIN CONTENT ─────────────────────────────── */}
-            {(selectedItem.status === "done" || selectedItem.status === "analyzed") && selectedItem.imageId ? (
+            {aiComposeOpen ? (
+              <AIComposeEditor
+                queueThumbs={queue
+                  .filter((q) => q.imageId && q.imageUrl)
+                  .map((q) => ({ id: q.id, imageId: q.imageId!, url: q.imageUrl ?? q.previewUrl }))}
+                onSave={(imageId, imageUrl) => {
+                  // Add result as a new queue item so the user can work with it
+                  const newItem: QueueItem = {
+                    id: newItemId(),
+                    file: new File([], imageId + ".png"),
+                    previewUrl: imageUrl,
+                    imageId,
+                    imageUrl,
+                    status: "analyzed",
+                    approved: false,
+                    cropX: 0.5,
+                  };
+                  setQueue((prev) => [...prev, newItem]);
+                  setSelectedItemId(newItem.id);
+                  setAiComposeOpen(false);
+                }}
+                onClose={() => setAiComposeOpen(false)}
+              />
+            ) : (selectedItem.status === "done" || selectedItem.status === "analyzed") && selectedItem.imageId ? (
               <div className="flex-1 flex flex-col overflow-hidden">
 
                 {/* Crop Editor: shown when user clicks Reposition */}
