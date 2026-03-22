@@ -128,6 +128,8 @@ type QueueItem = {
   splitConfig?: SplitConfig;   // config for split scene editor
   splitEditing?: boolean;      // true when split scene editor is open
   error?: string;
+  bakePending?: boolean;       // F9: background bake in progress after approve
+  bakeError?: string;          // F9: bake failed — message shown on item
 };
 
 const FAMILY_LABELS: Record<FamilyId, string> = {
@@ -284,7 +286,15 @@ const QueueItemRow = memo(function QueueItemRow({
           )}
         </p>
       </div>
-      {item.approved && (
+      {item.approved && item.bakePending && (
+        <div className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" />
+      )}
+      {item.approved && item.bakeError && !item.bakePending && (
+        <svg className="h-3.5 w-3.5 shrink-0 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+        </svg>
+      )}
+      {item.approved && !item.bakePending && !item.bakeError && (
         <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
         </svg>
@@ -336,6 +346,8 @@ export default function Home() {
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
   const [aiComposeOpen, setAiComposeOpen] = useState(false);
+  const [approveAnimating, setApproveAnimating] = useState(false);
+  const [rightPanelGlowing, setRightPanelGlowing] = useState(false);
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const personaBtnRef = useRef<HTMLButtonElement>(null);
@@ -1061,6 +1073,69 @@ export default function Home() {
     [updateItem]
   );
 
+  // F9: fire-and-forget background bake after optimistic approve
+  const handleApproveWithBake = useCallback(
+    async (item: QueueItem) => {
+      if (!item.result) return;
+
+      // 1. Trigger visual animation
+      setApproveAnimating(true);
+      setTimeout(() => {
+        setRightPanelGlowing(true);
+        setTimeout(() => setRightPanelGlowing(false), 1400);
+      }, 350);
+      setTimeout(() => setApproveAnimating(false), 700);
+
+      // 2. Optimistic approve + mark bake pending
+      updateItem(item.id, { approved: true, bakePending: true, bakeError: undefined });
+      try {
+        await fetch("/api/approve", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultId: item.result.id, approved: true }),
+        });
+      } catch { /* silent */ }
+
+      // 3. Background bake (reposition with current settings to burn in text boxes / headline position)
+      try {
+        const itemShowBrand = brandByImage[item.id] ?? false;
+        const y = item.headlineY
+          ?? (item.result.headlineYOverride ?? item.usedSurpriseSpec?.headlineYOverride
+            ?? (item.result.templateId === "star_review" ? 0.2005
+              : item.result.templateId === "split_scene" ? 0.82
+              : item.result.templateId === "ai_background" ? 0.65 : 0.1484));
+        const scale = item.headlineFontScale ?? item.result.headlineFontScale ?? 1.0;
+        const bY = item.brandNameY ?? item.result.brandNameY;
+        const bScale = item.brandNameFontScale ?? item.result.brandNameFontScale;
+        const res = await fetch("/api/reposition", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resultId: item.result.id,
+            headlineYOverride: y,
+            headlineFontScale: scale,
+            showBrand: itemShowBrand,
+            ...(bY !== undefined ? { brandNameY: bY } : {}),
+            ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}),
+            ...(item.headlineFont ? { headlineFont: item.headlineFont } : {}),
+            ...(item.headlineColor !== undefined ? { headlineColor: item.headlineColor } : {}),
+            ...(item.brandColor !== undefined ? { brandColor: item.brandColor } : {}),
+            ...(item.overrideHeadline !== undefined ? { headlineOverride: item.overrideHeadline } : {}),
+            ...(item.textBoxes !== undefined ? { textBoxes: item.textBoxes } : {}),
+            ...(item.hideHeadline !== undefined ? { hideHeadline: item.hideHeadline } : {}),
+          }),
+        });
+        if (!res.ok) throw new Error("Reposition failed");
+        const data = await res.json();
+        updateItem(item.id, { result: { ...item.result, ...data.result }, bakePending: false, overrideHeadline: undefined });
+      } catch (err) {
+        console.error("[bake]", err);
+        updateItem(item.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
+      }
+    },
+    [updateItem, brandByImage]
+  );
+
   // ── Download ────────────────────────────────────────────
   const LAYOUT_SHORT: Record<string, string> = {
     // ai_surprise layout pill variants (from usedSurpriseSpec.layout)
@@ -1710,13 +1785,13 @@ export default function Home() {
 
         {/* ── Feedback button — pinned to sidebar bottom ─── */}
         <div className="shrink-0 border-t border-white/[0.06] flex items-center justify-between px-4 py-3">
-          <span className="text-[10px] text-gray-700 font-mono select-none">v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
           <button
             onClick={() => setFeedbackOpen(true)}
             className="flex items-center gap-1.5 text-[11px] text-gray-600 transition hover:text-gray-400"
           >
             💬 Leave feedback
           </button>
+          <span className="text-[10px] text-gray-700 font-mono select-none">v{process.env.NEXT_PUBLIC_APP_VERSION}</span>
         </div>
       </div>
 
@@ -2000,78 +2075,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Stage: Translate — only shown when there are approved ads */}
-                {approvedCount > 0 && (
-                  <div ref={translatePickerRef} className="relative flex flex-col justify-center gap-1.5 px-5 border-l-2 border-white/[0.08] shrink-0">
-                    <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">
-                      {translateLoading ? "Translating…" : "Translate"}
-                    </span>
-                    <div className="flex items-center">
-                      <button
-                        onClick={(e) => {
-                          if (translateLoading) return;
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          setTranslatePickerPos({ top: rect.bottom + 8, left: rect.left });
-                          setTranslatePickerOpen((v) => !v);
-                        }}
-                        disabled={translateLoading}
-                        className={"flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-60 " + (translatePickerOpen ? pillActive : pillInactive)}
-                      >
-                        {translateLoading ? (
-                          <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                        ) : (
-                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-                          </svg>
-                        )}
-                        <span>{translateLoading ? "Translating…" : "Translate"}</span>
-                        {!translateLoading && (
-                          <svg className={"h-3.5 w-3.5 transition-transform " + (translatePickerOpen ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                    {translatePickerOpen && translatePickerPos && (
-                      <div className="fixed z-[9999] bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-48" style={{ top: translatePickerPos.top, left: translatePickerPos.left }}>
-                        <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">Select languages</p>
-                        <div className="flex flex-col gap-1 mb-3">
-                          {TRANSLATION_TARGETS.map((lang) => {
-                            const checked = translateSelectedLangs.has(lang.code);
-                            return (
-                              <label key={lang.code} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/[0.06] cursor-pointer transition">
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => {
-                                    setTranslateSelectedLangs((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(lang.code)) next.delete(lang.code); else next.add(lang.code);
-                                      return next;
-                                    });
-                                  }}
-                                  className="accent-indigo-500"
-                                />
-                                <span className="text-xs text-gray-300">{lang.name}</span>
-                                <span className="ml-auto text-[10px] text-gray-500 font-semibold">{lang.label}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                        {translateError && (
-                          <p className="text-[11px] text-red-400 mb-2">{translateError}</p>
-                        )}
-                        <button
-                          onClick={handleTranslate}
-                          disabled={translateSelectedLangs.size === 0 || translateLoading}
-                          className="w-full rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-indigo-500 transition"
-                        >
-                          {translateLoading ? "Translating…" : `Translate (${translateSelectedLangs.size})`}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
 
                 {/* Spacer fills remaining right space */}
                 <div className="flex-1 min-w-4" />              </div>
@@ -2260,7 +2263,7 @@ export default function Home() {
                       </div>
                     </div>
                   ) : selectedItem.result ? (
-                    <div className="relative h-full flex items-center justify-center">
+                    <div className={"relative h-full flex items-center justify-center" + (approveAnimating ? " approve-whoosh" : "")}>
                       {isCleanHeadline ? (
                         <LiveAdCanvas
                           key={selectedItemId ?? ""}
@@ -2441,13 +2444,8 @@ export default function Home() {
                       onClick={async () => {
                         if (!selectedItem.result) return;
                         if (!selectedItem.approved) {
-                          // Auto-render with current headline position, then approve
-                          const y = selectedItem.headlineY ?? initialHeadlineY;
-                          const scale = selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0;
-                          const bY = selectedItem.brandNameY ?? selectedItem.result.brandNameY;
-                          const bScale = selectedItem.brandNameFontScale ?? selectedItem.result.brandNameFontScale;
-                          const newId = await handleReposition(y, scale, bY, bScale, selectedItem.headlineColor ?? selectedItem.result?.headlineColor, selectedItem.brandColor ?? selectedItem.result?.brandColor, selectedItem.overrideHeadline, true);
-                          await handleApprove(selectedItem.id, newId ?? selectedItem.result.id, true);
+                          // F9: optimistic approve + background bake
+                          handleApproveWithBake(selectedItem);
                         } else {
                           await handleApprove(selectedItem.id, selectedItem.result.id, false);
                         }
@@ -2455,10 +2453,14 @@ export default function Home() {
                       disabled={detailLoading}
                       className={"flex-1 rounded-xl border py-3 text-sm font-medium transition disabled:opacity-40 flex items-center justify-center gap-2 " + (selectedItem.approved ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400" : "border-white/10 bg-white/[0.04] text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")}
                     >
-                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                      </svg>
-                      {selectedItem.approved ? "Approved" : "Approve"}
+                      {selectedItem.bakePending ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent shrink-0" />
+                      ) : (
+                        <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                      )}
+                      {selectedItem.bakePending ? "Baking…" : selectedItem.approved ? "Approved" : "Approve"}
                     </button>
                     <button
                       onClick={() => handleDownload(selectedItem.result!.pngUrl, selectedItem)}
@@ -2468,6 +2470,21 @@ export default function Home() {
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
                       </svg>
                       Download
+                    </button>
+                  </div>
+                )}
+                {/* F9: bake error banner */}
+                {selectedItem.bakeError && (
+                  <div className="shrink-0 px-6 pb-3 flex items-center gap-2">
+                    <svg className="h-3.5 w-3.5 shrink-0 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-[11px] text-amber-400 flex-1">Bake failed</span>
+                    <button
+                      onClick={() => handleApproveWithBake(selectedItem)}
+                      className="text-[11px] text-amber-400 underline hover:text-amber-300"
+                    >
+                      Retry
                     </button>
                   </div>
                 )}
@@ -2495,7 +2512,7 @@ export default function Home() {
 
             {/* ════ RIGHT PANEL — Approved ════════════════════════ */}
             {approvedCount > 0 && (
-            <div className="w-[240px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-hidden">
+            <div className={"w-[240px] shrink-0 flex flex-col border-l overflow-hidden" + (rightPanelGlowing ? " panel-glow" : " border-white/[0.06]")}>
 
           {/* Header */}
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-center gap-2">
@@ -2540,8 +2557,79 @@ export default function Home() {
             ))}
           </div>
 
-          {/* Download All */}
-          <div className="shrink-0 px-4 py-4 border-t border-white/[0.06]">
+          {/* Translate + Download All */}
+          <div ref={translatePickerRef} className="shrink-0 px-4 pt-3 pb-4 border-t border-white/[0.06] flex flex-col gap-2">
+            {/* Translate button */}
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  if (translateLoading) return;
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setTranslatePickerPos({ top: rect.top, left: rect.left });
+                  setTranslatePickerOpen((v) => !v);
+                }}
+                disabled={translateLoading}
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.08] hover:text-white transition disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                {translateLoading ? (
+                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent shrink-0" />
+                ) : (
+                  <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                  </svg>
+                )}
+                <span>{translateLoading ? "Translating…" : "Translate"}</span>
+                {!translateLoading && (
+                  <svg className={"h-3 w-3 ml-auto shrink-0 transition-transform " + (translatePickerOpen ? "rotate-180" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                )}
+              </button>
+              {/* Dropdown — opens upward */}
+              {translatePickerOpen && translatePickerPos && (
+                <div
+                  className="fixed z-[9999] bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-48"
+                  style={{ bottom: window.innerHeight - translatePickerPos.top + 8, left: translatePickerPos.left }}
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 mb-2">Select languages</p>
+                  <div className="flex flex-col gap-1 mb-3">
+                    {TRANSLATION_TARGETS.map((lang) => {
+                      const checked = translateSelectedLangs.has(lang.code);
+                      return (
+                        <label key={lang.code} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-white/[0.06] cursor-pointer transition">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setTranslateSelectedLangs((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(lang.code)) next.delete(lang.code); else next.add(lang.code);
+                                return next;
+                              });
+                            }}
+                            className="accent-indigo-500"
+                          />
+                          <span className="text-xs text-gray-300">{lang.name}</span>
+                          <span className="ml-auto text-[10px] text-gray-500 font-semibold">{lang.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {translateError && (
+                    <p className="text-[11px] text-red-400 mb-2">{translateError}</p>
+                  )}
+                  <button
+                    onClick={handleTranslate}
+                    disabled={translateSelectedLangs.size === 0 || translateLoading}
+                    className="w-full rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 hover:bg-indigo-500 transition"
+                  >
+                    {translateLoading ? "Translating…" : `Translate (${translateSelectedLangs.size})`}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Download All */}
             <button
               onClick={handleDownloadAll}
               className="w-full rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 px-4 py-2.5 text-sm font-semibold text-white hover:from-indigo-400 hover:to-violet-400 transition flex items-center justify-center gap-2"
