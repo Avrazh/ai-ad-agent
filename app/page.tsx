@@ -433,7 +433,7 @@ export default function Home() {
     setQueue((prev) => {
       const hasSelection = prev.some((i) => i.id === currentSelection);
       if (!hasSelection) {
-        const first = prev.find((i) => i.status === "done");
+        const first = prev.find((i) => i.status === "done" || i.status === "analyzed");
         if (first) setSelectedItemId(first.id);
       }
       return prev;
