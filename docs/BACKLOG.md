@@ -24,6 +24,8 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 
 | ID | Title | Description | Status |
 |----|-------|-------------|--------|
+| B4 | star_review hideHeadline not baked | When review card was hidden via toggle, baked PNG still included the card. Fixed by checking `spec.hideHeadline` in starReview template. | done |
+| B5 | First analyzed image not auto-selected | After Analyze All, user had to click an image manually to show the top bar. Fixed auto-select to include `"analyzed"` status. | done |
 
 ---
 
@@ -58,3 +60,5 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 | F7 | Free-form text boxes + hide headline | `DraggableTextBlock` component: drag X/Y, resize, delete, inline edit, color picker, font size, bold, bullet toggle. Headline box hide/show toggle. Text boxes baked into PNG via reposition route. |
 | F8 | AI Style background generation | Layout pill "AI Style": Claude Sonnet generates a no-text HTML background for the product image. User layers headline + free text boxes on top. Baked into PNG on approve. |
 | F12 | Creative Layout Studio | Node-based editor accessible from the layout panel. User loads a reference ad (Image A) and their product (Image B). Claude Sonnet analyses the reference layout spec (panels, colors, proportions, accent elements) then recreates it as SVG with the product placed inside — no text, leaving space for user's own text overlays. Result saved to queue as an analyzed item. |
+| F9 | Background approve baking | Approve is instant — green pulse animation flies ad toward right panel. Reposition bake runs in background. Spinner on queue item while pending; amber warning + Retry on failure. |
+| — | Translate moved to right panel | Translate button relocated from stage bar into the approved panel footer, above Download All. Dropdown opens upward. |
