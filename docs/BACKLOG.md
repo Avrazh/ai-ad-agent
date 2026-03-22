@@ -31,7 +31,7 @@ Stay on `0.x.x` while in active development. Move to `1.0.0` when the customer c
 
 | ID | Title | Description | Status | Plan |
 |----|-------|-------------|--------|------|
-| F9 | Background approve baking | Approve is instant for the user — item moves to approved immediately and the PNG bake (reposition) happens silently in the background. Show a subtle error state on the queue item if baking fails. | open | — |
+| F9 | Background approve baking | Approve is instant for the user — item moves to approved immediately and the PNG bake (reposition) happens silently in the background. Show a subtle error state on the queue item if baking fails. | done | — |
 | F10 | Free-form review boxes | User can add/delete unlimited review boxes on any ad, the same way as free-form text boxes (drag X/Y, resize, delete top-right corner). Each box shows a fixed 5-star row + editable review text. Multiple boxes supported. Baked into PNG via reposition route alongside text boxes. | open | — |
 | F6 | Auto font variation by persona | Automatically vary fonts across ads based on persona, reducing need for manual font selection. | open | — |
 | TR | Translate approved ads | One-click translation of all approved EN ads into SE, DE, FR, ES. Collapsible language groups in left panel. Full stage bar on translated ads (textboxes, headline position, brand, etc.). Claude Haiku batch translation per language. | done | [plan](superpowers/plans/2026-03-17-translate-approved.md) |
