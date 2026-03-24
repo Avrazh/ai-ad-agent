@@ -1,5 +1,8 @@
 # ai-ad-agent — Project Knowledge
 
+## Rules
+- **NEVER run `git push` unless the user explicitly says to push.** Every push triggers a Vercel build that costs credits. Commit freely, but always stop before pushing and wait for explicit instruction.
+
 ## What this app does
 Generates print-quality ad images from product photos. User uploads images, clicks Generate All, gets styled ads back. Can switch styles, language, format, or get a one-shot AI-creative via Surprise Me.
 
