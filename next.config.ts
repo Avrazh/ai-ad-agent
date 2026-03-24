@@ -22,7 +22,6 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/generate": ["./node_modules/@sparticuz/chromium/**/*"],
     "/api/regenerate": ["./node_modules/@sparticuz/chromium/**/*"],
-    "/api/surprise-render": ["./node_modules/@sparticuz/chromium/**/*"],
   },
   // Required to silence "webpack config without turbopack config" error on Next.js 16
   turbopack: {},

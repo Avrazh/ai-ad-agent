@@ -276,8 +276,6 @@ const QueueItemRow = memo(function QueueItemRow({
             <span className="text-gray-600">
               {item.result.templateId === "ai_background"
                 ? "AI Style"
-                : item.result.templateId === "ai_surprise_svg"
-                ? "AI Creative"
                 : item.usedSurpriseSpec?.layout
                 ? (LAYOUT_LABELS[item.usedSurpriseSpec.layout] ?? "Layout")
                 : (FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId)}{" "}
@@ -340,8 +338,6 @@ export default function Home() {
   );
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
-  const [referenceImage, setReferenceImage] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
-  const [surprisePrompt, setSurprisePrompt] = useState("");
   const [feedbackSent, setFeedbackSent] = useState(false);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
@@ -355,7 +351,6 @@ export default function Home() {
   const [addPersonaName, setAddPersonaName] = useState("");
   const [addPersonaDesc, setAddPersonaDesc] = useState("");
   const [addPersonaLoading, setAddPersonaLoading] = useState(false);
-  const [surprisePanelOpen, setSurprisePanelOpen] = useState(false);
   const [ownHeadlineOpen, setOwnHeadlineOpen] = useState(false);
   const [ownHeadlineInput, setOwnHeadlineInput] = useState("");
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -374,7 +369,6 @@ export default function Home() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const adImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const refFileInputRef = useRef<HTMLInputElement>(null);
   // Mirror queue + selectedItemId in refs so callbacks can read latest values
   // without being declared after derived variables that depend on state.
   const queueRef = useRef<QueueItem[]>([]);
@@ -643,97 +637,6 @@ export default function Home() {
     },
     [detailLoading, updateItem, selectedLang, selectedFormat, personaByImage, personas],
   );
-
-  // ── Surprise Me — Claude generates full SVG ad (no Satori, no predefined layout) ──
-  const handleSurpriseMe = useCallback(
-    async (item: QueueItem) => {
-      if (!item.imageId || detailLoading) return;
-      setDetailLoading(true);
-      try {
-        const res = await fetch("/api/surprise-render", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageId: item.imageId,
-            imageUrl: item.imageUrl,
-            lang: selectedLang,
-            userPrompt: surprisePrompt || undefined,
-          }),
-        });
-        if (!res.ok) {
-          const d = await res.json();
-          throw new Error(d.error || "Surprise Me failed");
-        }
-        const data = await res.json();
-        const result: RenderResultItem = data.results[0];
-        updateItem(item.id, { result, approved: false, usedFamilyId: "ai" as FamilyId, lang: selectedLang });
-      } catch (err) {
-        console.error("Surprise Me error:", err);
-      } finally {
-        setDetailLoading(false);
-      }
-    },
-    [detailLoading, updateItem, selectedLang, surprisePrompt]
-  );
-
-
-  // ── Reference image selection ──
-  const handleRefImageChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = "";
-    const compressed = await compressImage(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const [header, base64] = dataUrl.split(",");
-      const mimeType = header.match(/:(.*?);/)?.[1]?.replace("image/", "") ?? "jpeg";
-      setReferenceImage({ base64, mimeType, preview: dataUrl });
-    };
-    reader.readAsDataURL(compressed);
-  }, []);
-
-  // ── Inspired by Reference — same SVG pipeline as Surprise Me, guided by reference image ──
-  const handleInspiredByReference = useCallback(
-    async (item: QueueItem) => {
-      if (!item.imageId || !referenceImage || detailLoading) return;
-      setDetailLoading(true);
-      try {
-        const res = await fetch("/api/surprise-render", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            imageId: item.imageId,
-            imageUrl: item.imageUrl,
-            lang: selectedLang,
-            referenceImageBase64: referenceImage.base64,
-            referenceImageMimeType: referenceImage.mimeType,
-            userPrompt: surprisePrompt || undefined,
-          }),
-        });
-        if (!res.ok) {
-          const d = await res.json();
-          throw new Error(d.error || "Inspired by reference failed");
-        }
-        const data = await res.json();
-        const result: RenderResultItem = data.results[0];
-        updateItem(item.id, { result, approved: false, usedFamilyId: "ai" as FamilyId, lang: selectedLang });
-      } catch (err) {
-        console.error("Inspired by reference error:", err);
-      } finally {
-        setDetailLoading(false);
-      }
-    },
-    [detailLoading, referenceImage, updateItem, selectedLang, surprisePrompt]
-  );
-
-  // Auto-generate when a reference image is uploaded via the AI Reference card
-  useEffect(() => {
-    if (referenceImage && selectedItem && selectedItem.imageId && !detailLoading) {
-      handleInspiredByReference(selectedItem);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [referenceImage]);
 
   // ── Preview a specific layout — no AI call, fixed spec ──
   const handlePreviewLayout = useCallback(
@@ -1152,19 +1055,16 @@ export default function Home() {
     quote_card: "quote",
     luxury_editorial_left: "editorial",
     luxury_soft_frame_open: "frame",
-    ai_surprise_svg: "ai",
   };
 
   function buildFilename(item: QueueItem): string {
     const lang = (item.result?.lang ?? item.lang ?? selectedLang).toUpperCase();
     const templateId = item.result?.templateId ?? "";
-    const isAI = templateId === "ai_surprise_svg";
     // For ai_surprise layout pills, use the actual layout name from the spec
     const layoutKey = (templateId === "ai_surprise" && item.usedSurpriseSpec?.layout)
       ? item.usedSurpriseSpec.layout
       : templateId;
     const layoutShort = LAYOUT_SHORT[layoutKey] ?? layoutKey.replace(/_/g, "");
-    if (isAI) return `${lang}_${layoutShort}`;
     const personaId = personaByImage[item.id] ?? personas[0]?.id;
     const personaName = personas.find(p => p.id === personaId)?.name ?? "";
     const personaSlug = personaName.toLowerCase().replace(/\s+/g, "");
@@ -1307,8 +1207,6 @@ export default function Home() {
     selectedIdx >= 0 && selectedIdx < queue.length - 1
       ? queue[selectedIdx + 1]
       : null;
-
-  const isSVGSurprise = selectedItem?.result?.templateId === "ai_surprise_svg";
 
   const activePersona = personas.find(
     (p) => p.id === (personaByImage[selectedItemId ?? ""] ?? personas[0]?.id)
@@ -1707,8 +1605,6 @@ export default function Home() {
                         <span className="text-gray-600">
                           {item.result.templateId === "ai_background"
                             ? "AI Style"
-                            : item.result.templateId === "ai_surprise_svg"
-                            ? "AI Creative"
                             : item.usedSurpriseSpec?.layout
                             ? (LAYOUT_LABELS[item.usedSurpriseSpec.layout] ?? "Layout")
                             : (FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId)}{" "}
@@ -1900,7 +1796,7 @@ export default function Home() {
                         <button
                           key={key}
                           onClick={() => selectedItemId && updateItem(selectedItemId, { headlineFont: key })}
-                          disabled={isSVGSurprise || !selectedItem?.result}
+                          disabled={!selectedItem?.result}
                           className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (active ? pillActive : pillInactive)}
                           style={{ fontFamily: `'${key}', sans-serif` }}
                         >
@@ -1916,7 +1812,7 @@ export default function Home() {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Persona</span>
                   <button
                     ref={personaBtnRef}
-                    disabled={isSVGSurprise || detailLoading || personas.length === 0 || !selectedItem}
+                    disabled={detailLoading || personas.length === 0 || !selectedItem}
                     onClick={() => setPersonaDropdownOpen((o) => !o)}
                     className="w-52 rounded-md px-2 py-1.5 text-sm bg-[#0d1117] border border-white/[0.08] text-gray-200 disabled:opacity-30 text-left flex items-center justify-between gap-2 hover:border-white/20 transition-colors"
                   >
@@ -2014,7 +1910,7 @@ export default function Home() {
                       <button
                         key={angle}
                         onClick={() => selectedItem.result && handleNewHeadlineWithTone(selectedItem, angle)}
-                        disabled={isSVGSurprise || detailLoading || !selectedItem.result}
+                        disabled={detailLoading || !selectedItem.result}
                         className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (toneByImage[selectedItemId ?? ""] === angle ? pillActive : pillInactive)}
                         title={`Get a ${label.toLowerCase()} headline`}
                       >
@@ -2025,7 +1921,7 @@ export default function Home() {
                     {/* "Your own" tone button */}
                     <button
                       onClick={() => { setOwnHeadlineOpen(o => !o); setOwnHeadlineInput(""); }}
-                      disabled={isSVGSurprise || detailLoading || !selectedItem.result}
+                      disabled={detailLoading || !selectedItem.result}
                       className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (ownHeadlineOpen ? pillActive : pillInactive)}
                       title="Type your own headline"
                     >
@@ -2170,16 +2066,6 @@ export default function Home() {
                       </button>
                     );
                   })()}
-                </div>
-              </div>
-            )}
-
-            {/* ── SVG Surprise notice (final, not editable) ── */}
-            {isSVGSurprise && (
-              <div className="shrink-0 px-6 py-2 border-b border-white/[0.06] flex justify-center">
-                <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-4 py-2 text-center">
-                  <p className="text-xs font-semibold text-indigo-300">✨ AI Creative · 9:16</p>
-                  <p className="text-[11px] text-gray-500 mt-0.5">Unique ad generated by Claude. Approve or download below.</p>
                 </div>
               </div>
             )}

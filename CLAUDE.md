@@ -10,9 +10,7 @@ Generates print-quality ad images from product photos. User uploads images, clic
 | Term | Meaning |
 |---|---|
 | **Preset Styles** | All 10 Playwright-rendered styles (6 layouts + 2 Testimonial + 2 Luxury). No AI at render time. Headline/lang/format are all changeable after generation. |
-| **Surprise Me** | Claude Sonnet generates a complete SVG/HTML ad — fully final, not tweakable. A separate creative mode. |
-
-The distinction: Preset Styles = fast, cheap, flexible. Surprise Me = slow, costs AI credits, fixed output.
+| **Creative Layout Studio** | Claude Sonnet analyzes a reference ad and recreates the layout with your product — no text, fully tweakable. Accessible via the "Creative Layout" pill in the sidebar. |
 
 ---
 
@@ -33,35 +31,27 @@ Layout names: `split_right`, `full_overlay`, `bottom_bar`, `frame_overlay`, `pos
 
 Adding a new layout = 3 touches: add to `SurpriseLayout` type union in `app/page.tsx`, add entry to `LAYOUT_PREVIEWS` with a `SurpriseSpec`, add `if (layout === "...")` JSX block in `lib/templates/aiSurprise.tsx`.
 
-### Surprise Me — AI-generated (FINAL — not modifiable)
-Three card-style mode buttons in the "AI Style" section of the stage bar:
+### Surprise Me — REMOVED
+The Surprise Me feature (Just Generate, With Reference, With Prompt) has been removed from the UI and codebase. Deleted files: `app/api/surprise-render/route.ts`, `lib/ai/surpriseRender.ts`. The Creative Layout Studio (F12) covers the reference-based use case in a more flexible way.
 
-| Card | Label | Action |
+### Creative Layout Studio (F12) — separate from Surprise Me
+A node-based editor accessible from the "Creative Layout" pill in the sidebar. Different from Surprise Me — output is a **no-text SVG layout** that the user then layers their own text boxes on top of.
+
+- Entry: "Creative Layout" pill in sidebar → opens `AIComposeEditor` component
+- API: `/api/ai-compose` (separate route, not shared with Surprise Me)
+- Component: `app/components/AIComposeEditor.tsx`
+- Flow: User loads reference ad (Image A) + their product (Image B) → two-step Claude analysis: (1) extract layout spec from reference, (2) recreate layout as SVG with product inserted, no text
+- Result: saved to queue as `status: "analyzed"` — fully tweakable with text boxes, headline overlays, etc.
+- Language/format controls visible after generation (unlike Surprise Me)
+- Use case: borrow a competitor's or inspiration layout, replace with your own product
+
+#### Key difference vs Surprise Me With Reference
+| | Creative Layout Studio | Surprise Me With Reference |
 |---|---|---|
-| 1 | Just Generate | Calls `handleSurpriseMe` immediately — no inputs |
-| 2 | With Reference | Opens file picker; auto-triggers `handleInspiredByReference` on upload |
-| 3 | With Prompt | Toggles prompt textarea panel below the stage bar |
-
-- All three call `/api/surprise-render` → `lib/ai/surpriseRender.ts`
-- Returns `templateId: "ai_surprise_svg"`
-- Language/format controls are **hidden** for this result
-- Cannot switch headline, language, format — it is a finished creative piece
-- Fonts embedded as base64 data URIs in the HTML page injected into Puppeteer
-
-#### Three generation prompt paths (in `lib/ai/surpriseRender.ts`)
-1. **Just Generate** (no reference, no userPrompt): Creative director persona — minimalist, surprising 6-word headline, max 2 colors, editorial luxury feel
-2. **With Reference** (two-step): Step 1 — Claude analyzes reference image into a structured layout spec (BACKGROUND, LAYOUT_SPLIT, PRODUCT_POSITION, PANEL_COLOR, HEADLINE_FONT, etc.). Step 2 — implements that spec exactly, substituting the product photo
-3. **With Prompt** (userPrompt set): Same as Just Generate but injects CREATIVE DIRECTION (highest priority) block at the top with the user text
-
-`userPrompt` is also injected into the reference path (after the spec) when both reference image and prompt are provided.
-
-#### UI state (in `app/page.tsx`)
-- `surprisePanelOpen: boolean` — controls whether prompt textarea panel is visible
-- `surprisePrompt: string` — the user's creative direction text
-- `referenceImage: {base64, mimeType} | null` — uploaded reference image
-- Card 2 shows a thumbnail + "Change image" when `referenceImage !== null` (active indigo highlight)
-- Card 3 shows active indigo highlight when `surprisePanelOpen || surprisePrompt`
-- Prompt panel is a sibling div below the stage bar row (not absolute-positioned)
+| API | `/api/ai-compose` | `/api/surprise-render` |
+| Output | No-text layout SVG | Complete ad with headline + copy |
+| After generation | Tweakable (text boxes, styles) | Final, read-only |
+| Queue status | `analyzed` | shown in detail view only |
 ### Dead / unreachable
 - `switch_grid_3x2_no_text` — registered in template registry but has no UI entry point
 
@@ -74,18 +64,18 @@ Three card-style mode buttons in the "AI Style" section of the stage bar:
 2. Queue item shows `status: "analyzed"` — product photo displayed at selected format ratio
 3. User clicks a style pill → renders the ad for that image
 
-### On first analyze for an image (2 AI calls — cached forever after)
-1. `analyzeSafeZones` — Claude Haiku vision → returns normalized rects for avoidRegions + zones A/B/C
-2. `generateCopyPool` — Claude Haiku vision → writes 40 product-specific copy slots in EN + DE
+### On first analyze for an image (1 AI call — cached forever after)
+1. `generateCopyPool` — Claude Haiku vision → writes 40 product-specific copy slots in EN + DE
+
+Note: `analyzeSafeZones` was removed. Safe zones are dead code — never computed, never stored, never retrieved. The DB section for safe zones is empty. User controls crop position directly via `spec.cropX`. Two templates (`aiSurprise`, `starReview`) have leftover fallback references to `avoidRegions` but since they are always empty they never run.
 
 ### On every render (no AI)
 - Pick style from family registry
-- Pick best zone (avoids avoidRegions)
 - Pick copy slot matching family tone (luxury → aspirational angle)
 - Render PNG via Playwright: template returns HTML string → Puppeteer screenshots headless Chrome → PNG
 
 ### Caching
-- SafeZones and CopyPool cached in SQLite per imageId — AI never called again for the same image
+- CopyPool cached in SQLite per imageId — AI never called again for the same image
 - Preview thumbnails (layout + template) cached in React state per imageId — switching images never re-generates
 - Generated PNGs accumulate on disk — only cleared when user clicks Clear
 
@@ -139,14 +129,16 @@ Three card-style mode buttons in the "AI Style" section of the stage bar:
 | `app/api/regenerate/route.ts` | New headline / style switch |
 | `app/api/switch/route.ts` | Lang/format re-render without AI |
 | `app/api/feedback/route.ts` | POST /api/feedback — saves developer feedback to DB |
-| `lib/ai/analyze.ts` | Claude Haiku — safe zone detection |
+| `lib/ai/analyze.ts` | Legacy — safe zone detection (dead code, no longer called) |
 | `lib/ai/copy.ts` | Claude Haiku — copy pool generation |
-| `lib/ai/surpriseRender.ts` | Claude Sonnet — full SVG ad generation |
+| `lib/ai/surpriseRender.ts` | DELETED — Surprise Me removed |
 | `lib/ai/aiSurprise.ts` | Claude Sonnet — SurpriseSpec generation (for Other layouts) |
+| `app/components/AIComposeEditor.tsx` | Creative Layout Studio UI — node-based editor |
+| `app/api/ai-compose/route.ts` | Creative Layout Studio API — two-step layout analysis + SVG generation |
 | `lib/templates/index.ts` | Registers all families and templates |
 | `lib/templates/registry.ts` | Template registry (Map, insertion-order) |
 | `lib/types.ts` | All shared types |
-| `lib/db.ts` | SQLite — images, safe zones, copy pool, ad specs, render results, developer feedback |
+| `lib/db.ts` | SQLite — images, copy pool, ad specs, render results, developer feedback |
 
 ---
 
@@ -195,7 +187,6 @@ Three card-style mode buttons in the "AI Style" section of the stage bar:
 ## Models used
 | Task | Model | File |
 |---|---|---|
-| Safe zone detection | `claude-haiku-4-5-20251001` | `lib/ai/analyze.ts` |
 | Copy pool generation | `claude-haiku-4-5-20251001` | `lib/ai/copy.ts` |
 | SurpriseSpec generation (layout pills) | `claude-sonnet-4-6` | `lib/ai/aiSurprise.ts` |
 | Surprise Me / Inspired by Reference SVG | `claude-sonnet-4-6` | `lib/ai/surpriseRender.ts` |
