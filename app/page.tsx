@@ -130,6 +130,7 @@ type QueueItem = {
   error?: string;
   bakePending?: boolean;       // F9: background bake in progress after approve
   bakeError?: string;          // F9: bake failed — message shown on item
+  hasBaked?: boolean;          // true after first successful bake — skip re-bake on re-approve
 };
 
 const FAMILY_LABELS: Record<FamilyId, string> = {
@@ -372,7 +373,15 @@ export default function Home() {
   selectedFormatRef.current = selectedFormat;
 
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
-    setQueue((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    // Reset hasBaked if any canvas-affecting property changed so re-approve triggers a fresh bake
+    const invalidatesBake = "headlineColor" in patch || "brandColor" in patch ||
+      "textBoxes" in patch || "hideHeadline" in patch ||
+      "headlineY" in patch || "headlineFontScale" in patch ||
+      "brandNameY" in patch || "brandNameFontScale" in patch ||
+      ("result" in patch && patch.hasBaked === undefined);
+setQueue((prev) => prev.map((item) =>
+      item.id === id ? { ...item, ...patch, ...(invalidatesBake ? { hasBaked: false } : {}) } : item
+    ));
   }, []);
 
   const handleSelectItem = useCallback((id: string) => {
@@ -1018,13 +1027,13 @@ export default function Home() {
         });
         if (!res.ok) throw new Error("Reposition failed");
         const data = await res.json();
-        // Mark the newly-baked result as approved in the DB so translate can find it
-        await fetch("/api/approve", {
+        // Mark the newly-baked result as approved in the DB (fire-and-forget — translate needs it)
+        fetch("/api/approve", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ resultId: data.result.id, approved: true }),
         }).catch(() => {});
-        updateItem(item.id, { result: { ...item.result, ...data.result }, bakePending: false, overrideHeadline: undefined });
+        updateItem(item.id, { result: { ...item.result, ...data.result }, bakePending: false, hasBaked: true, overrideHeadline: undefined });
       } catch (err) {
         console.error("[bake]", err);
         updateItem(item.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
@@ -1122,28 +1131,36 @@ export default function Home() {
       };
       const data = await res.json() as { translations: { lang: string; results: TResult[] }[] };
       const allResults = data.translations.flatMap((t) => t.results);
-      setQueue((prev) => {
-        const dedupeKeys = new Set(allResults.map((r) => `${r.sourceResultId}:${r.lang}`));
-        const kept = prev.filter((q) => {
-          if (!q.translationSourceId) return true;
-          return !dedupeKeys.has(`${q.translationSourceId}:${q.lang ?? ""}`);
-        });
-        const additions = allResults.flatMap((t) => {
-          const source = prev.find((q) => q.result?.id === t.sourceResultId);
-          if (!source) return [];
-          const result: RenderResultItem = {
-            id: t.id, adSpecId: t.adSpecId, imageId: t.imageId,
-            familyId: t.familyId, templateId: t.templateId, primarySlotId: t.primarySlotId,
-            format: source.result?.format ?? "9:16", pngUrl: t.pngUrl,
-            approved: false, createdAt: new Date().toISOString(),
-            headlineText: t.headlineText, headlineYOverride: t.headlineYOverride,
-            headlineFontScale: t.headlineFontScale, brandNameY: t.brandNameY,
-            brandNameFontScale: t.brandNameFontScale, subjectPos: t.subjectPos,
-            headlineColor: t.headlineColor, lang: t.lang,
-          };
-          return [{ ...source, id: t.id, result, lang: t.lang as Language, status: "done" as const, approved: false, translationSourceId: t.sourceResultId, headlineColor: t.headlineColor }];
-        });
-        return [...kept, ...additions];
+      const currentQueue = [...(queueRef.current ?? [])];
+      const dedupeKeys = new Set(allResults.map((r) => `${r.sourceResultId}:${r.lang}`));
+      const kept = currentQueue.filter((q) => {
+        if (!q.translationSourceId) return true;
+        return !dedupeKeys.has(`${q.translationSourceId}:${q.lang ?? ""}`);
+      });
+      const additions = allResults.flatMap((t) => {
+        const source = currentQueue.find((q) => q.result?.id === t.sourceResultId);
+        if (!source) return [];
+        const result: RenderResultItem = {
+          id: t.id, adSpecId: t.adSpecId, imageId: t.imageId,
+          familyId: t.familyId, templateId: t.templateId, primarySlotId: t.primarySlotId,
+          format: source.result?.format ?? "9:16", pngUrl: t.pngUrl,
+          approved: false, createdAt: new Date().toISOString(),
+          headlineText: t.headlineText, headlineYOverride: t.headlineYOverride,
+          headlineFontScale: t.headlineFontScale, brandNameY: t.brandNameY,
+          brandNameFontScale: t.brandNameFontScale, subjectPos: t.subjectPos,
+          headlineColor: t.headlineColor, lang: t.lang,
+        };
+        return [{ ...source, id: t.id, result, lang: t.lang as Language, status: "done" as const, approved: false, translationSourceId: t.sourceResultId, headlineColor: t.headlineColor }];
+      });
+      setQueue([...kept, ...additions]);
+      // Inherit showBrand from source item for each translated item
+      setBrandByImage((prev) => {
+        const next = { ...prev };
+        for (const addition of additions) {
+          const sourceItem = currentQueue.find((q) => q.result?.id === addition.translationSourceId);
+          if (sourceItem) next[addition.id] = prev[sourceItem.id] ?? false;
+        }
+        return next;
       });
       setExpandedLangGroups((prev) => {
         const next = new Set(prev);
@@ -1287,7 +1304,7 @@ export default function Home() {
       });
       if (!res.ok) throw new Error("Reposition failed");
       const data = await res.json();
-      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, approved: approveAfter, overrideHeadline: undefined, ...(data.result.aiBgPngUrl ? { aiBgPngUrl: data.result.aiBgPngUrl } : {}) });
+      updateItem(selectedItem.id, { result: { ...selectedItem.result, ...data.result }, ...(approveAfter ? { approved: true } : {}), overrideHeadline: undefined, ...(data.result.aiBgPngUrl ? { aiBgPngUrl: data.result.aiBgPngUrl } : {}) });
       return data.result.id as string;
     } catch (err) {
       console.error("[reposition]", err);
@@ -2340,14 +2357,13 @@ export default function Home() {
                     <button
                       onClick={async () => {
                         if (!selectedItem.result) return;
-                        if (!selectedItem.approved) {
-                          // F9: optimistic approve + background bake
+                        if (!selectedItem.approved || !selectedItem.hasBaked) {
+                          // Approve or re-approve with bake
                           handleApproveWithBake(selectedItem);
-                        } else {
-                          await handleApprove(selectedItem.id, selectedItem.result.id, false);
                         }
+                        // If approved + hasBaked: button is disabled, nothing to do
                       }}
-                      disabled={detailLoading}
+                      disabled={detailLoading || (selectedItem.approved && selectedItem.hasBaked)}
                       className={"flex-1 rounded-xl border py-3 text-sm font-medium transition disabled:opacity-40 flex items-center justify-center gap-2 " + (selectedItem.approved ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400" : "border-white/10 bg-white/[0.04] text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")}
                     >
                       {selectedItem.bakePending ? (
@@ -2357,7 +2373,7 @@ export default function Home() {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                         </svg>
                       )}
-                      {selectedItem.bakePending ? "Baking…" : selectedItem.approved ? "Approved" : "Approve"}
+                      {selectedItem.bakePending ? "Baking…" : selectedItem.approved ? (selectedItem.hasBaked ? "Approved" : "Re-approve") : "Approve"}
                     </button>
                     <button
                       onClick={() => handleDownload(selectedItem.result!.pngUrl, selectedItem)}
@@ -2444,9 +2460,22 @@ export default function Home() {
                   <button
                     onClick={(e) => { e.stopPropagation(); handleDownload(item.result!.pngUrl, item); }}
                     className="shrink-0 p-1 rounded text-gray-600 hover:text-gray-300 transition"
+                    title="Download"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
+                    </svg>
+                  </button>
+                )}
+                {/* Unapprove */}
+                {item.result && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleApprove(item.id, item.result!.id, false); }}
+                    className="shrink-0 p-1 rounded text-gray-700 hover:text-red-400 transition"
+                    title="Remove from approved"
+                  >
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
                 )}
