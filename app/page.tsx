@@ -165,15 +165,6 @@ interface Persona {
   isCustom?: boolean;
 }
 
-const SEGMENT_LABELS: Record<string, string> = {
-  seg_busy:   "Busy",
-  seg_trend:  "Trend",
-  seg_budget: "Budget",
-  seg_short:  "Short Nails",
-  seg_new:    "Newbies",
-  seg_luxury: "Luxury",
-  seg_custom: "My Personas",
-};
 
 let _itemCounter = 0;
 function newItemId() {
@@ -1824,12 +1815,29 @@ export default function Home() {
                   {personaDropdownOpen && (
                     <>
                     <div className="fixed inset-0 z-40" onClick={() => setPersonaDropdownOpen(false)} />
-                    <div style={(() => { const r = personaBtnRef.current?.getBoundingClientRect(); return r ? { position: "fixed" as const, top: r.bottom + 6, left: r.left, zIndex: 9999 } : { display: "none" }; })()} className="bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-[560px]">
-                      <div className="grid grid-cols-3 gap-x-4 gap-y-0">
-                        {Object.entries(SEGMENT_LABELS).map(([segId, segLabel]) => (
-                          <div key={segId}>
-                            <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1 mt-1">{segLabel}</div>
-                            {personas.filter((p) => p.segmentId === segId).map((p) => {
+                    <div style={(() => { const r = personaBtnRef.current?.getBoundingClientRect(); return r ? { position: "fixed" as const, top: r.bottom + 6, left: r.left, zIndex: 9999 } : { display: "none" }; })()} className="bg-[#16191f] border border-white/[0.10] rounded-xl shadow-2xl p-3 w-[320px]">
+                      <div className="flex flex-col gap-0.5">
+                        {personas.filter((p) => !p.isCustom).map((p) => {
+                          const isActive = p.id === (personaByImage[selectedItemId ?? ""] ?? personas[0]?.id);
+                          return (
+                            <button
+                              key={p.id}
+                              onClick={() => {
+                                if (!selectedItem || !selectedItemId) return;
+                                setPersonaByImage((prev) => ({ ...prev, [selectedItemId]: p.id }));
+                                handlePersonaHeadline(selectedItem, p.id);
+                                setPersonaDropdownOpen(false);
+                              }}
+                              className={"w-full text-left text-xs px-2 py-1 rounded-md transition-colors " + (isActive ? "bg-indigo-600/25 text-indigo-300" : "text-gray-300 hover:bg-white/[0.06]")}
+                            >
+                              {p.name}
+                            </button>
+                          );
+                        })}
+                        {personas.filter((p) => p.isCustom).length > 0 && (
+                          <>
+                            <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mt-2 mb-1 px-2">My Personas</div>
+                            {personas.filter((p) => p.isCustom).map((p) => {
                               const isActive = p.id === (personaByImage[selectedItemId ?? ""] ?? personas[0]?.id);
                               return (
                                 <button
@@ -1840,14 +1848,14 @@ export default function Home() {
                                     handlePersonaHeadline(selectedItem, p.id);
                                     setPersonaDropdownOpen(false);
                                   }}
-                                  className={"w-full text-left text-xs px-2 py-1 rounded-md transition-colors mb-0.5 " + (isActive ? "bg-indigo-600/25 text-indigo-300" : "text-gray-300 hover:bg-white/[0.06]")}
+                                  className={"w-full text-left text-xs px-2 py-1 rounded-md transition-colors " + (isActive ? "bg-indigo-600/25 text-indigo-300" : "text-gray-300 hover:bg-white/[0.06]")}
                                 >
                                   {p.name}
                                 </button>
                               );
                             })}
-                          </div>
-                        ))}
+                          </>
+                        )}
                       </div>
                       {/* Add your own persona */}
                       <div className="mt-3 pt-3 border-t border-white/[0.08]">
