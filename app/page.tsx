@@ -1128,7 +1128,7 @@ setQueue((prev) => prev.map((item) =>
         templateId: string; primarySlotId: string; lang: string; pngUrl: string;
         headlineText?: string; headlineYOverride?: number; headlineFontScale?: number;
         brandNameY?: number; brandNameFontScale?: number; subjectPos: string;
-        headlineColor?: string;
+        headlineColor?: string; attribution?: string;
         sourceResultId: string;
       };
       const data = await res.json() as { translations: { lang: string; results: TResult[] }[] };
@@ -1151,6 +1151,7 @@ setQueue((prev) => prev.map((item) =>
           headlineFontScale: t.headlineFontScale, brandNameY: t.brandNameY,
           brandNameFontScale: t.brandNameFontScale, subjectPos: t.subjectPos,
           headlineColor: t.headlineColor, lang: t.lang,
+          attribution: t.attribution ?? source.result?.attribution,
         };
         return [{ ...source, id: t.id, result, lang: t.lang as Language, status: "done" as const, approved: false, translationSourceId: t.sourceResultId, headlineColor: t.headlineColor }];
       });

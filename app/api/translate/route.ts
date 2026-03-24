@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       brandNameFontScale?: number;
       subjectPos: string;
       headlineColor?: string;
+      attribution?: string;
       approved: boolean;
       sourceResultId: string;
     };
@@ -113,6 +114,7 @@ export async function POST(req: NextRequest) {
           // Falls back to surpriseSpec.textColor (e.g. "#ffffff" for clean_headline) so
           // the approve bake always produces the correct text color.
           headlineColor: newSpec.headlineColor ?? newSpec.surpriseSpec?.textColor,
+          attribution: newSpec.copy.attribution,
           approved: false,
           sourceResultId: item.resultId,
         });
