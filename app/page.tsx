@@ -1019,8 +1019,12 @@ setQueue((prev) => prev.map((item) =>
             ...(bY !== undefined ? { brandNameY: bY } : {}),
             ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}),
             ...(item.headlineFont ? { headlineFont: item.headlineFont } : {}),
-            headlineColor: item.headlineColor ?? "#ffffff",
-            brandColor: item.brandColor ?? "#ffffff",
+            // Testimonial templates have white card backgrounds — don't force white text on them.
+            // All other templates sit on dark/photo backgrounds so default to white.
+            ...(item.headlineColor !== undefined
+              ? { headlineColor: item.headlineColor }
+              : item.result.familyId !== "testimonial" ? { headlineColor: "#ffffff" } : {}),
+            ...(item.brandColor !== undefined ? { brandColor: item.brandColor } : { brandColor: "#ffffff" }),
             ...(item.overrideHeadline !== undefined ? { headlineOverride: item.overrideHeadline } : {}),
             ...(item.textBoxes !== undefined ? { textBoxes: item.textBoxes } : {}),
             ...(item.hideHeadline !== undefined ? { hideHeadline: item.hideHeadline } : {}),
