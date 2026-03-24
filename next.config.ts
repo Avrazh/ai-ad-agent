@@ -20,8 +20,13 @@ const nextConfig: NextConfig = {
     "better-sqlite3",
   ],
   outputFileTracingIncludes: {
-    "/api/generate": ["./node_modules/@sparticuz/chromium/**/*"],
-    "/api/regenerate": ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/generate":    ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/regenerate":  ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/reposition":  ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/translate":   ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/switch":      ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/upload":      ["./node_modules/@sparticuz/chromium/**/*"],
+    "/api/analyze":     ["./node_modules/@sparticuz/chromium/**/*"],
   },
   // Required to silence "webpack config without turbopack config" error on Next.js 16
   turbopack: {},
