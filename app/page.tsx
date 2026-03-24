@@ -578,7 +578,6 @@ export default function Home() {
         ];
         updateItem(item.id, {
           result,
-          approved: false,
           usedFamilyId: result.familyId as FamilyId,
           lang,
           usedSurpriseSpec: undefined,
@@ -612,7 +611,6 @@ export default function Home() {
         if (!data.ok) throw new Error(data.error || "AI Style failed");
         updateItem(item.id, {
           result: data.result,
-          approved: false,
           usedFamilyId: "ai" as FamilyId,
           usedSurpriseSpec: undefined,
           lang: selectedLang,
@@ -658,7 +656,7 @@ export default function Home() {
         }
         const data = await res.json();
         const result: RenderResultItem = data.results[0];
-        updateItem(item.id, { result, approved: false, usedFamilyId: result.familyId as FamilyId, lang: langOverride ?? selectedLangRef.current, usedSurpriseSpec: spec });
+        updateItem(item.id, { result, usedFamilyId: result.familyId as FamilyId, lang: langOverride ?? selectedLangRef.current, usedSurpriseSpec: spec });
       } catch (err) {
         console.error("Preview layout error:", err);
       } finally {
@@ -692,7 +690,7 @@ export default function Home() {
         const data = await res.json();
         const switched = data.results?.[0];
         if (switched?.result) {
-          updateItem(item.id, { result: { ...item.result, ...switched.result }, approved: false, lang });
+          updateItem(item.id, { result: { ...item.result, ...switched.result }, lang });
         }
       } catch (err) {
         console.error("Switch error:", err);
@@ -746,7 +744,7 @@ export default function Home() {
           const headline = personaHeadlineMap[activePersonaId]?.[angle];
           if (headline) {
             // Optimistic update — show headline immediately
-            updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false, overrideHeadline: undefined });
+            updateItem(item.id, { result: { ...item.result, headlineText: headline }, overrideHeadline: undefined });
             setToneByImage(prev => ({ ...prev, [item.id]: angle }));
             const regenRes = await fetch("/api/regenerate", {
               method: "POST",
@@ -755,7 +753,7 @@ export default function Home() {
             });
             if (regenRes.ok) {
               const data = await regenRes.json();
-              updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false });
+              updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution } });
             }
             return;
           }
@@ -771,7 +769,7 @@ export default function Home() {
           throw new Error(d.error || "Regeneration failed");
         }
         const data = await res.json();
-        updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, approved: false, overrideHeadline: undefined });
+        updateItem(item.id, { result: { ...data.result, subjectPos: item.result.subjectPos, attribution: data.result.attribution ?? item.result?.attribution }, overrideHeadline: undefined });
         setToneByImage(prev => ({ ...prev, [item.id]: angle }));
       } catch (err) {
         console.error("Tone headline error:", err);
@@ -798,7 +796,7 @@ export default function Home() {
           const headline = personaHeadlineMap[personaId]?.[firstTone] ?? Object.values(personaHeadlineMap[personaId] ?? {})[0];
           if (!headline) return;
           // Optimistic update for non-testimonial layouts
-          updateItem(item.id, { result: { ...item.result, headlineText: headline }, approved: false, overrideHeadline: undefined });
+          updateItem(item.id, { result: { ...item.result, headlineText: headline }, overrideHeadline: undefined });
           if (firstTone) setToneByImage(prev => ({ ...prev, [item.id]: firstTone }));
         }
 
@@ -828,7 +826,6 @@ export default function Home() {
             subjectPos: item.result.subjectPos,
             attribution: data.result.attribution ?? item.result?.attribution,
           },
-          approved: false,
           overrideHeadline: undefined,
         });
       } catch (err) {
@@ -859,7 +856,7 @@ export default function Home() {
         }
         const data = await res.json();
         updateItem(item.id, { result: { ...data.result, subjectPos: data.result.subjectPos ?? item.result?.subjectPos,
-              attribution: data.result.attribution ?? item.result?.attribution }, approved: false, overrideHeadline: undefined });
+              attribution: data.result.attribution ?? item.result?.attribution }, overrideHeadline: undefined });
         setToneByImage(prev => ({ ...prev, [item.id]: "own" }));
       } catch (err) {
         console.error("Own headline error:", err);
@@ -1021,6 +1018,12 @@ export default function Home() {
         });
         if (!res.ok) throw new Error("Reposition failed");
         const data = await res.json();
+        // Mark the newly-baked result as approved in the DB so translate can find it
+        await fetch("/api/approve", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ resultId: data.result.id, approved: true }),
+        }).catch(() => {});
         updateItem(item.id, { result: { ...item.result, ...data.result }, bakePending: false, overrideHeadline: undefined });
       } catch (err) {
         console.error("[bake]", err);

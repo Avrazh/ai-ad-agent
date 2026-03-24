@@ -31,8 +31,11 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect, safeZones?:
   const fullName = nameMatch ? nameMatch[1].trim() : "";
   const firstName = fullName.split(/\s+/)[0] ?? "";
   const avatarLetter = firstName.charAt(0).toUpperCase() || "V";
-  // Role label is always "Verified customer" — will be translated when TR feature lands
-  const roleLabel = "Verified customer";
+  const VERIFIED_LABELS: Record<string, string> = {
+    en: "Verified customer", sv: "Verifierad kund", de: "Verifizierter Käufer",
+    fr: "Achat vérifié", es: "Compra verificada",
+  };
+  const roleLabel = VERIFIED_LABELS[spec.lang ?? "en"] ?? "Verified customer";
 
   // Fixed text zone — same proportions as clean_headline (100–980 x, 385–1535 y)
   // TODO: blend with dynamic safeZones in a future pass

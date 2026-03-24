@@ -204,7 +204,10 @@ export function LiveAdCanvas({
         let lum = 0;
         for (let i = 0; i < data.length; i += 4)
           lum += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-        setAutoTextColor(lum / (data.length / 4) > 0.72 ? "#1a1a1a" : "#ffffff");
+        const detected = lum / (data.length / 4) > 0.72 ? "#1a1a1a" : "#ffffff";
+        setAutoTextColor(detected);
+        // Propagate auto-detected color so bake uses it even if user never manually picked one
+        if (!userHeadlineColor) onColorChange?.(detected, null);
       } catch { /* tainted canvas — keep current color */ }
     };
     img.src = imageUrl;
@@ -243,7 +246,10 @@ export function LiveAdCanvas({
         let lum = 0;
         for (let i = 0; i < data.length; i += 4)
           lum += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-        setAutoBrandColor(lum / (data.length / 4) > 0.55 ? "#1a1a1a" : "#ffffff");
+        const detectedBrand = lum / (data.length / 4) > 0.55 ? "#1a1a1a" : "#ffffff";
+        setAutoBrandColor(detectedBrand);
+        // Propagate auto-detected color so bake uses it even if user never manually picked one
+        if (!userBrandColor) onColorChange?.(null, detectedBrand);
       } catch { /* tainted canvas */ }
     };
     img.src = imageUrl;
