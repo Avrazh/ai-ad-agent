@@ -92,8 +92,7 @@ export function LiveAdCanvas({
   const [fScale, setFScale] = useState(initialFontScale);
   const [isDragging, setIsDragging] = useState(false);
   const [isScaling, setIsScaling] = useState(false);
-  const [autoTextColor, setAutoTextColor] = useState<string>("#ffffff");
-  const [autoBrandColor, setAutoBrandColor] = useState<string>("#ffffff");
+
   const [userHeadlineColor, setUserHeadlineColor] = useState<string | null>(initialHeadlineColor ?? null);
   const [userBrandColor, setUserBrandColor] = useState<string | null>(initialBrandColor ?? null);
   const headlineColorInputRef = useRef<HTMLInputElement>(null);
@@ -171,89 +170,6 @@ export function LiveAdCanvas({
     }
   }, [headlineFont]);
 
-  // Sample image pixels behind text block (skipped when renderOverlay handles its own colors) → pick white or dark text
-  useEffect(() => {
-    if (renderOverlay) return;
-    if (isDragging || isScaling) return;
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const containerAR = format === "9:16" ? 9 / 16 : format === "4:5" ? 4 / 5 : 1;
-        const imgAR = img.naturalWidth / img.naturalHeight;
-        let srcX: number, srcY: number, srcW: number, srcH: number;
-        const [pxStr = "50%", pyStr = "50%"] = (subjectPos ?? "50% 50%").split(" ");
-        const px = parseFloat(pxStr) / 100;
-        const py = parseFloat(pyStr) / 100;
-        if (imgAR > containerAR) {
-          srcH = img.naturalHeight; srcW = srcH * containerAR;
-          srcX = (img.naturalWidth - srcW) * px; srcY = 0;
-        } else {
-          srcW = img.naturalWidth; srcH = srcW / containerAR;
-          srcX = 0; srcY = (img.naturalHeight - srcH) * py;
-        }
-        const SW = 160, SH = 60;
-        const canvas = document.createElement("canvas");
-        canvas.width = SW; canvas.height = SH;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(img,
-          srcX + srcW * 0.0926, srcY + srcH * y, srcW * 0.8148, srcH * 0.14,
-          0, 0, SW, SH
-        );
-        const data = ctx.getImageData(0, 0, SW, SH).data;
-        let lum = 0;
-        for (let i = 0; i < data.length; i += 4)
-          lum += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-        const detected = lum / (data.length / 4) > 0.72 ? "#1a1a1a" : "#ffffff";
-        setAutoTextColor(detected);
-        // Propagate auto-detected color so bake uses it even if user never manually picked one
-        if (!userHeadlineColor) onColorChange?.(detected, null);
-      } catch { /* tainted canvas — keep current color */ }
-    };
-    img.src = imageUrl;
-  }, [imageUrl, y, isDragging, isScaling, subjectPos, format, renderOverlay]);
-
-  // Sample pixels behind brand name box → pick white or dark color
-  useEffect(() => {
-    if (!brandName) return;
-    if (isBrandDragging || isBrandScaling) return;
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const containerAR = format === "9:16" ? 9 / 16 : format === "4:5" ? 4 / 5 : 1;
-        const imgAR = img.naturalWidth / img.naturalHeight;
-        let srcX: number, srcY: number, srcW: number, srcH: number;
-        const [pxStr = "50%", pyStr = "50%"] = (subjectPos ?? "50% 50%").split(" ");
-        const px = parseFloat(pxStr) / 100;
-        const py = parseFloat(pyStr) / 100;
-        if (imgAR > containerAR) {
-          srcH = img.naturalHeight; srcW = srcH * containerAR;
-          srcX = (img.naturalWidth - srcW) * px; srcY = 0;
-        } else {
-          srcW = img.naturalWidth; srcH = srcW / containerAR;
-          srcX = 0; srcY = (img.naturalHeight - srcH) * py;
-        }
-        const SW = 160, SH = 30;
-        const canvas = document.createElement("canvas");
-        canvas.width = SW; canvas.height = SH;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(img,
-          srcX + srcW * 0.0926, srcY + srcH * brandY, srcW * 0.8148, srcH * 0.05,
-          0, 0, SW, SH
-        );
-        const data = ctx.getImageData(0, 0, SW, SH).data;
-        let lum = 0;
-        for (let i = 0; i < data.length; i += 4)
-          lum += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
-        const detectedBrand = lum / (data.length / 4) > 0.55 ? "#1a1a1a" : "#ffffff";
-        setAutoBrandColor(detectedBrand);
-        // Propagate auto-detected color so bake uses it even if user never manually picked one
-        if (!userBrandColor) onColorChange?.(null, detectedBrand);
-      } catch { /* tainted canvas */ }
-    };
-    img.src = imageUrl;
-  }, [imageUrl, brandY, isBrandDragging, isBrandScaling, subjectPos, format, brandName]);
 
   useEffect(() => {
     if (!isDragging && !isScaling && !isBrandDragging && !isBrandScaling) return;
@@ -313,7 +229,7 @@ export function LiveAdCanvas({
   const subtextSize = fontSize * 0.28;
   const fontFamily = headlineFont ? `'${headlineFont}', sans-serif` : resolveFont(spec.font);
   const fontWeight = spec.fontWeight ?? 400;
-  const textColor = userHeadlineColor ?? autoTextColor;
+  const textColor = userHeadlineColor ?? "#ffffff";
   const letterSpacing = LETTER_SPACING[spec.letterSpacingKey ?? "normal"] ?? "0";
   const textTransform = (spec.textTransform === "uppercase" ? "uppercase" : "none") as "uppercase" | "none";
   const textAlign = (spec.textAlign ?? "center") as "left" | "center" | "right";
@@ -408,7 +324,7 @@ export function LiveAdCanvas({
               <input
                 ref={headlineColorInputRef}
                 type="color"
-                value={userHeadlineColor ?? autoTextColor}
+                value={userHeadlineColor ?? "#ffffff"}
                 style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
                 onChange={(e) => {
                   setUserHeadlineColor(e.target.value);
@@ -424,7 +340,7 @@ export function LiveAdCanvas({
                   top: -14, left: -14,
                   width: 20, height: 20,
                   borderRadius: "50%",
-                  background: userHeadlineColor ?? autoTextColor,
+                  background: userHeadlineColor ?? "#ffffff",
                   border: "2px solid rgba(255,255,255,0.5)",
                   cursor: "pointer",
                   zIndex: 10,
@@ -606,7 +522,7 @@ export function LiveAdCanvas({
               <input
                 ref={brandColorInputRef}
                 type="color"
-                value={userBrandColor ?? autoBrandColor}
+                value={userBrandColor ?? "#ffffff"}
                 style={{ position: "absolute", opacity: 0, pointerEvents: "none", width: 0, height: 0 }}
                 onChange={(e) => {
                   setUserBrandColor(e.target.value);
@@ -622,7 +538,7 @@ export function LiveAdCanvas({
                   top: -14, left: -14,
                   width: 20, height: 20,
                   borderRadius: "50%",
-                  background: userBrandColor ?? autoBrandColor,
+                  background: userBrandColor ?? "#ffffff",
                   border: "2px solid rgba(255,255,255,0.5)",
                   cursor: "pointer",
                   zIndex: 10,
@@ -664,7 +580,7 @@ export function LiveAdCanvas({
               fontFamily: "'Krona One', sans-serif",
               fontSize: `${brandFontSize}px`,
               fontWeight: 700,
-              color: userBrandColor ?? autoBrandColor,
+              color: userBrandColor ?? "#ffffff",
               letterSpacing: "0.25em",
               textTransform: "uppercase",
               textAlign: "center",
