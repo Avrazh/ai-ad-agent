@@ -159,7 +159,7 @@ const TONES: { angle: string; label: string }[] = [
 
 interface Persona {
   id: string;
-  segmentId: string;
+  segmentId?: string;
   name: string;
   tones: string[];
   isCustom?: boolean;
