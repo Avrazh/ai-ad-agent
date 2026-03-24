@@ -131,6 +131,7 @@ type QueueItem = {
   bakePending?: boolean;       // F9: background bake in progress after approve
   bakeError?: string;          // F9: bake failed — message shown on item
   hasBaked?: boolean;          // true after first successful bake — skip re-bake on re-approve
+  approvedResult?: RenderResultItem; // snapshot of result at the moment of baking — stable thumbnail
 };
 
 const FAMILY_LABELS: Record<FamilyId, string> = {
@@ -380,7 +381,7 @@ export default function Home() {
       "brandNameY" in patch || "brandNameFontScale" in patch ||
       ("result" in patch && patch.hasBaked === undefined);
 setQueue((prev) => prev.map((item) =>
-      item.id === id ? { ...item, ...patch, ...(invalidatesBake ? { hasBaked: false } : {}) } : item
+      item.id === id ? { ...item, ...patch, ...(invalidatesBake ? { hasBaked: false, approvedResult: undefined } : {}) } : item
     ));
   }, []);
 
@@ -965,7 +966,7 @@ setQueue((prev) => prev.map((item) =>
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ resultId, approved }),
         });
-        updateItem(itemId, { approved });
+        updateItem(itemId, { approved, ...(!approved ? { approvedResult: undefined, hasBaked: false } : {}) });
       } catch {
         // silent
       }
@@ -1033,7 +1034,8 @@ setQueue((prev) => prev.map((item) =>
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ resultId: data.result.id, approved: true }),
         }).catch(() => {});
-        updateItem(item.id, { result: { ...item.result, ...data.result }, bakePending: false, hasBaked: true, overrideHeadline: undefined });
+        const bakedResult = { ...item.result, ...data.result };
+        updateItem(item.id, { result: bakedResult, approvedResult: bakedResult, bakePending: false, hasBaked: true, overrideHeadline: undefined });
       } catch (err) {
         console.error("[bake]", err);
         updateItem(item.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
@@ -1100,7 +1102,7 @@ setQueue((prev) => prev.map((item) =>
     for (let i = 0; i < approved.length; i++) {
       if (i > 0) await new Promise((r) => setTimeout(r, 200));
       const item = approved[i];
-      if (item.result) handleDownload(item.result.pngUrl, item);
+      if (item.result) handleDownload((item.approvedResult ?? item.result).pngUrl, item);
     }
   }, [queue, handleDownload]);
 
@@ -2446,8 +2448,8 @@ setQueue((prev) => prev.map((item) =>
               >
                 {/* Thumbnail */}
                 <div className="w-10 h-14 rounded-md overflow-hidden shrink-0 bg-white/[0.04]">
-                  {item.result?.pngUrl && (
-                    <img src={item.result.pngUrl} alt="" className="w-full h-full object-cover" />
+                  {(item.approvedResult?.pngUrl ?? item.result?.pngUrl) && (
+                    <img src={item.approvedResult?.pngUrl ?? item.result!.pngUrl} alt="" className="w-full h-full object-cover" />
                   )}
                 </div>
                 {/* Info */}
@@ -2456,9 +2458,9 @@ setQueue((prev) => prev.map((item) =>
                   <p className="text-[10px] text-gray-600 mt-0.5">{item.result?.format ?? selectedFormat} · {(item.lang ?? selectedLang).toUpperCase()}</p>
                 </div>
                 {/* Download */}
-                {item.result && (
+                {(item.approvedResult ?? item.result) && (
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDownload(item.result!.pngUrl, item); }}
+                    onClick={(e) => { e.stopPropagation(); handleDownload((item.approvedResult ?? item.result)!.pngUrl, item); }}
                     className="shrink-0 p-1 rounded text-gray-600 hover:text-gray-300 transition"
                     title="Download"
                   >
