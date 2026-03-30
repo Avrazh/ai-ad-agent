@@ -683,19 +683,39 @@ setQueue((prev) => prev.map((item) =>
       const newDraftItems: QueueItem[] = (data.results as RenderResultItem[]).map(result => {
         const draftId = Math.random().toString(36).slice(2);
         newDraftIds.push(draftId);
+        // Copy all parent fields so every editing handler works on drafts identically
         return {
+          ...parentItem,
           id: draftId,
-          file: parentItem.file,
-          previewUrl: parentItem.imageUrl ?? parentItem.previewUrl,
-          imageUrl: parentItem.imageUrl,
-          imageId: parentItem.imageId,
           status: "done" as const,
           result,
-          lang: parentItem.lang ?? "en",
           approved: false,
-          cropX: parentItem.cropX ?? 0.5,
+          hasBaked: false,
           parentImageId: parentItem.imageId,
+          // Clear draft-only fields that don't apply to a child
+          draftIds: undefined,
+          draftGenerating: undefined,
         };
+      });
+
+      // Inherit parent's persona/brand/tone map entries for each draft id
+      const parentPersona = personaByImage[parentItem.id];
+      const parentBrand = brandByImage[parentItem.id];
+      const parentTone = toneByImage[parentItem.id];
+      if (parentPersona) setPersonaByImage(prev => {
+        const next = { ...prev };
+        newDraftIds.forEach(id => { next[id] = parentPersona; });
+        return next;
+      });
+      if (parentBrand !== undefined) setBrandByImage(prev => {
+        const next = { ...prev };
+        newDraftIds.forEach(id => { next[id] = parentBrand; });
+        return next;
+      });
+      if (parentTone) setToneByImage(prev => {
+        const next = { ...prev };
+        newDraftIds.forEach(id => { next[id] = parentTone; });
+        return next;
       });
 
       setQueue(prev => {
@@ -709,7 +729,7 @@ setQueue((prev) => prev.map((item) =>
     } catch {
       updateItem(parentItem.id, { draftGenerating: false });
     }
-  }, [queue, updateItem]);
+  }, [queue, updateItem, personaByImage, brandByImage, toneByImage]);
 
   // Convenience wrappers used by the three control types in the detail panel
   const handleStyleChange = useCallback(
