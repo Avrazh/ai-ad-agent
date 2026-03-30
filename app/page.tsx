@@ -680,9 +680,14 @@ setQueue((prev) => prev.map((item) =>
       if (!stillExists) return;
 
       const newDraftIds: string[] = [];
-      const newDraftItems: QueueItem[] = (data.results as RenderResultItem[]).map(result => {
+      // API returns [testimonial, luxury, layout] in that order
+      // layoutSurpriseSpec is the SurpriseSpec used to render the layout preset draft
+      const layoutSurpriseSpec = data.layoutSurpriseSpec as SurpriseSpec | undefined;
+      const newDraftItems: QueueItem[] = (data.results as RenderResultItem[]).map((result, idx) => {
         const draftId = Math.random().toString(36).slice(2);
         newDraftIds.push(draftId);
+        // idx 0 = testimonial, 1 = luxury, 2 = layout preset
+        const draftSurpriseSpec = idx === 2 ? layoutSurpriseSpec : undefined;
         // Copy all parent fields so every editing handler works on drafts identically
         return {
           ...parentItem,
@@ -692,6 +697,8 @@ setQueue((prev) => prev.map((item) =>
           approved: false,
           hasBaked: false,
           parentImageId: parentItem.imageId,
+          // Set usedSurpriseSpec correctly per template type
+          usedSurpriseSpec: draftSurpriseSpec,
           // Clear draft-only fields that don't apply to a child
           draftIds: undefined,
           draftGenerating: undefined,

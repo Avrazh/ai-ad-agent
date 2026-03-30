@@ -196,6 +196,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       results: [testimonialRender, luxuryRender, layoutRender],
+      layoutSurpriseSpec: layoutSurprise,
     });
   } catch (err) {
     console.error("First drafts error:", err);
