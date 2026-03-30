@@ -2495,6 +2495,74 @@ setQueue((prev) => prev.map((item) =>
                         />
                       )}
                     </div>
+                  ) : selectedItem.stagedTemplateId ? (
+                    /* Staged draft — LiveAdCanvas with product photo + headline overlay */
+                    <div className={"relative h-full flex items-center justify-center"}>
+                      {(selectedItem.stagedTemplateId === "star_review" || selectedItem.stagedTemplateId === "quote_card") ? (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.imageUrl ?? selectedItem.previewUrl ?? ""}
+                          subjectPos={undefined}
+                          headline=""
+                          spec={{}}
+                          format={selectedFormat as "9:16" | "4:5" | "1:1"}
+                          initialY={0.2005}
+                          disableResize
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialBrandColor={selectedItem.brandColor ?? "#ffffff"}
+                          onColorChange={(_hColor, bColor) => { if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor }); }}
+                          renderOverlay={(cw) => (
+                            <StarCardPreview
+                              quote={selectedItem.defaultHeadline ?? ""}
+                              attribution={"— Verified customer"}
+                              containerW={cw}
+                            />
+                          )}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
+                        />
+                      ) : (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.imageUrl ?? selectedItem.previewUrl ?? ""}
+                          subjectPos={undefined}
+                          headline={selectedItem.overrideHeadline ?? selectedItem.defaultHeadline ?? ""}
+                          subtext={selectedItem.usedSurpriseSpec?.en?.subtext}
+                          spec={selectedItem.usedSurpriseSpec ?? {}}
+                          format={selectedFormat as "9:16" | "4:5" | "1:1"}
+                          initialY={selectedItem.headlineY ?? selectedItem.usedSurpriseSpec?.headlineYOverride ?? 0.1484}
+                          initialFontScale={selectedItem.headlineFontScale ?? 1.0}
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialHeadlineColor={selectedItem.headlineColor ?? "#ffffff"}
+                          initialBrandColor={selectedItem.brandColor ?? "#ffffff"}
+                          onColorChange={(hColor, bColor) => {
+                            updateItem(selectedItemId!, {
+                              ...(hColor !== null ? { headlineColor: hColor } : {}),
+                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
+                            });
+                          }}
+                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
+                        />
+                      )}
+                    </div>
                   ) : (
                     <>
                       <img
@@ -2503,11 +2571,6 @@ setQueue((prev) => prev.map((item) =>
                         className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl"
                         style={{ aspectRatio: "9/16" }}
                       />
-                      {selectedItem.stagedTemplateId && (
-                        <p className="text-[10px] text-indigo-300 text-center mt-1 select-none">
-                          {DRAFT_LABEL[selectedItem.stagedTemplateId] ?? selectedItem.stagedTemplateId} layout · approve to render
-                        </p>
-                      )}
                       {!detailLoading && !selectedItem.stagedTemplateId && (
                         <div className="absolute inset-0 flex flex-col items-center justify-end pb-10 pointer-events-none">
                           <p className="text-xs text-gray-400 bg-black/50 rounded-full px-4 py-1.5 backdrop-blur-sm">Select a style to get started</p>
