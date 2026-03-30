@@ -10,6 +10,7 @@ import { TRANSLATION_TARGETS } from "@/lib/languages";
 import { CropEditor } from "@/app/components/CropEditor";
 import SplitSceneEditor, { SplitConfig } from "@/app/components/SplitSceneEditor";
 import AIComposeEditor from "@/app/components/AIComposeEditor";
+import { LAYOUT_PREVIEWS as LAYOUT_PREVIEWS_SHARED, type SurpriseLayout as SurpriseLayoutShared } from "@/lib/layoutPresets";
 
 type RenderResultItem = {
   id: string;
@@ -61,38 +62,6 @@ type SurpriseSpec = {
 };
 
 
-// Test layout previews — one per layout type with distinct default aesthetics
-const LAYOUT_PREVIEWS: { layout: SurpriseLayout; label: string; spec: SurpriseSpec }[] = [
-  {
-    layout: "split_right", label: "Split Right",
-    spec: { layout: "split_right", bgColor: "#F5EDD6", textColor: "#2A1F14", accentColor: "#C8A96E", overlayOpacity: 0.6, font: "serif", fontWeight: 400, letterSpacingKey: "ultra", textTransform: "none", textAlign: "right", headlineScale: "large", accent: "line", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "full_overlay", label: "Full Overlay",
-    spec: { layout: "full_overlay", bgColor: "#000000", textColor: "#FFFFFF", accentColor: "#FFFFFF", overlayOpacity: 0.55, font: "sans", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "left", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "bottom_bar", label: "Bottom Bar",
-    spec: { layout: "bottom_bar", bgColor: "#1A1A1A", textColor: "#FFFFFF", accentColor: "#FFFFFF", overlayOpacity: 0.6, font: "bebas", fontWeight: 900, letterSpacingKey: "tight", textTransform: "uppercase", textAlign: "center", headlineScale: "huge", accent: "none", preferredHeadlineLength: "short", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "frame_overlay", label: "Frame",
-    spec: { layout: "frame_overlay", bgColor: "#0D0D0D", textColor: "#F5F0E8", accentColor: "#C8A96E", overlayOpacity: 0.6, font: "serif", fontWeight: 300, letterSpacingKey: "ultra", textTransform: "none", textAlign: "left", headlineScale: "medium", accent: "line", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "postcard", label: "Postcard",
-    spec: { layout: "postcard", bgColor: "#F2EFE9", textColor: "#141414", accentColor: "#141414", overlayOpacity: 0.45, font: "serif", fontWeight: 700, letterSpacingKey: "tight", textTransform: "none", textAlign: "left", headlineScale: "medium", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "vertical_text", label: "Letters",
-    spec: { layout: "vertical_text", bgColor: "#FFFFFF", textColor: "#1A1A1A", accentColor: "#1A1A1A", overlayOpacity: 0, font: "bebas", fontWeight: 400, letterSpacingKey: "normal", textTransform: "uppercase", textAlign: "left", headlineScale: "medium", accent: "none", preferredHeadlineLength: "short", en: { headline: "GLOW", subtext: "Collection" }, de: { headline: "GLANZ", subtext: "Kollektion" } },
-  },
-  {
-    layout: "clean_headline", label: "Headline",
-    spec: { layout: "clean_headline", bgColor: "#000000", textColor: "#ffffff", accentColor: "#ffffff", overlayOpacity: 0, font: "serif", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "center", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "" }, de: { headline: "Vorschau", subtext: "" } },
-  },
-
-];
 type Language = "en" | "de" | "fr" | "es";
 type Format = "9:16";
 
@@ -132,6 +101,10 @@ type QueueItem = {
   bakeError?: string;          // F9: bake failed — message shown on item
   hasBaked?: boolean;          // true after first successful bake — skip re-bake on re-approve
   approvedResult?: RenderResultItem; // snapshot of result at the moment of baking — stable thumbnail
+  parentImageId?: string;      // set on draft items; imageId of the parent queue item
+  draftIds?: string[];         // set on parent items; list of draft item IDs
+  draftGenerating?: boolean;   // true while first-drafts API call is in progress
+  selectedPersonaId?: string;  // convenience copy of active persona id for first-drafts
 };
 
 const FAMILY_LABELS: Record<FamilyId, string> = {
@@ -324,7 +297,7 @@ export default function Home() {
   const [brandByImage, setBrandByImage] = useState<Record<string, boolean>>({});
   // Static previews — pre-rendered thumbnails served from /previews/
   const sharedLayoutPreviews: Partial<Record<SurpriseLayout, string>> = Object.fromEntries(
-    LAYOUT_PREVIEWS.map((p) => [p.layout, `/previews/${p.layout}.png`])
+    LAYOUT_PREVIEWS_SHARED.map((p) => [p.layout, `/previews/${p.layout}.png`])
   );
   const sharedTemplatePreviews: Partial<Record<string, string>> = Object.fromEntries(
     ALL_TEMPLATES.map((t) => [t.templateId, `/previews/${t.templateId}.png`])
@@ -428,7 +401,7 @@ setQueue((prev) => prev.map((item) =>
     setQueue((prev) => {
       const hasSelection = prev.some((i) => i.id === currentSelection);
       if (!hasSelection) {
-        const first = prev.find((i) => i.status === "done" || i.status === "analyzed");
+        const first = prev.find((i) => (i.status === "done" || i.status === "analyzed") && !i.parentImageId);
         if (first) setSelectedItemId(first.id);
       }
       return prev;
@@ -678,6 +651,66 @@ setQueue((prev) => prev.map((item) =>
 
 
 
+  // ── First Drafts ─────────────────────────────────────────
+  const handleGenerateFirstDrafts = useCallback(async (parentItem: QueueItem) => {
+    updateItem(parentItem.id, { draftGenerating: true });
+    try {
+      const existingDraftTemplateIds = (parentItem.draftIds ?? [])
+        .map(id => queue.find(i => i.id === id)?.result?.templateId)
+        .filter(Boolean) as string[];
+
+      const res = await fetch("/api/first-drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId: parentItem.imageId,
+          imageUrl: parentItem.imageUrl,
+          lang: parentItem.lang ?? "en",
+          format: selectedFormatRef.current ?? "9:16",
+          ...(parentItem.selectedPersonaId ? { personaId: parentItem.selectedPersonaId } : {}),
+          ...(parentItem.cropX !== undefined ? { cropX: parentItem.cropX } : {}),
+          excludeTemplateIds: existingDraftTemplateIds,
+        }),
+      });
+      if (!res.ok) throw new Error("First drafts failed");
+      const data = await res.json();
+
+      // Check parent still exists
+      const stillExists = queue.find(i => i.id === parentItem.id);
+      if (!stillExists) return;
+
+      const newDraftIds: string[] = [];
+      const newDraftItems: QueueItem[] = (data.results as RenderResultItem[]).map(result => {
+        const draftId = Math.random().toString(36).slice(2);
+        newDraftIds.push(draftId);
+        return {
+          id: draftId,
+          file: parentItem.file,
+          previewUrl: parentItem.imageUrl ?? parentItem.previewUrl,
+          imageUrl: parentItem.imageUrl,
+          imageId: parentItem.imageId,
+          status: "done" as const,
+          result,
+          lang: parentItem.lang ?? "en",
+          approved: false,
+          cropX: parentItem.cropX ?? 0.5,
+          parentImageId: parentItem.imageId,
+        };
+      });
+
+      setQueue(prev => {
+        const updated = prev.map(i =>
+          i.id === parentItem.id
+            ? { ...i, draftIds: [...(i.draftIds ?? []), ...newDraftIds], draftGenerating: false }
+            : i
+        );
+        return [...updated, ...newDraftItems];
+      });
+    } catch {
+      updateItem(parentItem.id, { draftGenerating: false });
+    }
+  }, [queue, updateItem]);
+
   // Convenience wrappers used by the three control types in the detail panel
   const handleStyleChange = useCallback(
     (item: QueueItem, templateId: string) =>
@@ -720,7 +753,7 @@ setQueue((prev) => prev.map((item) =>
         handleSwitch(item, lang, selectedFormatRef.current);
       } else if (item.imageId) {
         // No render yet — auto-render with bottom_bar, passing the new lang explicitly
-        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec }, lang, selectedFormatRef.current);
+        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS_SHARED.find(p => p.layout === "clean_headline")!.spec }, lang, selectedFormatRef.current);
       }
     },
     [handleSwitch, handlePreviewLayout]
@@ -735,7 +768,7 @@ setQueue((prev) => prev.map((item) =>
         handleSwitch(item, selectedLangRef.current, format);
       } else if (item.imageId) {
         // No render yet — auto-render with bottom_bar, passing the new format explicitly
-        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec }, selectedLangRef.current, format);
+        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS_SHARED.find(p => p.layout === "clean_headline")!.spec }, selectedLangRef.current, format);
       }
     },
     [handleSwitch, handlePreviewLayout]
@@ -1214,7 +1247,9 @@ setQueue((prev) => prev.map((item) =>
     (item) => item.status === "uploading" || item.status === "generating"
   );
   // Only show rows that have started processing (hide idle ones)
-  const visibleQueueItems = queue.filter((item) => item.status !== "idle");
+  const visibleQueueItems = queue.filter(
+    (item) => item.status !== "idle" && !item.parentImageId
+  );
 
   const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
   const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
@@ -1330,7 +1365,7 @@ setQueue((prev) => prev.map((item) =>
       if (!item || !item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
-        const defaultSpec = LAYOUT_PREVIEWS.find((p) => p.layout === "clean_headline")!.spec;
+        const defaultSpec = LAYOUT_PREVIEWS_SHARED.find((p) => p.layout === "clean_headline")!.spec;
         const specWithHeadline = {
           ...defaultSpec,
           headlineYOverride: headlineY,
@@ -1428,8 +1463,10 @@ setQueue((prev) => prev.map((item) =>
         {/* Title */}
         <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06]">
           <div className="flex items-center justify-between">
-            <h1 className="text-base font-bold text-white tracking-tight">AI Ad Agent</h1>
-
+            <div>
+              <div className="text-[10px] font-semibold tracking-[0.18em] uppercase text-indigo-400 mb-0.5">Advaria</div>
+              <h1 className="text-base font-bold text-white tracking-tight">AI Ad Agent</h1>
+            </div>
           </div>
           <p className="text-[11px] text-gray-600 mt-0.5">
             AI picks best template · visual diversity guaranteed
@@ -1586,8 +1623,8 @@ setQueue((prev) => prev.map((item) =>
               )}
               {/* EN items */}
               {(expandedLangGroups.has("en") || !queue.some((q) => q.translationSourceId)) && visibleQueueItems.filter((q) => !q.translationSourceId).map((item) => (
+                <div key={item.id} className="flex flex-col">
                 <button
-                  key={item.id}
                   onClick={() => setSelectedItemId(item.id)}
                   className={
                     "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
@@ -1637,6 +1674,43 @@ setQueue((prev) => prev.map((item) =>
                     </svg>
                   )}
                 </button>
+                {/* Draft sub-thumbnails */}
+                {(() => {
+                  const drafts = queue.filter(i => i.parentImageId === item.imageId && i.result?.pngUrl);
+                  if (drafts.length === 0) return null;
+                  return (
+                    <div className="flex gap-1.5 pl-8 pr-3 pb-2">
+                      {drafts.map(draft => (
+                        <div key={draft.id} className="relative group">
+                          <button
+                            onClick={() => setSelectedItemId(draft.id)}
+                            className={`block w-12 rounded overflow-hidden border transition ${
+                              selectedItemId === draft.id ? "border-indigo-400" : "border-white/10 hover:border-white/30"
+                            }`}
+                          >
+                            <img src={draft.result!.pngUrl} alt="draft" className="w-full h-auto" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setQueue(prev => {
+                                const updated = prev.map(i =>
+                                  i.id === item.id
+                                    ? { ...i, draftIds: (i.draftIds ?? []).filter(id => id !== draft.id) }
+                                    : i
+                                );
+                                return updated.filter(i => i.id !== draft.id);
+                              });
+                              if (selectedItemId === draft.id) setSelectedItemId(item.id);
+                            }}
+                            className="absolute -top-1 -right-1 w-4 h-4 bg-gray-700 hover:bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                          >&#x2715;</button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+                </div>
               ))}
 
               {/* Translated language groups */}
@@ -2040,7 +2114,7 @@ setQueue((prev) => prev.map((item) =>
                   {/* <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" /> */}
 
                   {/* Layout options — Split Right, Full Overlay, etc. */}
-                  {LAYOUT_PREVIEWS.filter(p => p.layout === "clean_headline").map((p) => {
+                  {LAYOUT_PREVIEWS_SHARED.filter(p => p.layout === "clean_headline").map((p) => {
                     const previewUrl = sharedLayoutPreviews[p.layout];
                     const isActive = activeLayout === p.layout && selectedItem.result?.templateId === "ai_surprise";
                     return (
@@ -2149,6 +2223,21 @@ setQueue((prev) => prev.map((item) =>
                   />
                 ) : (
                 <>{/* Ad image — full width, fills all remaining space */}
+                {/* Back link when a draft is selected */}
+                {selectedItem.parentImageId && (() => {
+                  const parent = queue.find(i => i.imageId === selectedItem.parentImageId && !i.parentImageId);
+                  if (!parent) return null;
+                  return (
+                    <div className="shrink-0 px-4 pt-2">
+                      <button
+                        onClick={() => setSelectedItemId(parent.id)}
+                        className="text-[11px] text-gray-500 hover:text-gray-300 transition flex items-center gap-1"
+                      >
+                        &#8592; Back to {parent.file?.name ?? "image"}
+                      </button>
+                    </div>
+                  );
+                })()}
                 <div className="flex-1 flex flex-row items-center p-4 overflow-hidden">
                   {/* Left arrow — flex-1 spacer keeps image centered */}
                   <div className="flex-1 flex justify-end pr-3">
@@ -2329,8 +2418,28 @@ setQueue((prev) => prev.map((item) =>
                         style={{ aspectRatio: "9/16" }}
                       />
                       {!detailLoading && (
-                        <div className="absolute inset-0 flex items-end justify-center pb-10 pointer-events-none">
+                        <div className="absolute inset-0 flex flex-col items-center justify-end pb-10 pointer-events-none">
                           <p className="text-xs text-gray-400 bg-black/50 rounded-full px-4 py-1.5 backdrop-blur-sm">Select a style to get started</p>
+                          {/* First Drafts button — only on parent items */}
+                          {!selectedItem.parentImageId && (
+                            <div className="mt-4 flex flex-col items-center gap-2 pointer-events-auto">
+                              {selectedItem.draftGenerating ? (
+                                <p className="text-xs text-indigo-300 animate-pulse text-center">
+                                  Generating your first drafts — continue with other images…
+                                </p>
+                              ) : (
+                                <button
+                                  onClick={() => handleGenerateFirstDrafts(selectedItem)}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg transition font-medium"
+                                >
+                                  {(selectedItem.draftIds?.length ?? 0) > 0 ? "✨ Generate 3 more" : "✨ Generate First Drafts"}
+                                </button>
+                              )}
+                              {(selectedItem.draftIds?.length ?? 0) > 0 && !selectedItem.draftGenerating && (
+                                <p className="text-[11px] text-gray-500">{selectedItem.draftIds!.length} draft{selectedItem.draftIds!.length !== 1 ? "s" : ""} ready below</p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </>
@@ -2356,11 +2465,50 @@ setQueue((prev) => prev.map((item) =>
                       </button>
                     )}
                   </div>
+
+                  {/* Draft cluster — right of canvas */}
+                  {!selectedItem.parentImageId && (selectedItem.draftIds?.length ?? 0) > 0 && (() => {
+                    const drafts = queue.filter(i => i.parentImageId === selectedItem.imageId && i.result?.pngUrl);
+                    if (drafts.length === 0) return null;
+                    return (
+                      <div className="flex flex-col gap-2 pl-3 shrink-0 justify-center">
+                        {drafts.map((draft, idx) => (
+                          <button
+                            key={draft.id}
+                            onClick={() => setSelectedItemId(draft.id)}
+                            title={`Draft ${idx + 1}`}
+                            className={`w-14 rounded-lg overflow-hidden border-2 transition ${
+                              selectedItemId === draft.id ? "border-indigo-400" : "border-white/10 hover:border-white/40"
+                            }`}
+                          >
+                            <img src={draft.result!.pngUrl} alt={`Draft ${idx + 1}`} className="w-full h-auto" />
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Action bar */}
                 {selectedItem.result && (
                   <div className="shrink-0 border-t border-white/[0.06] px-6 py-3 flex items-center gap-3">
+                    {/* First Drafts button in action bar — only on parent items */}
+                    {!selectedItem.parentImageId && (
+                      <div className="flex flex-col items-center gap-1">
+                        {selectedItem.draftGenerating ? (
+                          <p className="text-xs text-indigo-300 animate-pulse whitespace-nowrap">
+                            Generating drafts…
+                          </p>
+                        ) : (
+                          <button
+                            onClick={() => handleGenerateFirstDrafts(selectedItem)}
+                            className="px-3 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-300 text-xs rounded-lg transition font-medium whitespace-nowrap"
+                          >
+                            {(selectedItem.draftIds?.length ?? 0) > 0 ? "✨ 3 more" : "✨ First Drafts"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <button
                       onClick={async () => {
                         if (!selectedItem.result) return;
