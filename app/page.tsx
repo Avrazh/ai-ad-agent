@@ -105,6 +105,8 @@ type QueueItem = {
   draftIds?: string[];         // set on parent items; list of draft item IDs
   draftGenerating?: boolean;   // true while first-drafts API call is in progress
   selectedPersonaId?: string;  // convenience copy of active persona id for first-drafts
+  stagedTemplateId?: string;   // set on staged draft items; templateId to render at approve time
+  stagedFamilyId?: string;     // set on staged draft items; familyId to render at approve time
 };
 
 const FAMILY_LABELS: Record<FamilyId, string> = {
@@ -194,6 +196,12 @@ const LAYOUT_LABELS: Record<string, string> = {
   frame_overlay: "Frame",
   postcard: "Postcard",
   vertical_text: "Vertical",
+};
+
+const DRAFT_LABEL: Record<string, string> = {
+  star_review: "Stars", quote_card: "Quote",
+  luxury_editorial_left: "Editorial", luxury_soft_frame_open: "Frame",
+  ai_surprise: "Layout",
 };
 
 const QueueItemRow = memo(function QueueItemRow({
@@ -656,7 +664,10 @@ setQueue((prev) => prev.map((item) =>
     updateItem(parentItem.id, { draftGenerating: true });
     try {
       const existingDraftTemplateIds = (parentItem.draftIds ?? [])
-        .map(id => queue.find(i => i.id === id)?.result?.templateId)
+        .map(id => {
+          const d = queue.find(i => i.id === id);
+          return d?.stagedTemplateId ?? d?.result?.templateId;
+        })
         .filter(Boolean) as string[];
 
       const res = await fetch("/api/first-drafts", {
@@ -664,11 +675,9 @@ setQueue((prev) => prev.map((item) =>
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageId: parentItem.imageId,
-          imageUrl: parentItem.imageUrl,
           lang: parentItem.lang ?? "en",
           format: selectedFormatRef.current ?? "9:16",
           ...(parentItem.selectedPersonaId ? { personaId: parentItem.selectedPersonaId } : {}),
-          ...(parentItem.cropX !== undefined ? { cropX: parentItem.cropX } : {}),
           excludeTemplateIds: existingDraftTemplateIds,
         }),
       });
@@ -679,29 +688,34 @@ setQueue((prev) => prev.map((item) =>
       const stillExists = queue.find(i => i.id === parentItem.id);
       if (!stillExists) return;
 
+      const drafts = data.drafts as Array<{
+        familyId: string;
+        templateId: string;
+        headline?: string;
+        quote?: string;
+        attribution?: string;
+        surpriseSpec?: SurpriseSpec;
+      }>;
+
       const newDraftIds: string[] = [];
-      // API returns [testimonial, luxury, layout] in that order
-      // layoutSurpriseSpec is the SurpriseSpec used to render the layout preset draft
-      const layoutSurpriseSpec = data.layoutSurpriseSpec as SurpriseSpec | undefined;
-      const newDraftItems: QueueItem[] = (data.results as RenderResultItem[]).map((result, idx) => {
+      const newDraftItems: QueueItem[] = drafts.map((draft) => {
         const draftId = Math.random().toString(36).slice(2);
         newDraftIds.push(draftId);
-        // idx 0 = testimonial, 1 = luxury, 2 = layout preset
-        const draftSurpriseSpec = idx === 2 ? layoutSurpriseSpec : undefined;
-        // Copy all parent fields so every editing handler works on drafts identically
         return {
           ...parentItem,
           id: draftId,
-          status: "done" as const,
-          result,
+          status: "analyzed" as const,
+          result: undefined,
           approved: false,
           hasBaked: false,
           parentImageId: parentItem.imageId,
-          // Set usedSurpriseSpec correctly per template type
-          usedSurpriseSpec: draftSurpriseSpec,
-          // Clear draft-only fields that don't apply to a child
           draftIds: undefined,
           draftGenerating: undefined,
+          stagedTemplateId: draft.templateId,
+          stagedFamilyId: draft.familyId,
+          usedSurpriseSpec: draft.surpriseSpec,
+          defaultHeadline: draft.headline ?? draft.quote ?? "",
+          overrideHeadline: undefined,
         };
       });
 
@@ -1037,75 +1051,117 @@ setQueue((prev) => prev.map((item) =>
   // F9: fire-and-forget background bake after optimistic approve
   const handleApproveWithBake = useCallback(
     async (item: QueueItem) => {
-      if (!item.result) return;
+      if (!item.imageId) return;
 
-      // 1. Trigger visual animation
-      setApproveAnimating(true);
-      setTimeout(() => {
-        setRightPanelGlowing(true);
-        setTimeout(() => setRightPanelGlowing(false), 1400);
-      }, 350);
-      setTimeout(() => setApproveAnimating(false), 700);
+      async function doBake(bakeItem: QueueItem) {
+        if (!bakeItem.result) return;
 
-      // 2. Optimistic approve + mark bake pending
-      updateItem(item.id, { approved: true, bakePending: true, bakeError: undefined });
-      try {
-        await fetch("/api/approve", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId: item.result.id, approved: true }),
-        });
-      } catch { /* silent */ }
+        // 1. Trigger visual animation
+        setApproveAnimating(true);
+        setTimeout(() => {
+          setRightPanelGlowing(true);
+          setTimeout(() => setRightPanelGlowing(false), 1400);
+        }, 350);
+        setTimeout(() => setApproveAnimating(false), 700);
 
-      // 3. Background bake (reposition with current settings to burn in text boxes / headline position)
-      try {
-        const itemShowBrand = brandByImage[item.id] ?? false;
-        const y = item.headlineY
-          ?? (item.result.headlineYOverride ?? item.usedSurpriseSpec?.headlineYOverride
-            ?? (item.result.templateId === "star_review" ? 0.2005
-              : item.result.templateId === "split_scene" ? 0.82
-              : item.result.templateId === "ai_background" ? 0.65 : 0.1484));
-        const scale = item.headlineFontScale ?? item.result.headlineFontScale ?? 1.0;
-        const bY = item.brandNameY ?? item.result.brandNameY;
-        const bScale = item.brandNameFontScale ?? item.result.brandNameFontScale;
-        const res = await fetch("/api/reposition", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resultId: item.result.id,
-            headlineYOverride: y,
-            headlineFontScale: scale,
-            showBrand: itemShowBrand,
-            ...(bY !== undefined ? { brandNameY: bY } : {}),
-            ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}),
-            ...(item.headlineFont ? { headlineFont: item.headlineFont } : {}),
-            // Testimonial templates have white card backgrounds — don't force white text on them.
-            // All other templates sit on dark/photo backgrounds so default to white.
-            ...(item.headlineColor !== undefined
-              ? { headlineColor: item.headlineColor }
-              : item.result.familyId !== "testimonial" ? { headlineColor: "#ffffff" } : {}),
-            ...(item.brandColor !== undefined ? { brandColor: item.brandColor } : { brandColor: "#ffffff" }),
-            ...(item.overrideHeadline !== undefined ? { headlineOverride: item.overrideHeadline } : {}),
-            ...(item.textBoxes !== undefined ? { textBoxes: item.textBoxes } : {}),
-            ...(item.hideHeadline !== undefined ? { hideHeadline: item.hideHeadline } : {}),
-          }),
-        });
-        if (!res.ok) throw new Error("Reposition failed");
-        const data = await res.json();
-        // Mark the newly-baked result as approved in the DB (fire-and-forget — translate needs it)
-        fetch("/api/approve", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId: data.result.id, approved: true }),
-        }).catch(() => {});
-        const bakedResult = { ...item.result, ...data.result };
-        updateItem(item.id, { result: bakedResult, approvedResult: bakedResult, bakePending: false, hasBaked: true, overrideHeadline: undefined });
-      } catch (err) {
-        console.error("[bake]", err);
-        updateItem(item.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
+        // 2. Optimistic approve + mark bake pending
+        updateItem(bakeItem.id, { approved: true, bakePending: true, bakeError: undefined });
+        try {
+          await fetch("/api/approve", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resultId: bakeItem.result.id, approved: true }),
+          });
+        } catch { /* silent */ }
+
+        // 3. Background bake (reposition with current settings to burn in text boxes / headline position)
+        try {
+          const itemShowBrand = brandByImage[bakeItem.id] ?? false;
+          const y = bakeItem.headlineY
+            ?? (bakeItem.result.headlineYOverride ?? bakeItem.usedSurpriseSpec?.headlineYOverride
+              ?? (bakeItem.result.templateId === "star_review" ? 0.2005
+                : bakeItem.result.templateId === "split_scene" ? 0.82
+                : bakeItem.result.templateId === "ai_background" ? 0.65 : 0.1484));
+          const scale = bakeItem.headlineFontScale ?? bakeItem.result.headlineFontScale ?? 1.0;
+          const bY = bakeItem.brandNameY ?? bakeItem.result.brandNameY;
+          const bScale = bakeItem.brandNameFontScale ?? bakeItem.result.brandNameFontScale;
+          const res = await fetch("/api/reposition", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              resultId: bakeItem.result.id,
+              headlineYOverride: y,
+              headlineFontScale: scale,
+              showBrand: itemShowBrand,
+              ...(bY !== undefined ? { brandNameY: bY } : {}),
+              ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}),
+              ...(bakeItem.headlineFont ? { headlineFont: bakeItem.headlineFont } : {}),
+              // Testimonial templates have white card backgrounds -- don't force white text on them.
+              // All other templates sit on dark/photo backgrounds so default to white.
+              ...(bakeItem.headlineColor !== undefined
+                ? { headlineColor: bakeItem.headlineColor }
+                : bakeItem.result.familyId !== "testimonial" ? { headlineColor: "#ffffff" } : {}),
+              ...(bakeItem.brandColor !== undefined ? { brandColor: bakeItem.brandColor } : { brandColor: "#ffffff" }),
+              ...(bakeItem.overrideHeadline !== undefined ? { headlineOverride: bakeItem.overrideHeadline } : {}),
+              ...(bakeItem.textBoxes !== undefined ? { textBoxes: bakeItem.textBoxes } : {}),
+              ...(bakeItem.hideHeadline !== undefined ? { hideHeadline: bakeItem.hideHeadline } : {}),
+            }),
+          });
+          if (!res.ok) throw new Error("Reposition failed");
+          const data = await res.json();
+          // Mark the newly-baked result as approved in the DB (fire-and-forget -- translate needs it)
+          fetch("/api/approve", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resultId: data.result.id, approved: true }),
+          }).catch(() => {});
+          const bakedResult = { ...bakeItem.result, ...data.result };
+          updateItem(bakeItem.id, { result: bakedResult, approvedResult: bakedResult, bakePending: false, hasBaked: true, overrideHeadline: undefined });
+        } catch (err) {
+          console.error("[bake]", err);
+          updateItem(bakeItem.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
+        }
       }
+
+      // Staged draft -- render first, then bake
+      if (!item.result && item.stagedTemplateId) {
+        updateItem(item.id, { bakePending: true });
+        try {
+          const renderRes = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageId: item.imageId,
+              imageUrl: item.imageUrl,
+              imageWidth: item.imageWidth,
+              imageHeight: item.imageHeight,
+              forceTemplateId: item.stagedTemplateId,
+              autoFamily: false,
+              lang: item.lang ?? "en",
+              format: selectedFormatRef.current,
+              showBrand: brandByImage[item.id] ?? false,
+              personaId: personaByImage[item.id] ?? personas[0]?.id,
+              cropX: item.cropX ?? 0.5,
+              headline: item.overrideHeadline ?? item.defaultHeadline ?? undefined,
+              headlineYOverride: item.headlineY ?? item.usedSurpriseSpec?.headlineYOverride,
+              ...(item.usedSurpriseSpec ? { forceSurpriseSpec: item.usedSurpriseSpec } : {}),
+            }),
+          });
+          if (!renderRes.ok) throw new Error("Staged render failed");
+          const renderData = await renderRes.json();
+          const result: RenderResultItem = renderData.results[0];
+          updateItem(item.id, { result, status: "done" });
+          // Continue with bake using the fresh result
+          await doBake({ ...item, result, status: "done" });
+        } catch {
+          updateItem(item.id, { bakePending: false });
+        }
+        return;
+      }
+
+      await doBake(item);
     },
-    [updateItem, brandByImage]
+    [updateItem, brandByImage, personaByImage, personas]
   );
 
   // ── Download ────────────────────────────────────────────
@@ -1703,7 +1759,7 @@ setQueue((prev) => prev.map((item) =>
                 </button>
                 {/* Draft sub-thumbnails */}
                 {(() => {
-                  const drafts = queue.filter(i => i.parentImageId === item.imageId && i.result?.pngUrl);
+                  const drafts = queue.filter(i => i.parentImageId === item.imageId);
                   if (drafts.length === 0) return null;
                   return (
                     <div className="flex gap-1.5 pl-8 pr-3 pb-2">
@@ -1711,11 +1767,14 @@ setQueue((prev) => prev.map((item) =>
                         <div key={draft.id} className="relative group">
                           <button
                             onClick={() => setSelectedItemId(draft.id)}
-                            className={`block w-12 rounded overflow-hidden border transition ${
+                            className={`relative block w-12 rounded overflow-hidden border transition ${
                               selectedItemId === draft.id ? "border-indigo-400" : "border-white/10 hover:border-white/30"
                             }`}
                           >
-                            <img src={draft.result!.pngUrl} alt="draft" className="w-full h-auto" />
+                            <img src={draft.imageUrl ?? draft.previewUrl} alt="draft" className="w-full h-auto" />
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[7px] text-center py-0.5 truncate px-0.5">
+                              {DRAFT_LABEL[draft.stagedTemplateId ?? ""] ?? "Draft"}
+                            </div>
                           </button>
                           <button
                             onClick={(e) => {
@@ -2444,7 +2503,12 @@ setQueue((prev) => prev.map((item) =>
                         className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl"
                         style={{ aspectRatio: "9/16" }}
                       />
-                      {!detailLoading && (
+                      {selectedItem.stagedTemplateId && (
+                        <p className="text-[10px] text-indigo-300 text-center mt-1 select-none">
+                          {DRAFT_LABEL[selectedItem.stagedTemplateId] ?? selectedItem.stagedTemplateId} layout · approve to render
+                        </p>
+                      )}
+                      {!detailLoading && !selectedItem.stagedTemplateId && (
                         <div className="absolute inset-0 flex flex-col items-center justify-end pb-10 pointer-events-none">
                           <p className="text-xs text-gray-400 bg-black/50 rounded-full px-4 py-1.5 backdrop-blur-sm">Select a style to get started</p>
                           {/* First Drafts button — only on parent items */}
@@ -2495,7 +2559,7 @@ setQueue((prev) => prev.map((item) =>
 
                   {/* Draft cluster — right of canvas */}
                   {!selectedItem.parentImageId && (selectedItem.draftIds?.length ?? 0) > 0 && (() => {
-                    const drafts = queue.filter(i => i.parentImageId === selectedItem.imageId && i.result?.pngUrl);
+                    const drafts = queue.filter(i => i.parentImageId === selectedItem.imageId);
                     if (drafts.length === 0) return null;
                     return (
                       <div className="flex flex-col gap-2 pl-3 shrink-0 justify-center">
@@ -2504,11 +2568,14 @@ setQueue((prev) => prev.map((item) =>
                             key={draft.id}
                             onClick={() => setSelectedItemId(draft.id)}
                             title={`Draft ${idx + 1}`}
-                            className={`w-14 rounded-lg overflow-hidden border-2 transition ${
+                            className={`relative w-14 rounded-lg overflow-hidden border-2 transition ${
                               selectedItemId === draft.id ? "border-indigo-400" : "border-white/10 hover:border-white/40"
                             }`}
                           >
-                            <img src={draft.result!.pngUrl} alt={`Draft ${idx + 1}`} className="w-full h-auto" />
+                            <img src={draft.imageUrl ?? draft.previewUrl} alt={`Draft ${idx + 1}`} className="w-full h-auto" />
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[7px] text-center py-0.5 truncate px-0.5">
+                              {DRAFT_LABEL[draft.stagedTemplateId ?? ""] ?? "Draft"}
+                            </div>
                           </button>
                         ))}
                       </div>
@@ -2517,7 +2584,7 @@ setQueue((prev) => prev.map((item) =>
                 </div>
 
                 {/* Action bar */}
-                {selectedItem.result && (
+                {(selectedItem.result || selectedItem.stagedTemplateId) && (
                   <div className="shrink-0 border-t border-white/[0.06] px-6 py-3 flex items-center gap-3">
                     {/* First Drafts button in action bar — only on parent items */}
                     {!selectedItem.parentImageId && (
@@ -2538,7 +2605,7 @@ setQueue((prev) => prev.map((item) =>
                     )}
                     <button
                       onClick={async () => {
-                        if (!selectedItem.result) return;
+                        if (!selectedItem.result && !selectedItem.stagedTemplateId) return;
                         if (!selectedItem.approved || !selectedItem.hasBaked) {
                           // Approve or re-approve with bake
                           handleApproveWithBake(selectedItem);
@@ -2558,7 +2625,7 @@ setQueue((prev) => prev.map((item) =>
                       {selectedItem.bakePending ? "Baking…" : selectedItem.approved ? (selectedItem.hasBaked ? "Approved" : "Re-approve") : "Approve"}
                     </button>
                     <button
-                      onClick={() => handleDownload(selectedItem.result!.pngUrl, selectedItem)}
+                      onClick={() => selectedItem.result && handleDownload(selectedItem.result.pngUrl, selectedItem)}
                       className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-3 text-sm text-gray-400 hover:bg-white/[0.08] hover:text-white transition flex items-center justify-center gap-2"
                     >
                       <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
