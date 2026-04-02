@@ -328,7 +328,7 @@ export default function Home() {
   const [translateLoading, setTranslateLoading] = useState(false);
   const [translateSelectedLangs, setTranslateSelectedLangs] = useState<Set<string>>(new Set());
   const [expandedLangGroups, setExpandedLangGroups] = useState<Set<string>>(new Set(["en"]));
-  const [collapsedDrafts, setCollapsedDrafts] = useState<Set<string>>(new Set());
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const translatePickerRef = useRef<HTMLDivElement>(null);
   const usedStyleIdsRef = useRef<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -460,13 +460,9 @@ setQueue((prev) => prev.map((item) =>
 
     setProcessing(true);
 
-    // Process at most 3 images concurrently
-    const CONCURRENCY = 3;
-    const results: PromiseSettledResult<void>[] = [];
-    for (let i = 0; i < itemsToProcess.length; i += CONCURRENCY) {
-      const batch = itemsToProcess.slice(i, i + CONCURRENCY);
-      const batchResults = await Promise.allSettled(batch.map(async (item) => {
-        try {
+    // Process one image at a time: upload → analyze → generate drafts → next
+    for (const item of itemsToProcess) {
+      try {
         // Step 1 — upload
         updateItem(item.id, { status: "uploading" });
         const compressed = await compressImage(item.file);
@@ -504,9 +500,8 @@ setQueue((prev) => prev.map((item) =>
         };
         updateItem(item.id, analyzedItem);
 
-        // Step 3 — auto-generate 3 drafts in the background (fire and forget)
-        handleGenerateFirstDrafts(analyzedItem);
-
+        // Step 3 — generate 3 drafts, await before moving to the next image
+        await handleGenerateFirstDrafts(analyzedItem);
 
       } catch (err) {
         updateItem(item.id, {
@@ -514,8 +509,6 @@ setQueue((prev) => prev.map((item) =>
           error: err instanceof Error ? err.message : "Failed",
         });
       }
-      }));
-      results.push(...batchResults);
     }
 
     setProcessing(false);
@@ -1707,8 +1700,8 @@ setQueue((prev) => prev.map((item) =>
               {(expandedLangGroups.has("en") || !queue.some((q) => q.translationSourceId)) && visibleQueueItems.filter((q) => !q.translationSourceId).map((item) => {
                 const itemDrafts = item.imageId ? queue.filter(i => i.parentImageId === item.imageId) : [];
                 const hasDrafts = !item.parentImageId;
-                const collapsed = collapsedDrafts.has(item.id);
-                const toggleCollapse = (e: React.MouseEvent) => { e.stopPropagation(); setCollapsedDrafts(prev => { const next = new Set(prev); collapsed ? next.delete(item.id) : next.add(item.id); return next; }); };
+                const collapsed = !expandedItems.has(item.id);
+                const toggleCollapse = (e: React.MouseEvent) => { e.stopPropagation(); setExpandedItems(prev => { const next = new Set(prev); collapsed ? next.add(item.id) : next.delete(item.id); return next; }); };
                 return (
                 <div key={item.id} className="flex flex-col border-b border-white/[0.03]">
                   <div className={"flex items-stretch border-l-2 " + (selectedItemId === item.id ? "bg-indigo-500/[0.08] border-indigo-500/60" : "border-transparent")}>
