@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
         headlineYOverride: headlineYOverride,
         brandNameY: newSpec.brandNameY,
         brandNameFontScale: newSpec.brandNameFontScale,
-        headlineColor: newSpec.headlineColor,
+        headlineColor: newSpec.headlineColor ?? newSpec.surpriseSpec?.textColor ?? newSpec.theme?.color,
         brandColor: newSpec.brandColor,
         textBoxes: newSpec.textBoxes,
         hideHeadline: newSpec.hideHeadline,
