@@ -193,6 +193,7 @@ calloutPosition: "top_right" | "top_left" | "bottom_right" | "bottom_left"
   "full_overlay", "bottom_bar", "frame_overlay": MAXIMUM 3–4 words.
 - subtext: 2–4 words. Collection name, qualifier, or short tagline.
 - German: natural fluent German — NOT word-for-word translation.
+- Never start headline or subtext with a dash or bullet character.
 
 ━━━ CREATIVE DIRECTION ━━━
 Push combinations. These produce strong results:
