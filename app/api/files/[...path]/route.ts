@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import { Readable } from "stream";
 
@@ -36,7 +37,8 @@ export async function GET(
   const contentType = MIME[ext] || "application/octet-stream";
 
   try {
-    // Stream from disk — never loads the full file into memory
+    // Check file exists before streaming (createReadStream errors are async and not caught by try/catch)
+    await fsPromises.access(filePath);
     const stream = fs.createReadStream(filePath);
     const readable = Readable.toWeb(stream) as ReadableStream;
     return new NextResponse(readable, {

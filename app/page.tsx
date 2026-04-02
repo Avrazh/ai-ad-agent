@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, memo } from "react";
+import { useState, useRef, useCallback, useEffect, memo, startTransition } from "react";
 import Link from "next/link";
 import { HeadlineDragOverlay } from "@/app/components/HeadlineDragOverlay";
 import { LiveAdCanvas } from "@/app/components/LiveAdCanvas";
@@ -10,6 +10,7 @@ import { TRANSLATION_TARGETS } from "@/lib/languages";
 import { CropEditor } from "@/app/components/CropEditor";
 import SplitSceneEditor, { SplitConfig } from "@/app/components/SplitSceneEditor";
 import AIComposeEditor from "@/app/components/AIComposeEditor";
+import { LAYOUT_PREVIEWS as LAYOUT_PREVIEWS_SHARED, type SurpriseLayout as SurpriseLayoutShared } from "@/lib/layoutPresets";
 
 type RenderResultItem = {
   id: string;
@@ -34,6 +35,8 @@ type RenderResultItem = {
   lang?: string;
   textBoxes?: import("@/lib/types").TextBox[];
   hideHeadline?: boolean;
+  pickedPersonaId?: string;
+  layoutVariant?: string;
 };
 
 type FamilyId = "testimonial" | "minimal" | "luxury" | "ai";
@@ -61,38 +64,6 @@ type SurpriseSpec = {
 };
 
 
-// Test layout previews — one per layout type with distinct default aesthetics
-const LAYOUT_PREVIEWS: { layout: SurpriseLayout; label: string; spec: SurpriseSpec }[] = [
-  {
-    layout: "split_right", label: "Split Right",
-    spec: { layout: "split_right", bgColor: "#F5EDD6", textColor: "#2A1F14", accentColor: "#C8A96E", overlayOpacity: 0.6, font: "serif", fontWeight: 400, letterSpacingKey: "ultra", textTransform: "none", textAlign: "right", headlineScale: "large", accent: "line", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "full_overlay", label: "Full Overlay",
-    spec: { layout: "full_overlay", bgColor: "#000000", textColor: "#FFFFFF", accentColor: "#FFFFFF", overlayOpacity: 0.55, font: "sans", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "left", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "bottom_bar", label: "Bottom Bar",
-    spec: { layout: "bottom_bar", bgColor: "#1A1A1A", textColor: "#FFFFFF", accentColor: "#FFFFFF", overlayOpacity: 0.6, font: "bebas", fontWeight: 900, letterSpacingKey: "tight", textTransform: "uppercase", textAlign: "center", headlineScale: "huge", accent: "none", preferredHeadlineLength: "short", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "frame_overlay", label: "Frame",
-    spec: { layout: "frame_overlay", bgColor: "#0D0D0D", textColor: "#F5F0E8", accentColor: "#C8A96E", overlayOpacity: 0.6, font: "serif", fontWeight: 300, letterSpacingKey: "ultra", textTransform: "none", textAlign: "left", headlineScale: "medium", accent: "line", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "postcard", label: "Postcard",
-    spec: { layout: "postcard", bgColor: "#F2EFE9", textColor: "#141414", accentColor: "#141414", overlayOpacity: 0.45, font: "serif", fontWeight: 700, letterSpacingKey: "tight", textTransform: "none", textAlign: "left", headlineScale: "medium", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "Collection" }, de: { headline: "Vorschau", subtext: "Kollektion" } },
-  },
-  {
-    layout: "vertical_text", label: "Letters",
-    spec: { layout: "vertical_text", bgColor: "#FFFFFF", textColor: "#1A1A1A", accentColor: "#1A1A1A", overlayOpacity: 0, font: "bebas", fontWeight: 400, letterSpacingKey: "normal", textTransform: "uppercase", textAlign: "left", headlineScale: "medium", accent: "none", preferredHeadlineLength: "short", en: { headline: "GLOW", subtext: "Collection" }, de: { headline: "GLANZ", subtext: "Kollektion" } },
-  },
-  {
-    layout: "clean_headline", label: "Headline",
-    spec: { layout: "clean_headline", bgColor: "#000000", textColor: "#ffffff", accentColor: "#ffffff", overlayOpacity: 0, font: "serif", fontWeight: 400, letterSpacingKey: "normal", textTransform: "none", textAlign: "center", headlineScale: "large", accent: "none", preferredHeadlineLength: "medium", en: { headline: "Preview", subtext: "" }, de: { headline: "Vorschau", subtext: "" } },
-  },
-
-];
 type Language = "en" | "de" | "fr" | "es";
 type Format = "9:16";
 
@@ -112,6 +83,7 @@ type QueueItem = {
   lang?: Language;
   approved: boolean;
   cropX: number;          // user-chosen horizontal crop center (0-1), default 0.5
+  cropY?: number;         // user-chosen vertical crop center (0-1)
   defaultHeadline?: string; // pre-fetched headline shown in CropEditor before first render
   headlineY?: number;       // persisted headline Y position across image switches
   headlineFontScale?: number; // persisted font scale across image switches
@@ -132,6 +104,12 @@ type QueueItem = {
   bakeError?: string;          // F9: bake failed — message shown on item
   hasBaked?: boolean;          // true after first successful bake — skip re-bake on re-approve
   approvedResult?: RenderResultItem; // snapshot of result at the moment of baking — stable thumbnail
+  parentImageId?: string;      // set on draft items; imageId of the parent queue item
+  draftIds?: string[];         // set on parent items; list of draft item IDs
+  draftGenerating?: boolean;   // true while first-drafts API call is in progress
+  selectedPersonaId?: string;  // convenience copy of active persona id for first-drafts
+  stagedTemplateId?: string;   // set on staged draft items; templateId to render at approve time
+  stagedFamilyId?: string;     // set on staged draft items; familyId to render at approve time
 };
 
 const FAMILY_LABELS: Record<FamilyId, string> = {
@@ -223,6 +201,14 @@ const LAYOUT_LABELS: Record<string, string> = {
   vertical_text: "Vertical",
 };
 
+const DRAFT_LABEL: Record<string, string> = {
+  star_review: "Stars", quote_card: "Quote",
+  luxury_editorial_left: "Editorial", luxury_soft_frame_open: "Soft Frame",
+  ai_surprise: "Layout",
+  split_right: "Split", full_overlay: "Overlay", bottom_bar: "Bottom Bar",
+  frame_overlay: "Frame", postcard: "Postcard", vertical_text: "Vertical",
+};
+
 const QueueItemRow = memo(function QueueItemRow({
   item,
   isSelected,
@@ -295,23 +281,9 @@ const QueueItemRow = memo(function QueueItemRow({
 });
 
 function StatusIcon({ status }: { status: QueueItem["status"] }) {
-  if (status === "done")
-    return (
-      <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-      </svg>
-    );
-  if (status === "error")
-    return (
-      <svg className="h-3.5 w-3.5 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-      </svg>
-    );
   if (status === "uploading" || status === "generating")
     return <div className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />;
-  if (status === "analyzed")
-    return <div className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-indigo-400/60" />;
-  return <div className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/20" />;
+  return <div className="h-3.5 w-3.5 shrink-0" />;
 }
 
 export default function Home() {
@@ -324,7 +296,7 @@ export default function Home() {
   const [brandByImage, setBrandByImage] = useState<Record<string, boolean>>({});
   // Static previews — pre-rendered thumbnails served from /previews/
   const sharedLayoutPreviews: Partial<Record<SurpriseLayout, string>> = Object.fromEntries(
-    LAYOUT_PREVIEWS.map((p) => [p.layout, `/previews/${p.layout}.png`])
+    LAYOUT_PREVIEWS_SHARED.map((p) => [p.layout, `/previews/${p.layout}.png`])
   );
   const sharedTemplatePreviews: Partial<Record<string, string>> = Object.fromEntries(
     ALL_TEMPLATES.map((t) => [t.templateId, `/previews/${t.templateId}.png`])
@@ -335,8 +307,8 @@ export default function Home() {
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
   const [aiComposeOpen, setAiComposeOpen] = useState(false);
-  const [approveAnimating, setApproveAnimating] = useState(false);
-  const [rightPanelGlowing, setRightPanelGlowing] = useState(false);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
+  const rightPanelRef = useRef<HTMLDivElement>(null);
   const [cropEditorItemId, setCropEditorItemId] = useState<string | null>(null);
   const [personaDropdownOpen, setPersonaDropdownOpen] = useState(false);
   const personaBtnRef = useRef<HTMLButtonElement>(null);
@@ -356,8 +328,8 @@ export default function Home() {
   const [translateLoading, setTranslateLoading] = useState(false);
   const [translateSelectedLangs, setTranslateSelectedLangs] = useState<Set<string>>(new Set());
   const [expandedLangGroups, setExpandedLangGroups] = useState<Set<string>>(new Set(["en"]));
+  const [collapsedDrafts, setCollapsedDrafts] = useState<Set<string>>(new Set());
   const translatePickerRef = useRef<HTMLDivElement>(null);
-
   const usedStyleIdsRef = useRef<string[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const adImgRef = useRef<HTMLImageElement>(null);
@@ -375,7 +347,7 @@ export default function Home() {
 
   const updateItem = useCallback((id: string, patch: Partial<QueueItem>) => {
     // Reset hasBaked if any canvas-affecting property changed so re-approve triggers a fresh bake
-    const invalidatesBake = "headlineColor" in patch || "brandColor" in patch ||
+    const invalidatesBake = "headlineColor" in patch || "brandColor" in patch || "overrideHeadline" in patch ||
       "textBoxes" in patch || "hideHeadline" in patch ||
       "headlineY" in patch || "headlineFontScale" in patch ||
       "brandNameY" in patch || "brandNameFontScale" in patch ||
@@ -428,7 +400,7 @@ setQueue((prev) => prev.map((item) =>
     setQueue((prev) => {
       const hasSelection = prev.some((i) => i.id === currentSelection);
       if (!hasSelection) {
-        const first = prev.find((i) => i.status === "done" || i.status === "analyzed");
+        const first = prev.find((i) => (i.status === "done" || i.status === "analyzed") && !i.parentImageId);
         if (first) setSelectedItemId(first.id);
       }
       return prev;
@@ -520,14 +492,20 @@ setQueue((prev) => prev.map((item) =>
         const firstHeadline = activePersonaId
           ? Object.values(personaHeadlineMap[activePersonaId] ?? {})[0]
           : undefined;
-        updateItem(item.id, {
+        const analyzedItem: QueueItem = {
+          ...item,
           status: "analyzed",
+          previewUrl: uploaded.url,
           imageId: uploaded.imageId,
           imageUrl: uploaded.url,
           imageWidth: uploaded.width,
           imageHeight: uploaded.height,
           ...(firstHeadline ? { defaultHeadline: firstHeadline } : {}),
-        });
+        };
+        updateItem(item.id, analyzedItem);
+
+        // Step 3 — auto-generate 3 drafts in the background (fire and forget)
+        handleGenerateFirstDrafts(analyzedItem);
 
 
       } catch (err) {
@@ -678,6 +656,101 @@ setQueue((prev) => prev.map((item) =>
 
 
 
+  // ── First Drafts ─────────────────────────────────────────
+  const handleGenerateFirstDrafts = useCallback(async (parentItem: QueueItem) => {
+    updateItem(parentItem.id, { draftGenerating: true });
+    try {
+      const existingDraftTemplateIds = (parentItem.draftIds ?? [])
+        .map(id => {
+          const d = queue.find(i => i.id === id);
+          return d?.result?.templateId;
+        })
+        .filter(Boolean) as string[];
+
+      const activePersonaId = personaByImage[parentItem.id] ?? personas[0]?.id;
+      const res = await fetch("/api/first-drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          imageId: parentItem.imageId,
+          imageUrl: parentItem.imageUrl,
+          lang: parentItem.lang ?? "en",
+          format: selectedFormatRef.current ?? "9:16",
+          personaId: activePersonaId,
+          allPersonaHeadlines: personas.flatMap(p => Object.values(personaHeadlineMap[p.id] ?? {}).map(h => ({ personaId: p.id, headline: h }))),
+          excludeTemplateIds: existingDraftTemplateIds,
+          limit: 3,
+        }),
+      });
+      if (!res.ok) throw new Error("First drafts failed");
+      const data = await res.json();
+
+      // Check parent still exists
+      const stillExists = queue.find(i => i.id === parentItem.id);
+      if (!stillExists) return;
+
+      const results = data.results as RenderResultItem[];
+
+      const newDraftIds: string[] = [];
+      const newDraftItems: QueueItem[] = results.map((result) => {
+        const draftId = "qi-" + Math.random().toString(36).slice(2);
+        newDraftIds.push(draftId);
+        return {
+          ...parentItem,
+          id: draftId,
+          status: "done" as const,
+          result,
+          approved: false,
+          hasBaked: false,
+          parentImageId: parentItem.imageId,
+          draftIds: undefined,
+          draftGenerating: undefined,
+          stagedTemplateId: undefined,
+          stagedFamilyId: undefined,
+          usedSurpriseSpec: undefined,
+          defaultHeadline: result.headlineText ?? "",
+          overrideHeadline: undefined,
+          headlineY: undefined,
+          headlineFontScale: undefined,
+        };
+      });
+
+      // Set persona per draft based on which persona's headline was used
+      const parentBrand = brandByImage[parentItem.id];
+      const parentTone = toneByImage[parentItem.id];
+      startTransition(() => {
+        setPersonaByImage(prev => {
+          const next = { ...prev };
+          newDraftItems.forEach((draft, i) => {
+            const pickedId = results[i]?.pickedPersonaId;
+            next[draft.id] = pickedId ?? personaByImage[parentItem.id] ?? personas[0]?.id ?? "";
+          });
+          return next;
+        });
+        // Inherit brand/tone from parent
+        if (parentBrand !== undefined) setBrandByImage(prev => {
+          const next = { ...prev };
+          newDraftIds.forEach(id => { next[id] = parentBrand; });
+          return next;
+        });
+        if (parentTone) setToneByImage(prev => {
+          const next = { ...prev };
+          newDraftIds.forEach(id => { next[id] = parentTone; });
+          return next;
+        });
+        setQueue(prev => {
+          const updated = prev.map(i =>
+            i.id === parentItem.id
+              ? { ...i, draftIds: [...(i.draftIds ?? []), ...newDraftIds], draftGenerating: false }
+              : i
+          );
+          return [...updated, ...newDraftItems];
+        });
+      });
+    } catch {
+      updateItem(parentItem.id, { draftGenerating: false });
+    }
+  }, [queue, updateItem, personaByImage, personas, personaHeadlineMap, brandByImage, toneByImage]);
   // Convenience wrappers used by the three control types in the detail panel
   const handleStyleChange = useCallback(
     (item: QueueItem, templateId: string) =>
@@ -720,7 +793,7 @@ setQueue((prev) => prev.map((item) =>
         handleSwitch(item, lang, selectedFormatRef.current);
       } else if (item.imageId) {
         // No render yet — auto-render with bottom_bar, passing the new lang explicitly
-        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec }, lang, selectedFormatRef.current);
+        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS_SHARED.find(p => p.layout === "clean_headline")!.spec }, lang, selectedFormatRef.current);
       }
     },
     [handleSwitch, handlePreviewLayout]
@@ -735,7 +808,7 @@ setQueue((prev) => prev.map((item) =>
         handleSwitch(item, selectedLangRef.current, format);
       } else if (item.imageId) {
         // No render yet — auto-render with bottom_bar, passing the new format explicitly
-        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS.find(p => p.layout === "clean_headline")!.spec }, selectedLangRef.current, format);
+        handlePreviewLayout(item, { ...LAYOUT_PREVIEWS_SHARED.find(p => p.layout === "clean_headline")!.spec }, selectedLangRef.current, format);
       }
     },
     [handleSwitch, handlePreviewLayout]
@@ -977,75 +1050,116 @@ setQueue((prev) => prev.map((item) =>
   // F9: fire-and-forget background bake after optimistic approve
   const handleApproveWithBake = useCallback(
     async (item: QueueItem) => {
-      if (!item.result) return;
+      if (!item.imageId) return;
 
-      // 1. Trigger visual animation
-      setApproveAnimating(true);
-      setTimeout(() => {
-        setRightPanelGlowing(true);
-        setTimeout(() => setRightPanelGlowing(false), 1400);
-      }, 350);
-      setTimeout(() => setApproveAnimating(false), 700);
+      async function doBake(bakeItem: QueueItem) {
+        if (!bakeItem.result) return;
 
-      // 2. Optimistic approve + mark bake pending
-      updateItem(item.id, { approved: true, bakePending: true, bakeError: undefined });
-      try {
-        await fetch("/api/approve", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId: item.result.id, approved: true }),
-        });
-      } catch { /* silent */ }
+        // 1. Trigger visual animation (DOM-only — no React re-render)
+        canvasWrapRef.current?.classList.add("approve-whoosh");
+        setTimeout(() => canvasWrapRef.current?.classList.remove("approve-whoosh"), 600);
+        setTimeout(() => {
+          rightPanelRef.current?.classList.add("panel-glow");
+          setTimeout(() => rightPanelRef.current?.classList.remove("panel-glow"), 1400);
+        }, 350);
 
-      // 3. Background bake (reposition with current settings to burn in text boxes / headline position)
-      try {
-        const itemShowBrand = brandByImage[item.id] ?? false;
-        const y = item.headlineY
-          ?? (item.result.headlineYOverride ?? item.usedSurpriseSpec?.headlineYOverride
-            ?? (item.result.templateId === "star_review" ? 0.2005
-              : item.result.templateId === "split_scene" ? 0.82
-              : item.result.templateId === "ai_background" ? 0.65 : 0.1484));
-        const scale = item.headlineFontScale ?? item.result.headlineFontScale ?? 1.0;
-        const bY = item.brandNameY ?? item.result.brandNameY;
-        const bScale = item.brandNameFontScale ?? item.result.brandNameFontScale;
-        const res = await fetch("/api/reposition", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resultId: item.result.id,
-            headlineYOverride: y,
-            headlineFontScale: scale,
-            showBrand: itemShowBrand,
-            ...(bY !== undefined ? { brandNameY: bY } : {}),
-            ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}),
-            ...(item.headlineFont ? { headlineFont: item.headlineFont } : {}),
-            // Testimonial templates have white card backgrounds — don't force white text on them.
-            // All other templates sit on dark/photo backgrounds so default to white.
-            ...(item.headlineColor !== undefined
-              ? { headlineColor: item.headlineColor }
-              : item.result.familyId !== "testimonial" ? { headlineColor: "#ffffff" } : {}),
-            ...(item.brandColor !== undefined ? { brandColor: item.brandColor } : { brandColor: "#ffffff" }),
-            ...(item.overrideHeadline !== undefined ? { headlineOverride: item.overrideHeadline } : {}),
-            ...(item.textBoxes !== undefined ? { textBoxes: item.textBoxes } : {}),
-            ...(item.hideHeadline !== undefined ? { hideHeadline: item.hideHeadline } : {}),
-          }),
-        });
-        if (!res.ok) throw new Error("Reposition failed");
-        const data = await res.json();
-        // Mark the newly-baked result as approved in the DB (fire-and-forget — translate needs it)
-        fetch("/api/approve", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ resultId: data.result.id, approved: true }),
-        }).catch(() => {});
-        const bakedResult = { ...item.result, ...data.result };
-        updateItem(item.id, { result: bakedResult, approvedResult: bakedResult, bakePending: false, hasBaked: true, overrideHeadline: undefined });
-      } catch (err) {
-        console.error("[bake]", err);
-        updateItem(item.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
+        // 2. Optimistic approve + mark bake pending
+        updateItem(bakeItem.id, { approved: true, bakePending: true, bakeError: undefined });
+        try {
+          await fetch("/api/approve", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resultId: bakeItem.result.id, approved: true }),
+          });
+        } catch { /* silent */ }
+
+        // 3. Background bake (reposition with current settings to burn in text boxes / headline position)
+        try {
+          const itemShowBrand = brandByImage[bakeItem.id] ?? false;
+          const y = bakeItem.headlineY
+            ?? (bakeItem.result.headlineYOverride ?? bakeItem.usedSurpriseSpec?.headlineYOverride
+              ?? (bakeItem.result.templateId === "star_review" ? 0.2005
+                : bakeItem.result.templateId === "split_scene" ? 0.82
+                : bakeItem.result.templateId === "ai_background" ? 0.65 : 0.1484));
+          const scale = bakeItem.headlineFontScale ?? bakeItem.result.headlineFontScale ?? 1.0;
+          const bY = bakeItem.brandNameY ?? bakeItem.result.brandNameY;
+          const bScale = bakeItem.brandNameFontScale ?? bakeItem.result.brandNameFontScale;
+          const res = await fetch("/api/reposition", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              resultId: bakeItem.result.id,
+              headlineYOverride: y,
+              headlineFontScale: scale,
+              showBrand: itemShowBrand,
+              ...(bY !== undefined ? { brandNameY: bY } : {}),
+              ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}),
+              ...(bakeItem.headlineFont ? { headlineFont: bakeItem.headlineFont } : {}),
+              headlineColor: bakeItem.headlineColor ?? bakeItem.result?.headlineColor,
+              ...(bakeItem.brandColor !== undefined ? { brandColor: bakeItem.brandColor } : { brandColor: "#ffffff" }),
+              ...(bakeItem.overrideHeadline !== undefined ? { headlineOverride: bakeItem.overrideHeadline } : {}),
+              ...(bakeItem.textBoxes !== undefined ? { textBoxes: bakeItem.textBoxes } : {}),
+              ...(bakeItem.hideHeadline !== undefined ? { hideHeadline: bakeItem.hideHeadline } : {}),
+            }),
+          });
+          if (!res.ok) { const errBody = await res.json().catch(() => ({})); throw new Error(errBody.error || "Reposition failed"); }
+          const data = await res.json();
+          // Mark the newly-baked result as approved in the DB (fire-and-forget -- translate needs it)
+          fetch("/api/approve", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resultId: data.result.id, approved: true }),
+          }).catch(() => {});
+          const bakedResult = { ...bakeItem.result, ...data.result };
+          // Only update approvedResult with the baked PNG — leave result.pngUrl as the original
+          // so the canvas keeps showing the pre-bake image with interactive overlays intact.
+          // Downloads use approvedResult.pngUrl which has everything baked in.
+          updateItem(bakeItem.id, { approvedResult: bakedResult, bakePending: false, hasBaked: true });
+        } catch (err) {
+          console.error("[bake]", err);
+          updateItem(bakeItem.id, { bakePending: false, bakeError: "Bake failed — tap to retry" });
+        }
       }
+
+      // Staged draft -- render first, then bake
+      if (!item.result && item.stagedTemplateId) {
+        updateItem(item.id, { bakePending: true });
+        try {
+          const renderRes = await fetch("/api/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              imageId: item.imageId,
+              imageUrl: item.imageUrl,
+              imageWidth: item.imageWidth,
+              imageHeight: item.imageHeight,
+              forceTemplateId: item.stagedTemplateId,
+              autoFamily: false,
+              lang: item.lang ?? "en",
+              format: selectedFormatRef.current,
+              showBrand: brandByImage[item.id] ?? false,
+              personaId: personaByImage[item.id] ?? personas[0]?.id,
+              cropX: item.cropX ?? 0.5,
+              headline: item.overrideHeadline ?? item.defaultHeadline ?? undefined,
+              headlineYOverride: item.headlineY ?? item.usedSurpriseSpec?.headlineYOverride,
+              ...(item.usedSurpriseSpec ? { forceSurpriseSpec: item.usedSurpriseSpec } : {}),
+            }),
+          });
+          if (!renderRes.ok) throw new Error("Staged render failed");
+          const renderData = await renderRes.json();
+          const result: RenderResultItem = renderData.results[0];
+          updateItem(item.id, { result, status: "done" });
+          // Continue with bake using the fresh result
+          await doBake({ ...item, result, status: "done" });
+        } catch {
+          updateItem(item.id, { bakePending: false });
+        }
+        return;
+      }
+
+      await doBake(item);
     },
-    [updateItem, brandByImage]
+    [updateItem, brandByImage, personaByImage, personas]
   );
 
   // ── Download ────────────────────────────────────────────
@@ -1214,7 +1328,9 @@ setQueue((prev) => prev.map((item) =>
     (item) => item.status === "uploading" || item.status === "generating"
   );
   // Only show rows that have started processing (hide idle ones)
-  const visibleQueueItems = queue.filter((item) => item.status !== "idle");
+  const visibleQueueItems = queue.filter(
+    (item) => item.status !== "idle" && !item.parentImageId
+  );
 
   const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
   const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
@@ -1300,6 +1416,7 @@ setQueue((prev) => prev.map((item) =>
     updateItem(selectedItemId, { hideHeadline });
   }, [selectedItemId, updateItem]);
 
+
   const handleReposition = useCallback(async (normalizedY: number, fontScale = 1.0, brandNameY?: number, brandNameFontScale?: number, headlineColor?: string, brandColor?: string, headlineOverride?: string, approveAfter = false) => {
     if (!selectedItem?.result || detailLoading) return;
     setDetailLoading(true);
@@ -1330,7 +1447,7 @@ setQueue((prev) => prev.map((item) =>
       if (!item || !item.imageId || detailLoading) return;
       setDetailLoading(true);
       try {
-        const defaultSpec = LAYOUT_PREVIEWS.find((p) => p.layout === "clean_headline")!.spec;
+        const defaultSpec = LAYOUT_PREVIEWS_SHARED.find((p) => p.layout === "clean_headline")!.spec;
         const specWithHeadline = {
           ...defaultSpec,
           headlineYOverride: headlineY,
@@ -1428,8 +1545,10 @@ setQueue((prev) => prev.map((item) =>
         {/* Title */}
         <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06]">
           <div className="flex items-center justify-between">
-            <h1 className="text-base font-bold text-white tracking-tight">AI Ad Agent</h1>
-
+            <div>
+              <div className="text-[10px] font-semibold tracking-[0.18em] uppercase text-indigo-400 mb-0.5">Advaria</div>
+              <h1 className="text-base font-bold text-white tracking-tight">AI Ad Agent</h1>
+            </div>
           </div>
           <p className="text-[11px] text-gray-600 mt-0.5">
             AI picks best template · visual diversity guaranteed
@@ -1585,59 +1704,117 @@ setQueue((prev) => prev.map((item) =>
                 </button>
               )}
               {/* EN items */}
-              {(expandedLangGroups.has("en") || !queue.some((q) => q.translationSourceId)) && visibleQueueItems.filter((q) => !q.translationSourceId).map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => setSelectedItemId(item.id)}
-                  className={
-                    "w-full flex items-center gap-3 px-4 py-3 text-left transition border-l-2 " +
-                    (selectedItemId === item.id
-                      ? "bg-indigo-500/[0.08] border-indigo-500/60"
-                      : "hover:bg-white/[0.03] border-transparent")
-                  }
-                >
-                  <StatusIcon status={item.status} />
-                  <img
-                    src={item.previewUrl}
-                    alt=""
-                    loading="lazy"
-                    className="h-16 w-16 rounded-lg object-cover shrink-0 border border-white/10"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px]">
-                      {item.status === "uploading" && (
-                        <span className="text-indigo-400">Uploading...</span>
+              {(expandedLangGroups.has("en") || !queue.some((q) => q.translationSourceId)) && visibleQueueItems.filter((q) => !q.translationSourceId).map((item) => {
+                const itemDrafts = item.imageId ? queue.filter(i => i.parentImageId === item.imageId) : [];
+                const hasDrafts = !item.parentImageId;
+                const collapsed = collapsedDrafts.has(item.id);
+                const toggleCollapse = (e: React.MouseEvent) => { e.stopPropagation(); setCollapsedDrafts(prev => { const next = new Set(prev); collapsed ? next.delete(item.id) : next.add(item.id); return next; }); };
+                return (
+                <div key={item.id} className="flex flex-col border-b border-white/[0.03]">
+                  <div className={"flex items-stretch border-l-2 " + (selectedItemId === item.id ? "bg-indigo-500/[0.08] border-indigo-500/60" : "border-transparent")}>
+                    {hasDrafts ? (
+                      <button
+                        onClick={toggleCollapse}
+                        className="group/tog flex items-center justify-center w-6 shrink-0 hover:bg-white/[0.07] transition-colors"
+                        title={collapsed ? "Show layouts" : "Hide layouts"}
+                      >
+                        <svg className={"h-3 w-3 text-gray-600 group-hover/tog:text-gray-300 transition-all duration-200 " + (collapsed ? "-rotate-90" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                      </button>
+                    ) : (
+                      <div className="w-6 shrink-0" />
+                    )}
+                    <button
+                      onClick={() => setSelectedItemId(item.id)}
+                      className="flex-1 flex items-center gap-3 pr-4 py-3 text-left min-w-0 hover:bg-white/[0.03] transition-colors"
+                    >
+                      <div className="relative shrink-0">
+                        <img src={item.previewUrl} alt="" loading="lazy" className="h-16 w-16 rounded-lg object-cover border border-white/10" />
+                        {(item.status === "uploading" || item.status === "generating") && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                          </div>
+                        )}
+                        {itemDrafts.length > 0 && (
+                          <span className="absolute -bottom-1 -right-1 bg-gray-900 border border-white/20 text-gray-300 text-[11px] font-semibold tabular-nums rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1 leading-none shadow">
+                            {itemDrafts.length}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px]">
+                          {item.status === "uploading" && (<span className="text-indigo-400">Uploading...</span>)}
+                          {item.status === "generating" && (<span className="text-indigo-400">Generating...</span>)}
+                          {item.status === "analyzed" && !item.result && (<span className="text-indigo-300/60">Ready · pick a style</span>)}
+                          {item.status === "error" && (<span className="text-red-400 truncate block">{item.error ?? "Error"}</span>)}
+                          {(item.status === "done" || item.status === "analyzed") && item.result && (
+                            <span className="text-gray-600">
+                              {item.result.templateId === "ai_background" ? "AI Style" : item.usedSurpriseSpec?.layout ? (LAYOUT_LABELS[item.usedSurpriseSpec.layout] ?? "Layout") : (FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId)}{" "}
+                              · {item.result.format}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      {item.approved && (
+                        <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
                       )}
-                      {item.status === "generating" && (
-                        <span className="text-indigo-400">Generating...</span>
-                      )}
-                      {item.status === "analyzed" && !item.result && (
-                        <span className="text-indigo-300/60">Ready · pick a style</span>
-                      )}
-                      {item.status === "error" && (
-                        <span className="text-red-400 truncate block">
-                          {item.error ?? "Error"}
-                        </span>
-                      )}
-                      {(item.status === "done" || item.status === "analyzed") && item.result && (
-                        <span className="text-gray-600">
-                          {item.result.templateId === "ai_background"
-                            ? "AI Style"
-                            : item.usedSurpriseSpec?.layout
-                            ? (LAYOUT_LABELS[item.usedSurpriseSpec.layout] ?? "Layout")
-                            : (FAMILY_LABELS_STATIC[item.usedFamilyId ?? item.result.familyId] ?? item.result.familyId)}{" "}
-                          · {item.result.format}
-                        </span>
-                      )}
-                    </p>
+                    </button>
                   </div>
-                  {item.approved && (
-                    <svg className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
+                  {hasDrafts && !collapsed && (
+                    <div className="grid grid-cols-5 gap-1 pl-6 pr-3 pb-2 pt-1 bg-white/[0.01]">
+                      {/* Custom slot */}
+                      <div className="relative group">
+                        <button
+                          onClick={() => setSelectedItemId(item.id)}
+                          className={`relative block rounded overflow-hidden border transition w-full ${selectedItemId === item.id ? "border-indigo-400" : "border-dashed border-white/20 hover:border-white/40"}`}
+                        >
+                          <img src={item.imageUrl ?? item.previewUrl} alt="Custom" className="w-full h-auto" />
+                          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.3)" }}>
+                            <svg className="h-5 w-5 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l-4 1 1-4 9.293-9.293a1 1 0 011.414 0l2.586 2.586a1 1 0 010 1.414L9 13z" /></svg>
+                          </div>
+                          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[7px] text-center py-0.5">Custom</div>
+                        </button>
+                      </div>
+                      {itemDrafts.map(draft => (
+                        <div key={draft.id} className="relative group">
+                          <button
+                            onClick={() => setSelectedItemId(draft.id)}
+                            className={`relative block rounded overflow-hidden border transition ${
+                              selectedItemId === draft.id ? "border-indigo-400" : "border-white/10 hover:border-white/30"
+                            }`}
+                          >
+                            <img src={draft.result?.pngUrl ?? draft.imageUrl ?? draft.previewUrl} alt="draft" className="w-full h-auto" />
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[7px] text-center py-0.5 truncate px-0.5">
+                              {(() => { const tid = draft.result?.templateId ?? draft.stagedTemplateId ?? ""; const lv = (draft.result as any)?.layoutVariant; return (tid === "ai_surprise" && lv) ? (DRAFT_LABEL[lv] ?? lv.replace(/_/g, " ")) : (DRAFT_LABEL[tid] ?? "Draft"); })()}
+                            </div>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setQueue(prev => { const updated = prev.map(i => i.id === item.id ? { ...i, draftIds: (i.draftIds ?? []).filter(id => id !== draft.id) } : i); return updated.filter(i => i.id !== draft.id); }); if (selectedItemId === draft.id) setSelectedItemId(item.id); }}
+                            className="absolute -top-1 -right-1 w-4 h-4 bg-gray-700 hover:bg-red-500 rounded-full text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                          >&#x2715;</button>
+                        </div>
+                      ))}
+                      {/* Generate 3 more */}
+                      {item.draftGenerating ? (
+                        <div className="flex items-center justify-center aspect-[9/16] rounded border border-white/10">
+                          <div className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleGenerateFirstDrafts(item); }}
+                          className="flex flex-col items-center justify-center gap-1 aspect-[9/16] rounded border border-dashed border-white/20 hover:border-indigo-400/50 text-white/30 hover:text-indigo-300 transition"
+                          title="Generate 3 more"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+                          <span className="text-[9px] font-medium leading-tight text-center">3 more</span>
+                        </button>
+                      )}
+                    </div>
                   )}
-                </button>
-              ))}
+                </div>
+                );
+              })}
 
               {/* Translated language groups */}
               {TRANSLATION_TARGETS.filter((langConfig) =>
@@ -1768,7 +1945,7 @@ setQueue((prev) => prev.map((item) =>
                     </div>
                     <div className="flex items-center gap-2">
                       <div
-                        onClick={() => { const next = !showBrand; if (selectedItemId) setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); }}
+                        onClick={() => { const next = !showBrand; if (selectedItemId) { setBrandByImage(prev => ({ ...prev, [selectedItemId]: next })); updateItem(selectedItemId, { hasBaked: false, approvedResult: undefined }); } }}
                         className={"w-8 h-4 rounded-full flex items-center px-0.5 transition-colors cursor-pointer " + (showBrand ? "bg-indigo-600" : "bg-white/10")}
                       >
                         <div className={"w-3 h-3 rounded-full bg-white shadow transition-transform " + (showBrand ? "translate-x-4" : "translate-x-0")} />
@@ -2040,7 +2217,7 @@ setQueue((prev) => prev.map((item) =>
                   {/* <div className="w-px self-stretch bg-white/[0.06] mx-1 shrink-0" /> */}
 
                   {/* Layout options — Split Right, Full Overlay, etc. */}
-                  {LAYOUT_PREVIEWS.filter(p => p.layout === "clean_headline").map((p) => {
+                  {LAYOUT_PREVIEWS_SHARED.filter(p => p.layout === "clean_headline").map((p) => {
                     const previewUrl = sharedLayoutPreviews[p.layout];
                     const isActive = activeLayout === p.layout && selectedItem.result?.templateId === "ai_surprise";
                     return (
@@ -2149,7 +2326,23 @@ setQueue((prev) => prev.map((item) =>
                   />
                 ) : (
                 <>{/* Ad image — full width, fills all remaining space */}
-                <div className="flex-1 flex flex-row items-center p-4 overflow-hidden">
+                {/* Back link when a draft is selected */}
+                {selectedItem.parentImageId && (() => {
+                  const parent = queue.find(i => i.imageId === selectedItem.parentImageId && !i.parentImageId);
+                  if (!parent) return null;
+                  return (
+                    <div className="shrink-0 px-4 pt-2">
+                      <button
+                        onClick={() => setSelectedItemId(parent.id)}
+                        className="text-[11px] text-gray-500 hover:text-gray-300 transition flex items-center gap-1"
+                      >
+                        &#8592; Back to {parent.file?.name ?? "image"}
+                      </button>
+                    </div>
+                  );
+                })()}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="flex flex-row items-center flex-1 min-h-0 p-4 overflow-hidden">
                   {/* Left arrow — flex-1 spacer keeps image centered */}
                   <div className="flex-1 flex justify-end pr-3">
                     {prevItem && (
@@ -2166,7 +2359,8 @@ setQueue((prev) => prev.map((item) =>
                   </div>
 
                   {/* Image content */}
-                  <div className="relative h-full flex items-center justify-center" style={{ aspectRatio: (selectedItem.result?.format ?? selectedFormat).replace(":", "/"), maxWidth: "100%" }}>
+                  <div className="flex flex-col h-full" style={{ aspectRatio: (selectedItem.result?.format ?? selectedFormat).replace(":", "/"), maxWidth: "100%" }}>
+                  <div className="relative flex-1 min-h-0 flex items-center justify-center">
                   {selectedItem.splitEditing ? (
                     <div className="w-full h-full flex items-center justify-center overflow-auto">
                       <div className="w-full max-w-xs">
@@ -2184,7 +2378,8 @@ setQueue((prev) => prev.map((item) =>
                       </div>
                     </div>
                   ) : selectedItem.result ? (
-                    <div className={"relative h-full flex items-center justify-center" + (approveAnimating ? " approve-whoosh" : "")}>
+                    <div ref={canvasWrapRef} className="relative h-full flex items-center justify-center">
+                      {selectedItem.bakePending && <div className="absolute inset-0 z-20 flex items-center justify-center rounded-2xl bg-black/40 pointer-events-none"><div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent" /></div>}
                       {isCleanHeadline ? (
                         <LiveAdCanvas
                           key={selectedItemId ?? ""}
@@ -2312,11 +2507,97 @@ setQueue((prev) => prev.map((item) =>
                           onHideHeadlineChange={handleHideHeadlineChange}
                         />
                       ) : (
-                        <img
-                          ref={adImgRef}
-                          src={selectedItem.result.pngUrl}
-                          alt="Generated ad"
-                          className={"max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl transition-opacity duration-200 " + (detailLoading ? "opacity-30" : "opacity-100")}
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.result.pngUrl}
+                          subjectPos={selectedItem.result.subjectPos}
+                          headline=""
+                          spec={{}}
+                          format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
+                          initialY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY ?? 0.78}
+                          disableResize
+                          hideHeadline
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(_y, _scale, bY, bScale) => updateItem(selectedItemId!, { ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
+                          initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
+                          onColorChange={(_hColor, bColor) => { if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor }); }}
+                          textBoxes={selectedItem.textBoxes}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
+                        />
+                      )}
+
+
+                    </div>
+                  ) : selectedItem.stagedTemplateId ? (
+                    /* Staged draft — LiveAdCanvas with product photo + headline overlay */
+                    <div className={"relative h-full flex items-center justify-center"}>
+                      {(selectedItem.stagedTemplateId === "star_review" || selectedItem.stagedTemplateId === "quote_card") ? (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.imageUrl ?? selectedItem.previewUrl ?? ""}
+                          subjectPos={undefined}
+                          headline=""
+                          spec={{}}
+                          format={selectedFormat as "9:16" | "4:5" | "1:1"}
+                          initialY={0.2005}
+                          disableResize
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialBrandColor={selectedItem.brandColor ?? "#ffffff"}
+                          onColorChange={(_hColor, bColor) => { if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor }); }}
+                          renderOverlay={(cw) => (
+                            <StarCardPreview
+                              quote={selectedItem.defaultHeadline ?? ""}
+                              attribution={"— Verified customer"}
+                              containerW={cw}
+                            />
+                          )}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
+                        />
+                      ) : (
+                        <LiveAdCanvas
+                          key={selectedItemId ?? ""}
+                          imageUrl={selectedItem.imageUrl ?? selectedItem.previewUrl ?? ""}
+                          subjectPos={undefined}
+                          headline={selectedItem.overrideHeadline ?? selectedItem.defaultHeadline ?? ""}
+                          subtext={selectedItem.usedSurpriseSpec?.en?.subtext}
+                          spec={selectedItem.usedSurpriseSpec ?? {}}
+                          format={selectedFormat as "9:16" | "4:5" | "1:1"}
+                          initialY={selectedItem.headlineY ?? selectedItem.usedSurpriseSpec?.headlineYOverride ?? 0.1484}
+                          initialFontScale={selectedItem.headlineFontScale ?? 1.0}
+                          disabled={detailLoading}
+                          onApply={handleReposition}
+                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          brandName={showBrand ? BRAND_NAME : undefined}
+                          initialBrandY={selectedItem.brandNameY}
+                          initialBrandFontScale={selectedItem.brandNameFontScale}
+                          headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
+                          initialHeadlineColor={selectedItem.headlineColor ?? "#ffffff"}
+                          initialBrandColor={selectedItem.brandColor ?? "#ffffff"}
+                          onColorChange={(hColor, bColor) => {
+                            updateItem(selectedItemId!, {
+                              ...(hColor !== null ? { headlineColor: hColor } : {}),
+                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
+                            });
+                          }}
+                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          textBoxes={selectedItem.textBoxes}
+                          hideHeadline={selectedItem.hideHeadline}
+                          onTextBoxesChange={handleTextBoxesChange}
+                          onHideHeadlineChange={handleHideHeadlineChange}
                         />
                       )}
                     </div>
@@ -2328,9 +2609,15 @@ setQueue((prev) => prev.map((item) =>
                         className="max-h-full max-w-full rounded-2xl border border-white/10 object-contain shadow-2xl"
                         style={{ aspectRatio: "9/16" }}
                       />
-                      {!detailLoading && (
-                        <div className="absolute inset-0 flex items-end justify-center pb-10 pointer-events-none">
-                          <p className="text-xs text-gray-400 bg-black/50 rounded-full px-4 py-1.5 backdrop-blur-sm">Select a style to get started</p>
+                      {!detailLoading && !selectedItem.stagedTemplateId && !selectedItem.parentImageId && (
+                        <div className="absolute inset-0 rounded-2xl flex flex-col items-center justify-center pointer-events-none" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.25) 100%)" }}>
+                          <p className="text-lg font-semibold text-white tracking-wide text-center px-6" style={{ textShadow: "0 2px 8px rgba(0,0,0,0.8)" }}>Customize your ad</p>
+                          <p className="mt-1.5 text-[12px] text-gray-300 text-center px-6" style={{ textShadow: "0 1px 4px rgba(0,0,0,0.8)" }}>Choose a layout from the sidebar to get started</p>
+                        </div>
+                      )}
+                      {!detailLoading && !selectedItem.stagedTemplateId && selectedItem.parentImageId && (
+                        <div className="absolute inset-0 rounded-2xl flex items-end justify-center pb-8 pointer-events-none" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.6) 0%, transparent 50%)" }}>
+                          <p className="text-[11px] text-gray-500 px-4 py-2 rounded-full backdrop-blur-sm" style={{ background: "rgba(8,8,12,0.7)" }}>Pick a style from the sidebar</p>
                         </div>
                       )}
                     </>
@@ -2339,6 +2626,54 @@ setQueue((prev) => prev.map((item) =>
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="h-9 w-9 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
                     </div>
+                  )}
+                  </div>{/* end image area */}
+                  {(selectedItem.result || selectedItem.stagedTemplateId) && (
+                  <div className="shrink-0 flex gap-2 px-1 pt-1 pb-1">
+                        {/* Reject — only for draft ads */}
+                        {selectedItem.parentImageId && (
+                          <button
+                            onClick={() => {
+                              const parentId = selectedItem.parentImageId!;
+                              setQueue(prev => {
+                                const updated = prev.map(i =>
+                                  i.id === parentId
+                                    ? { ...i, draftIds: (i.draftIds ?? []).filter(id => id !== selectedItem.id) }
+                                    : i
+                                );
+                                return updated.filter(i => i.id !== selectedItem.id);
+                              });
+                              setSelectedItemId(parentId);
+                            }}
+                            className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-2.5 text-sm text-red-400/70 hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400 transition flex items-center justify-center gap-2"
+                          >
+                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            Reject
+                          </button>
+                        )}
+                        {/* Approve */}
+                        <button
+                          onClick={async () => {
+                            if (!selectedItem.result && !selectedItem.stagedTemplateId) return;
+                            if (!selectedItem.approved || !selectedItem.hasBaked) {
+                              handleApproveWithBake(selectedItem);
+                            }
+                          }}
+                          disabled={detailLoading || (selectedItem.approved && selectedItem.hasBaked)}
+                          className={"flex-1 rounded-xl border py-2.5 text-sm font-medium transition disabled:opacity-40 flex items-center justify-center gap-2 " + (selectedItem.approved ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400" : "border-white/10 bg-white/[0.04] text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")}
+                        >
+                          {selectedItem.bakePending ? (
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent shrink-0" />
+                          ) : (
+                            <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                            </svg>
+                          )}
+                          {selectedItem.bakePending ? "Baking…" : selectedItem.approved ? (selectedItem.hasBaked ? "Approved" : "Re-approve") : "Approve"}
+                        </button>
+                      </div>
                   )}
                   </div>{/* end image content */}
 
@@ -2356,43 +2691,8 @@ setQueue((prev) => prev.map((item) =>
                       </button>
                     )}
                   </div>
-                </div>
-
-                {/* Action bar */}
-                {selectedItem.result && (
-                  <div className="shrink-0 border-t border-white/[0.06] px-6 py-3 flex items-center gap-3">
-                    <button
-                      onClick={async () => {
-                        if (!selectedItem.result) return;
-                        if (!selectedItem.approved || !selectedItem.hasBaked) {
-                          // Approve or re-approve with bake
-                          handleApproveWithBake(selectedItem);
-                        }
-                        // If approved + hasBaked: button is disabled, nothing to do
-                      }}
-                      disabled={detailLoading || (selectedItem.approved && selectedItem.hasBaked)}
-                      className={"flex-1 rounded-xl border py-3 text-sm font-medium transition disabled:opacity-40 flex items-center justify-center gap-2 " + (selectedItem.approved ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-400" : "border-white/10 bg-white/[0.04] text-gray-400 hover:border-emerald-500/30 hover:text-emerald-400")}
-                    >
-                      {selectedItem.bakePending ? (
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-400 border-t-transparent shrink-0" />
-                      ) : (
-                        <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                        </svg>
-                      )}
-                      {selectedItem.bakePending ? "Baking…" : selectedItem.approved ? (selectedItem.hasBaked ? "Approved" : "Re-approve") : "Approve"}
-                    </button>
-                    <button
-                      onClick={() => handleDownload(selectedItem.result!.pngUrl, selectedItem)}
-                      className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] py-3 text-sm text-gray-400 hover:bg-white/[0.08] hover:text-white transition flex items-center justify-center gap-2"
-                    >
-                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V3" />
-                      </svg>
-                      Download
-                    </button>
-                  </div>
-                )}
+                  </div>{/* end inner row */}
+                  {/* Approve / Download — aligned with image width */}
                 {/* F9: bake error banner */}
                 {selectedItem.bakeError && (
                   <div className="shrink-0 px-6 pb-3 flex items-center gap-2">
@@ -2408,8 +2708,9 @@ setQueue((prev) => prev.map((item) =>
                     </button>
                   </div>
                 )}
-              </>
-              )}
+                </div>
+                </>
+                )}
               </div>
             ) : selectedItem.status === "error" ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center">
@@ -2432,7 +2733,7 @@ setQueue((prev) => prev.map((item) =>
 
             {/* ════ RIGHT PANEL — Approved ════════════════════════ */}
             {approvedCount > 0 && (
-            <div className={"w-[240px] shrink-0 flex flex-col border-l overflow-hidden" + (rightPanelGlowing ? " panel-glow" : " border-white/[0.06]")}>
+            <div ref={rightPanelRef} className="w-[240px] shrink-0 flex flex-col border-l border-white/[0.06] overflow-hidden">
 
           {/* Header */}
           <div className="shrink-0 px-5 pt-5 pb-4 border-b border-white/[0.06] flex items-center gap-2">

@@ -100,6 +100,7 @@ export function LiveAdCanvas({
   const dragRef = useRef({ mouseY: 0, startY: 0 });
   const scaleRef = useRef({ mouseY: 0, startScale: 1.0 });
 
+
   // Refs to capture current y/fScale/brandY/brandFScale inside event handlers (state is stale in closures)
   const yRef = useRef(initialY);
   const fScaleRef = useRef(initialFontScale);
@@ -137,7 +138,6 @@ export function LiveAdCanvas({
   useEffect(() => { setBrandFScale(initialBrandFontScale); brandFScaleRef.current = initialBrandFontScale; }, [initialBrandFontScale]);
   useEffect(() => { setUserHeadlineColor(initialHeadlineColor ?? null); }, [initialHeadlineColor]);
   useEffect(() => { setUserBrandColor(initialBrandColor ?? null); }, [initialBrandColor]);
-
   // Focus and position cursor at end when entering edit mode
   useEffect(() => {
     if (!editingHeadline || !editRef.current) return;
@@ -153,27 +153,13 @@ export function LiveAdCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingHeadline]);
 
-  // Inject Google Fonts link for selected headline font and Krona One (brand name)
-  useEffect(() => {
-    const toLoad: { id: string; url: string }[] = [
-      { id: 'gfont-Krona-One', url: 'https://fonts.googleapis.com/css2?family=Krona+One' },
-    ];
-    if (headlineFont === 'Montserrat')
-      toLoad.push({ id: 'gfont-Montserrat', url: 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700' });
-    for (const { id, url } of toLoad) {
-      if (document.getElementById(id)) continue;
-      const link = document.createElement('link');
-      link.id = id;
-      link.rel = 'stylesheet';
-      link.href = url;
-      document.head.appendChild(link);
-    }
-  }, [headlineFont]);
+  // Fonts loaded globally via globals.css @font-face (local files matching Playwright renderer)
 
 
   useEffect(() => {
     if (!isDragging && !isScaling && !isBrandDragging && !isBrandScaling) return;
     const containerH = containerRef.current?.getBoundingClientRect().height ?? 600;
+    const containerW = containerRef.current?.getBoundingClientRect().width ?? 337;
 
     const onMove = (e: MouseEvent) => {
       if (isBrandDragging) {
@@ -229,7 +215,7 @@ export function LiveAdCanvas({
   const subtextSize = fontSize * 0.28;
   const fontFamily = headlineFont ? `'${headlineFont}', sans-serif` : resolveFont(spec.font);
   const fontWeight = spec.fontWeight ?? 400;
-  const textColor = userHeadlineColor ?? "#ffffff";
+  const textColor = userHeadlineColor ?? spec.textColor ?? "#ffffff";
   const letterSpacing = LETTER_SPACING[spec.letterSpacingKey ?? "normal"] ?? "0";
   const textTransform = (spec.textTransform === "uppercase" ? "uppercase" : "none") as "uppercase" | "none";
   const textAlign = (spec.textAlign ?? "center") as "left" | "center" | "right";
@@ -245,8 +231,8 @@ export function LiveAdCanvas({
         className="relative overflow-hidden rounded-2xl border border-white/10 shadow-2xl"
         style={{ aspectRatio, height: "100%", width: "auto", maxWidth: "100%" }}
       >
-        {/* Background photo */}
         <img
+          data-canvas-img
           src={imageUrl}
           alt=""
           className="absolute inset-0 w-full h-full object-cover"

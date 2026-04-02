@@ -1,5 +1,6 @@
 import type { AdSpec, PixelRect, TemplateDefinition } from "@/lib/types";
 import { registerTemplate } from "./registry";
+import { BRAND_NAME } from "@/lib/customerConfig";
 
 const definition: TemplateDefinition = {
   id: "luxury_soft_frame_open",
@@ -56,7 +57,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
     justify-content:${justifyContent};
     overflow:hidden;
   ">
-    <p data-fit-headline style="
+    ${spec.hideHeadline ? "" : `<p data-fit-headline style="
       font-family:'${theme.fontHeadline}',serif;
       font-size:clamp(28px,${theme.fontSize}px,${theme.fontSize}px);
       font-weight:700;
@@ -66,8 +67,9 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
       margin:0;
       word-break:normal;
       overflow-wrap:normal;
-    ">${headline}</p>
+    ">${headline}</p>`}
   </div>
+  ${spec.showBrand ? (() => { const bfs = Math.round(36 * (spec.brandNameFontScale ?? 1.0)); const btp = spec.brandNameY !== undefined ? Math.round(h * spec.brandNameY) : Math.round(h * 0.78); return `<div style="position:absolute;top:${btp}px;left:0;width:100%;text-align:center;"><span style="font-family:'Krona One',sans-serif;font-size:${bfs}px;font-weight:400;color:${spec.brandColor ?? '#ffffff'};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`; })() : ""}
 </div>`;
 }
 
