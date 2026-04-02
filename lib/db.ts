@@ -187,11 +187,11 @@ async function migrate(): Promise<void> {
     }
   } catch { /* ignore */ }
 
-  // Migration: strip leading "- " from any copy in global_persona_headlines
+  // Migration: strip em dashes (—) from headlines in global_persona_headlines
   // (AI sometimes mimics bullet format from instructions)
   try {
     await client.execute(
-      `UPDATE global_persona_headlines SET headline = SUBSTR(headline, 3) WHERE headline LIKE '- %'`
+      `UPDATE global_persona_headlines SET headline = REPLACE(headline, '—', '') WHERE headline LIKE '%—%' AND slot_type != 'quote'`
     );
   } catch { /* ignore */ }
 
