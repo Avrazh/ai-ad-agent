@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
         ...(oldSpec.brandNameFontScale !== undefined ? { brandNameFontScale: oldSpec.brandNameFontScale } : {}),
         ...(oldSpec.cropX !== undefined ? { cropX: oldSpec.cropX } : {}),
         ...(oldSpec.cropY !== undefined ? { cropY: oldSpec.cropY } : {}),
+        ...(oldSpec.headlineColor !== undefined ? { headlineColor: oldSpec.headlineColor } : {}),
         ...(oldSpec.personaId ? { personaId: oldSpec.personaId } : {}),
       };
 
@@ -132,6 +133,7 @@ export async function POST(req: NextRequest) {
           brandNameY: newSpec.brandNameY,
           brandNameFontScale: newSpec.brandNameFontScale,
           attribution: newSpec.copy.attribution,
+          headlineColor: newSpec.headlineColor ?? newSpec.surpriseSpec?.textColor ?? newSpec.theme?.color,
           subjectPos: cssSubjectPos,
         },
       });

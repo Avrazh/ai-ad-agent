@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
       brandColor: oldSpec.brandColor,
       ...(oldSpec.scenePersonaId ? { scenePersonaId: oldSpec.scenePersonaId } : {}),
       ...(oldSpec.headlineFont ? { headlineFont: oldSpec.headlineFont } : {}),
+      ...(oldSpec.headlineColor !== undefined ? { headlineColor: oldSpec.headlineColor } : {}),
       ...((newPersonaId ?? oldSpec.personaId) ? { personaId: newPersonaId ?? oldSpec.personaId } : {}),
     };
 
@@ -172,6 +173,7 @@ export async function POST(req: NextRequest) {
         createdAt: new Date().toISOString(),
         headlineText: newSpec.copy.headline ?? newSpec.copy.quote,
         attribution: newSpec.copy.attribution,
+        headlineColor: newSpec.headlineColor ?? newSpec.surpriseSpec?.textColor ?? newSpec.theme?.color,
         subjectPos,
       },
       replacedId: resultId,
