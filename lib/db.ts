@@ -160,6 +160,32 @@ async function migrate(): Promise<void> {
   for (const t of ["segments", "ai_style_pools", "copy_slots", "persona_image_fit", "persona_headlines"]) {
     try { await client.execute(`DROP TABLE IF EXISTS ${t}`); } catch { /* ignore */ }
   }
+  // Migration: fix render_results if it has a stale FOREIGN KEY on headline_id
+  // (copy_slots was dropped, but old DBs still have the FK, so every INSERT fails)
+  try {
+    const schemaRes = await client.execute(
+      `SELECT sql FROM sqlite_master WHERE type='table' AND name='render_results'`
+    );
+    const schemaSql = (schemaRes.rows[0]?.sql as string) ?? '';
+    if (/FOREIGN KEY\s*\(\s*headline_id\s*\)/i.test(schemaSql)) {
+      await client.execute(`DROP TABLE IF EXISTS render_results`);
+      await client.execute(`CREATE TABLE render_results (
+        id           TEXT PRIMARY KEY,
+        ad_spec_id   TEXT NOT NULL,
+        image_id     TEXT NOT NULL,
+        family_id    TEXT NOT NULL DEFAULT '',
+        template_id  TEXT NOT NULL,
+        headline_id  TEXT NOT NULL DEFAULT '',
+        png_url      TEXT NOT NULL,
+        approved     INTEGER NOT NULL DEFAULT 0,
+        replaced_by  TEXT,
+        ai_bg_png_url TEXT,
+        created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+        FOREIGN KEY (ad_spec_id) REFERENCES ad_specs(id),
+        FOREIGN KEY (image_id)   REFERENCES images(id)
+      )`);
+    }
+  } catch { /* ignore */ }
 
   // Seed default personas if table is empty
   const personaCount = await client.execute(`SELECT COUNT(*) as n FROM personas`);

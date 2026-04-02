@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       scenePersonaId,
       personaId,
       cropX,
+      cropY,
       headline,
       headlineYOverride,
       splitSecondImageId,
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
       scenePersonaId?: string;
       personaId?: string;
       cropX?: number;
+      cropY?: number;
       headline?: string;
       headlineYOverride?: number;
       splitSecondImageId?: string;
@@ -208,6 +210,7 @@ export async function POST(req: NextRequest) {
           headlineFontScale: spec.surpriseSpec?.headlineFontScale ?? 1.0,
           subjectPos: cssSubjectPos,
           attribution: spec.copy.attribution,
+          headlineColor: spec.headlineColor ?? spec.surpriseSpec?.textColor ?? spec.theme?.color,
         }],
       });
     }
@@ -278,6 +281,7 @@ export async function POST(req: NextRequest) {
           ...(scenePersonaId ? { scenePersonaId } : {}),
           ...(personaId ? { personaId } : {}),
           ...(cropX !== undefined ? { cropX } : {}),
+          ...(cropY !== undefined ? { cropY } : {}),
           ...(splitSecondImageId ? { splitSecondImageId } : {}),
           ...(splitDividerX !== undefined ? { splitDividerX } : {}),
           ...(splitProductPanX !== undefined ? { splitProductPanX } : {}),
@@ -321,7 +325,9 @@ export async function POST(req: NextRequest) {
         headlineFontScale: spec.surpriseSpec?.headlineFontScale ?? 1.0,
         headlineYOverride: spec.headlineYOverride,
         attribution: spec.copy.attribution,
+        headlineColor: spec.headlineColor ?? spec.surpriseSpec?.textColor ?? spec.theme?.color,
         subjectPos: cssSubjectPos,
+
       });
     }
 

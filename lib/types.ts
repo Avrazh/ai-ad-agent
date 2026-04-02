@@ -152,6 +152,7 @@ export type AdSpec = {
   scenePersonaId?: string;     // scene image ID for split_scene template
   personaId?: string;          // active persona when the ad was generated
   cropX?: number;               // user-chosen horizontal crop center (0-1); overrides auto-detect
+  cropY?: number;               // user-chosen vertical crop center (0-1); default 0.5
   headlineFont?: string;        // user-selected headline font family (e.g. "Montserrat", "Playfair Display")
   headlineColor?: string;       // user-set text color for headline overlay (overrides auto-detect)
   headlineFontScale?: number;   // multiplier for headline font size; 1.0 = default

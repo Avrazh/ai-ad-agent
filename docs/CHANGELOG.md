@@ -1,4 +1,4 @@
-# AI Ad Agent — Customer Changelog
+# Advaria — Customer Changelog
 
 This document tracks what has been built and delivered, intended for customer communication and invoicing.
 

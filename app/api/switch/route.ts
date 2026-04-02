@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
         ...(oldSpec.brandNameY !== undefined ? { brandNameY: oldSpec.brandNameY } : {}),
         ...(oldSpec.brandNameFontScale !== undefined ? { brandNameFontScale: oldSpec.brandNameFontScale } : {}),
         ...(oldSpec.cropX !== undefined ? { cropX: oldSpec.cropX } : {}),
+        ...(oldSpec.cropY !== undefined ? { cropY: oldSpec.cropY } : {}),
         ...(oldSpec.personaId ? { personaId: oldSpec.personaId } : {}),
       };
 

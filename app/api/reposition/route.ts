@@ -13,7 +13,7 @@ import { sampleBrandZoneBrightness } from "@/lib/imageUtils";
 
 export async function POST(req: NextRequest) {
   try {
-    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride, splitSecondImageId, splitDividerX, splitProductPanX, splitSecondPanX, splitSwapped, textBoxes, hideHeadline } = await req.json() as {
+    const { resultId, headlineYOverride, headlineFontScale, brandNameY, brandNameFontScale, headlineFont, showBrand, headlineColor, brandColor, headlineOverride, splitSecondImageId, splitDividerX, splitProductPanX, splitSecondPanX, splitSwapped, textBoxes, hideHeadline, cropY } = await req.json() as {
       resultId: string;
       headlineYOverride: number;
       headlineFontScale?: number;
@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
       splitSwapped?: boolean;
       textBoxes?: import("@/lib/types").TextBox[];
       hideHeadline?: boolean;
+      cropY?: number;
     };
     if (!resultId || headlineYOverride === undefined) {
       return NextResponse.json({ error: "resultId and headlineYOverride required" }, { status: 400 });
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
       ...(splitSwapped !== undefined ? { splitSwapped } : {}),
       ...(textBoxes !== undefined ? { textBoxes } : {}),
       ...(hideHeadline !== undefined ? { hideHeadline } : {}),
+      ...(cropY !== undefined ? { cropY } : {}),
     };
 
     if (headlineOverride !== undefined) {
@@ -79,8 +81,12 @@ export async function POST(req: NextRequest) {
     if (brandColor !== undefined) {
       newSpec.brandColor = brandColor;
     } else if (brandNameY !== undefined && newSpec.showBrand) {
-      const brightness = await sampleBrandZoneBrightness(newSpec.imageId, brandNameY);
-      newSpec.brandColor = brightness <= 128 ? '#FFFFFF' : '#1a1a1a';
+      try {
+        const brightness = await sampleBrandZoneBrightness(newSpec.imageId, brandNameY);
+        newSpec.brandColor = brightness <= 128 ? '#FFFFFF' : '#1a1a1a';
+      } catch {
+        newSpec.brandColor = '#FFFFFF';
+      }
     }
 
     await insertAdSpec(newSpec.id, newSpec.imageId, JSON.stringify(newSpec));

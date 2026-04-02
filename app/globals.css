@@ -1,4 +1,19 @@
 @import "tailwindcss";
+/* Local fonts — same files used by the Playwright renderer, ensuring canvas matches baked PNG */
+@font-face { font-family: 'Playfair Display'; font-weight: 400; font-style: normal; src: url('/fonts/PlayfairDisplay-Regular.woff') format('woff'); }
+@font-face { font-family: 'Playfair Display'; font-weight: 700; font-style: normal; src: url('/fonts/PlayfairDisplay-Bold.woff') format('woff'); }
+@font-face { font-family: 'Inter'; font-weight: 400; font-style: normal; src: url('/fonts/Inter-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Inter'; font-weight: 700; font-style: normal; src: url('/fonts/Inter-Bold.ttf') format('truetype'); }
+@font-face { font-family: 'Bebas Neue'; font-weight: 400; font-style: normal; src: url('/fonts/BebasNeue-Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Krona One'; font-weight: 400; font-style: normal; src: url('/fonts/KronaOne-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-weight: 400; font-style: normal; src: url('/fonts/Montserrat-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Montserrat'; font-weight: 700; font-style: normal; src: url('/fonts/Montserrat-Bold.woff2') format('woff2'); }
+@font-face { font-family: 'Abril Fatface'; font-weight: 400; font-style: normal; src: url('/fonts/AbrilFatface-Regular.woff') format('woff'); }
+@font-face { font-family: 'Bodoni Moda'; font-weight: 400; font-style: normal; src: url('/fonts/BodoniModa-Regular.woff') format('woff'); }
+@font-face { font-family: 'Bodoni Moda'; font-weight: 700; font-style: normal; src: url('/fonts/BodoniModa-Bold.woff') format('woff'); }
+@font-face { font-family: 'Tangerine'; font-weight: 400; font-style: normal; src: url('/fonts/Tangerine-Regular.woff') format('woff'); }
+@font-face { font-family: 'Tangerine'; font-weight: 700; font-style: normal; src: url('/fonts/Tangerine-Bold.woff') format('woff'); }
+
 
 :root {
   --background: #ffffff;
@@ -27,10 +42,9 @@ body {
 
 /* F9 — Approve animation */
 @keyframes approve-whoosh {
-  0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0); transform: scale(1); opacity: 1; }
-  25%  { box-shadow: 0 0 48px 20px rgba(52,211,153,0.5); transform: scale(1.02); opacity: 1; }
-  60%  { box-shadow: 0 0 24px 8px rgba(52,211,153,0.2); transform: scale(0.92); opacity: 0.8; }
-  100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); transform: scale(0.45) translateX(220px); opacity: 0; }
+  0%   { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
+  30%  { box-shadow: 0 0 40px 12px rgba(52,211,153,0.45); }
+  100% { box-shadow: 0 0 0 0 rgba(52,211,153,0); }
 }
 
 @keyframes panel-glow {
@@ -40,9 +54,11 @@ body {
 }
 
 .approve-whoosh {
-  animation: approve-whoosh 700ms cubic-bezier(0.4,0,0.2,1) forwards;
+  animation: approve-whoosh 600ms ease-out forwards;
 }
 
 .panel-glow {
   animation: panel-glow 1400ms ease-out forwards;
 }
+
+@keyframes spin { to { transform: rotate(360deg); } }

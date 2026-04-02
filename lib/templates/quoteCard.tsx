@@ -1,5 +1,6 @@
 import type { AdSpec, PixelRect, TemplateDefinition } from "@/lib/types";
 import { registerTemplate } from "./registry";
+import { BRAND_NAME } from "@/lib/customerConfig";
 
 const definition: TemplateDefinition = {
   id: "quote_card",
@@ -54,6 +55,7 @@ function build(spec: AdSpec, imageBase64: string, zonePx: PixelRect): string {
       <div style="font-family:'${theme.fontHeadline}',sans-serif;font-size:clamp(13px,${Math.round(theme.fontSize * 0.72)}px,${Math.round(theme.fontSize * 0.72)}px);font-weight:400;color:#3A3A3A;">${attribution}</div>
     </div>
   </div>
+  ${spec.showBrand ? (() => { const bfs = Math.round(36 * (spec.brandNameFontScale ?? 1.0)); const btp = spec.brandNameY !== undefined ? Math.round(h * spec.brandNameY) : Math.round(h * 0.78); return `<div style="position:absolute;top:${btp}px;left:0;width:100%;text-align:center;"><span style="font-family:'Krona One',sans-serif;font-size:${bfs}px;font-weight:400;color:${spec.brandColor ?? '#ffffff'};letter-spacing:0.25em;text-transform:uppercase;">${BRAND_NAME}</span></div>`; })() : ""}
 </div>`;
 }
 
