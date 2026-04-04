@@ -286,6 +286,22 @@ function StatusIcon({ status }: { status: QueueItem["status"] }) {
   return <div className="h-3.5 w-3.5 shrink-0" />;
 }
 
+// Stable empty spec — used when usedSurpriseSpec is null to avoid creating a new {} each render
+const EMPTY_SURPRISE_SPEC = {} as Record<string, never>;
+const SPEC_AI_BG = { font: "serif", fontWeight: 700, textAlign: "center" } as const;
+
+// Font picker options — add new fonts here; each entry must match an @font-face in globals.css
+// and have corresponding files loaded in the FontFace preload effect in Home().
+const HEADLINE_FONTS: { key: string; label: string; file400: string; file700: string; format: string }[] = [
+  { key: "Playfair Display", label: "Playfair Display", file400: "/fonts/PlayfairDisplay-Regular.woff",  file700: "/fonts/PlayfairDisplay-Bold.woff",   format: "woff"      },
+  { key: "Montserrat",       label: "Montserrat",       file400: "/fonts/Montserrat-Regular.woff2",      file700: "/fonts/Montserrat-Bold.woff2",        format: "woff2"     },
+  { key: "Bebas Neue",       label: "Bebas Neue",       file400: "/fonts/BebasNeue-Regular.ttf",         file700: "/fonts/BebasNeue-Regular.ttf",         format: "truetype"  },
+  { key: "Abril Fatface",    label: "Abril Fatface",    file400: "/fonts/AbrilFatface-Regular.woff",     file700: "/fonts/AbrilFatface-Regular.woff",     format: "woff"      },
+  { key: "Bodoni Moda",      label: "Bodoni Moda",      file400: "/fonts/BodoniModa-Regular.woff",       file700: "/fonts/BodoniModa-Bold.woff",          format: "woff"      },
+  { key: "Inter",            label: "Inter",            file400: "/fonts/Inter-Regular.ttf",             file700: "/fonts/Inter-Bold.ttf",                format: "truetype"  },
+  { key: "Krona One",        label: "Krona One",        file400: "/fonts/KronaOne-Regular.woff2",        file700: "/fonts/KronaOne-Regular.woff2",        format: "woff2"     },
+];
+
 export default function Home() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -329,8 +345,23 @@ export default function Home() {
   const [translateSelectedLangs, setTranslateSelectedLangs] = useState<Set<string>>(new Set());
   const [expandedLangGroups, setExpandedLangGroups] = useState<Set<string>>(new Set(["en"]));
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+  // Stable display state — isolated from background queue mutations so the canvas never flickers
+  const [displayedItem, setDisplayedItem] = useState<QueueItem | null>(null);
   const translatePickerRef = useRef<HTMLDivElement>(null);
   const usedStyleIdsRef = useRef<string[]>([]);
+
+  // Pre-load critical fonts via the JavaScript FontFace API so they survive
+  // Next.js CSS HMR stylesheet replacements that would otherwise cause FOUT.
+  useEffect(() => {
+    HEADLINE_FONTS.forEach(({ key, file400, file700, format }) => {
+      const load = (url: string, weight: string) => {
+        const face = new FontFace(key, `url(${url}) format("${format}")`, { weight, style: "normal" });
+        face.load().then(loaded => document.fonts.add(loaded)).catch(() => {});
+      };
+      load(file400, "400");
+      load(file700, "700");
+    });
+  }, []);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const adImgRef = useRef<HTMLImageElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -340,6 +371,8 @@ export default function Home() {
   queueRef.current = queue;
   const selectedItemIdRef = useRef<string | null>(null);
   selectedItemIdRef.current = selectedItemId;
+  // Ref mirrors for stable callbacks — avoid closing over frequently-changing state
+  const showBrandRef = useRef(false);
   const selectedLangRef = useRef<Language>("en");
   selectedLangRef.current = selectedLang;
   const selectedFormatRef = useRef<Format>("9:16");
@@ -355,11 +388,70 @@ export default function Home() {
 setQueue((prev) => prev.map((item) =>
       item.id === id ? { ...item, ...patch, ...(invalidatesBake ? { hasBaked: false, approvedResult: undefined } : {}) } : item
     ));
+    // Keep displayedItem in sync when the selected item is patched
+    if (id === selectedItemIdRef.current) {
+      const bakeReset = invalidatesBake ? { hasBaked: false as const, approvedResult: undefined } : {};
+      setDisplayedItem(prev => prev && prev.id === id ? { ...prev, ...patch, ...bakeReset } : prev);
+    }
   }, []);
 
   const handleSelectItem = useCallback((id: string) => {
     setSelectedItemId(id);
   }, []);
+
+  // Sync displayedItem when the user selects a different item
+  useEffect(() => {
+    setDisplayedItem(selectedItemId ? (queueRef.current.find(i => i.id === selectedItemId) ?? null) : null);
+  }, [selectedItemId]);
+
+  // Stable canvas callbacks — stable references prevent LiveAdCanvas from re-rendering during background processing
+  const onCanvasChange = useCallback((y: number, scale: number, bY?: number, bScale?: number) => {
+    if (!selectedItemIdRef.current) return;
+    updateItem(selectedItemIdRef.current, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) });
+  }, [updateItem]);
+
+  const onCanvasColorChange = useCallback((hColor: string | null, bColor: string | null) => {
+    if (!selectedItemIdRef.current) return;
+    if (hColor !== null) updateItem(selectedItemIdRef.current, { headlineColor: hColor });
+    if (bColor !== null && showBrandRef.current) updateItem(selectedItemIdRef.current, { brandColor: bColor });
+  }, [updateItem]);
+
+  const onCanvasHeadlineChange = useCallback((t: string) => {
+    if (!selectedItemIdRef.current) return;
+    updateItem(selectedItemIdRef.current, { overrideHeadline: t });
+  }, [updateItem]);
+
+  const onCanvasTextBoxesChange = useCallback((boxes: import("@/lib/types").TextBox[]) => {
+    if (!selectedItemIdRef.current) return;
+    updateItem(selectedItemIdRef.current, { textBoxes: boxes });
+  }, [updateItem]);
+
+  const onFontChange = useCallback((fontKey: string) => {
+    if (!selectedItemIdRef.current) return;
+    updateItem(selectedItemIdRef.current, { headlineFont: fontKey });
+  }, [updateItem]);
+
+  const onCanvasBrandChange = useCallback((_y: number, _scale: number, bY?: number, bScale?: number) => {
+    if (!selectedItemIdRef.current) return;
+    updateItem(selectedItemIdRef.current, { ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) });
+  }, [updateItem]);
+
+  // Stable renderOverlay callbacks — stable during background processing
+  const renderStarOverlay = useCallback((cw: number) => (
+    <StarCardPreview
+      quote={displayedItem?.result?.headlineText ?? ""}
+      attribution={displayedItem?.result?.attribution ?? ""}
+      containerW={cw}
+    />
+  ), [displayedItem]);
+
+  const renderStagedStarOverlay = useCallback((cw: number) => (
+    <StarCardPreview
+      quote={displayedItem?.defaultHeadline ?? ""}
+      attribution={"— Verified customer"}
+      containerW={cw}
+    />
+  ), [displayedItem]);
 
   // Auto-select first done item when nothing is selected.
   // Uses selectedItemIdRef (not state) to avoid stale closure — selectedItemId is
@@ -1325,9 +1417,11 @@ setQueue((prev) => prev.map((item) =>
     (item) => item.status !== "idle" && !item.parentImageId
   );
 
-  const selectedItem = queue.find((item) => item.id === selectedItemId) ?? null;
-  const selectedIdx = selectedItem ? queue.indexOf(selectedItem) : -1;
+  // displayedItem is the stable version — does not update on background queue changes
+  const selectedItem = displayedItem;
+  const selectedIdx = selectedItemId ? queue.findIndex(i => i.id === selectedItemId) : -1;
   const showBrand = selectedItemId != null ? (brandByImage[selectedItemId] ?? false) : false;
+  showBrandRef.current = showBrand;
   const activeLayout = selectedItem?.usedSurpriseSpec?.layout ?? null;
   const prevItem = selectedIdx > 0 ? queue[selectedIdx - 1] : null;
   const nextItem =
@@ -1974,25 +2068,17 @@ setQueue((prev) => prev.map((item) =>
                 {/* Stage: Font */}
                 <div className="flex flex-col justify-center gap-1.5 px-5 border-r-2 border-white/[0.08] shrink-0">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">Font</span>
-                  <div className="flex items-center gap-1.5">
-                    {([
-                      { key: "Playfair Display", label: "Playfair" },
-                      { key: "Montserrat",        label: "Montserrat" },
-                    ] as { key: string; label: string }[]).map(({ key, label }) => {
-                      const active = (selectedItem?.headlineFont ?? "Playfair Display") === key;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => selectedItemId && updateItem(selectedItemId, { headlineFont: key })}
-                          disabled={!selectedItem?.result}
-                          className={"rounded-md px-3 py-1.5 text-sm font-medium border transition disabled:opacity-30 " + (active ? pillActive : pillInactive)}
-                          style={{ fontFamily: `'${key}', sans-serif` }}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <select
+                    disabled={!selectedItem?.result}
+                    value={selectedItem?.headlineFont ?? "Playfair Display"}
+                    onChange={e => selectedItemId && updateItem(selectedItemId, { headlineFont: e.target.value })}
+                    style={{ fontFamily: `'${selectedItem?.headlineFont ?? "Playfair Display"}', sans-serif` }}
+                    className="rounded-md px-2 py-1.5 text-sm font-medium border border-white/20 bg-[#0a0d12] text-white disabled:opacity-30 cursor-pointer focus:outline-none focus:border-indigo-500 min-w-[140px]"
+                  >
+                    {HEADLINE_FONTS.map(({ key, label }) => (
+                      <option key={key} value={key} style={{ fontFamily: `'${key}', sans-serif` }}>{label}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Stage: Persona */}
@@ -2380,26 +2466,21 @@ setQueue((prev) => prev.map((item) =>
                           subjectPos={selectedItem.result.subjectPos}
                           headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? selectedItem.usedSurpriseSpec?.en?.headline ?? ""}
                           subtext={selectedItem.usedSurpriseSpec?.en?.subtext}
-                          spec={selectedItem.usedSurpriseSpec ?? {}}
+                          spec={selectedItem.usedSurpriseSpec ?? EMPTY_SURPRISE_SPEC}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
                           initialFontScale={selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0}
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
                           initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
-                          onColorChange={(hColor, bColor) => {
-                            updateItem(selectedItemId!, {
-                              ...(hColor !== null ? { headlineColor: hColor } : {}),
-                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
-                            });
-                          }}
-                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          onColorChange={onCanvasColorChange}
+                          onHeadlineChange={onCanvasHeadlineChange}
                           textBoxes={selectedItem.textBoxes}
                           hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
@@ -2411,28 +2492,20 @@ setQueue((prev) => prev.map((item) =>
                           imageUrl={selectedItem.imageUrl ?? selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
                           headline=""
-                          spec={{}}
+                          spec={EMPTY_SURPRISE_SPEC}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
                           disableResize
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
-                          onColorChange={(_hColor, bColor) => {
-                            if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor });
-                          }}
-                          renderOverlay={(cw) => (
-                            <StarCardPreview
-                              quote={selectedItem.result!.headlineText ?? ""}
-                              attribution={selectedItem.result!.attribution ?? ""}
-                              containerW={cw}
-                            />
-                          )}
+                          onColorChange={onCanvasColorChange}
+                          renderOverlay={renderStarOverlay}
                           textBoxes={selectedItem.textBoxes}
                           hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
@@ -2444,25 +2517,20 @@ setQueue((prev) => prev.map((item) =>
                           imageUrl={selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
                           headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? ""}
-                          spec={{}}
+                          spec={EMPTY_SURPRISE_SPEC}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
                           initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
-                          onColorChange={(hColor, bColor) => {
-                            updateItem(selectedItemId!, {
-                              ...(hColor !== null ? { headlineColor: hColor } : {}),
-                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
-                            });
-                          }}
-                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          onColorChange={onCanvasColorChange}
+                          onHeadlineChange={onCanvasHeadlineChange}
                           textBoxes={selectedItem.textBoxes}
                           hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
@@ -2474,26 +2542,21 @@ setQueue((prev) => prev.map((item) =>
                           imageUrl={selectedItem.aiBgPngUrl ?? selectedItem.result.pngUrl}
                           subjectPos="50% 50%"
                           headline={selectedItem.overrideHeadline ?? selectedItem.result.headlineText ?? ""}
-                          spec={{ font: "serif", fontWeight: 700, textAlign: "center" }}
+                          spec={SPEC_AI_BG}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={initialHeadlineY}
                           initialFontScale={selectedItem.headlineFontScale ?? selectedItem.result.headlineFontScale ?? 1.0}
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           initialHeadlineColor={selectedItem.headlineColor ?? selectedItem.result?.headlineColor}
                           initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
-                          onColorChange={(hColor, bColor) => {
-                            updateItem(selectedItemId!, {
-                              ...(hColor !== null ? { headlineColor: hColor } : {}),
-                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
-                            });
-                          }}
-                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          onColorChange={onCanvasColorChange}
+                          onHeadlineChange={onCanvasHeadlineChange}
                           textBoxes={selectedItem.textBoxes}
                           hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
@@ -2505,19 +2568,19 @@ setQueue((prev) => prev.map((item) =>
                           imageUrl={selectedItem.result.pngUrl}
                           subjectPos={selectedItem.result.subjectPos}
                           headline=""
-                          spec={{}}
+                          spec={EMPTY_SURPRISE_SPEC}
                           format={selectedItem.result.format as "9:16" | "4:5" | "1:1"}
                           initialY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY ?? 0.78}
                           disableResize
                           hideHeadline
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(_y, _scale, bY, bScale) => updateItem(selectedItemId!, { ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasBrandChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY ?? selectedItem.result?.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale ?? selectedItem.result?.brandNameFontScale}
                           initialBrandColor={selectedItem.brandColor ?? selectedItem.result?.brandColor}
-                          onColorChange={(_hColor, bColor) => { if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor }); }}
+                          onColorChange={onCanvasColorChange}
                           textBoxes={selectedItem.textBoxes}
                           onTextBoxesChange={handleTextBoxesChange}
                           onHideHeadlineChange={handleHideHeadlineChange}
@@ -2535,26 +2598,20 @@ setQueue((prev) => prev.map((item) =>
                           imageUrl={selectedItem.imageUrl ?? selectedItem.previewUrl ?? ""}
                           subjectPos={undefined}
                           headline=""
-                          spec={{}}
+                          spec={EMPTY_SURPRISE_SPEC}
                           format={selectedFormat as "9:16" | "4:5" | "1:1"}
                           initialY={0.2005}
                           disableResize
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           initialBrandColor={selectedItem.brandColor ?? "#ffffff"}
-                          onColorChange={(_hColor, bColor) => { if (bColor !== null && showBrand) updateItem(selectedItemId!, { brandColor: bColor }); }}
-                          renderOverlay={(cw) => (
-                            <StarCardPreview
-                              quote={selectedItem.defaultHeadline ?? ""}
-                              attribution={"— Verified customer"}
-                              containerW={cw}
-                            />
-                          )}
+                          onColorChange={onCanvasColorChange}
+                          renderOverlay={renderStagedStarOverlay}
                           textBoxes={selectedItem.textBoxes}
                           hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}
@@ -2567,26 +2624,21 @@ setQueue((prev) => prev.map((item) =>
                           subjectPos={undefined}
                           headline={selectedItem.overrideHeadline ?? selectedItem.defaultHeadline ?? ""}
                           subtext={selectedItem.usedSurpriseSpec?.en?.subtext}
-                          spec={selectedItem.usedSurpriseSpec ?? {}}
+                          spec={selectedItem.usedSurpriseSpec ?? EMPTY_SURPRISE_SPEC}
                           format={selectedFormat as "9:16" | "4:5" | "1:1"}
                           initialY={selectedItem.headlineY ?? selectedItem.usedSurpriseSpec?.headlineYOverride ?? 0.1484}
                           initialFontScale={selectedItem.headlineFontScale ?? 1.0}
                           disabled={detailLoading}
                           onApply={handleReposition}
-                          onChange={(y, scale, bY, bScale) => updateItem(selectedItemId!, { headlineY: y, headlineFontScale: scale, ...(bY !== undefined ? { brandNameY: bY } : {}), ...(bScale !== undefined ? { brandNameFontScale: bScale } : {}) })}
+                          onChange={onCanvasChange}
                           brandName={showBrand ? BRAND_NAME : undefined}
                           initialBrandY={selectedItem.brandNameY}
                           initialBrandFontScale={selectedItem.brandNameFontScale}
                           headlineFont={selectedItem.headlineFont ?? "Playfair Display"}
                           initialHeadlineColor={selectedItem.headlineColor ?? "#ffffff"}
                           initialBrandColor={selectedItem.brandColor ?? "#ffffff"}
-                          onColorChange={(hColor, bColor) => {
-                            updateItem(selectedItemId!, {
-                              ...(hColor !== null ? { headlineColor: hColor } : {}),
-                              ...(bColor !== null && showBrand ? { brandColor: bColor } : {}),
-                            });
-                          }}
-                          onHeadlineChange={(t) => updateItem(selectedItemId!, { overrideHeadline: t })}
+                          onColorChange={onCanvasColorChange}
+                          onHeadlineChange={onCanvasHeadlineChange}
                           textBoxes={selectedItem.textBoxes}
                           hideHeadline={selectedItem.hideHeadline}
                           onTextBoxesChange={handleTextBoxesChange}

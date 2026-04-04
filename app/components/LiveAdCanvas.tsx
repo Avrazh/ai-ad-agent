@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, memo } from "react";
 import { DraggableTextBlock } from "./DraggableTextBlock";
 import type { TextBox } from "@/lib/types";
 
@@ -59,7 +59,7 @@ function resolveFont(f?: string): string {
   return "var(--font-geist-sans), sans-serif";
 }
 
-export function LiveAdCanvas({
+function LiveAdCanvas({
   imageUrl,
   subjectPos = "50% 50%",
   headline,
@@ -461,6 +461,7 @@ export function LiveAdCanvas({
             box={box}
             containerW={containerW}
             containerH={containerRef.current?.getBoundingClientRect().height ?? 600}
+            fontFamily={fontFamily}
             onChange={(updated) => {
               const next = boxes.map(b => b.id === updated.id ? updated : b);
               setBoxes(next);
@@ -586,3 +587,6 @@ export function LiveAdCanvas({
     </div>
   );
 }
+
+const LiveAdCanvasMemo = memo(LiveAdCanvas);
+export { LiveAdCanvasMemo as LiveAdCanvas };

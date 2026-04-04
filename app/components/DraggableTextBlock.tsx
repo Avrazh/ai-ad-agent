@@ -8,9 +8,10 @@ interface Props {
   containerH: number;
   onChange: (updated: TextBox) => void;
   onDelete: (id: string) => void;
+  fontFamily?: string;
 }
 
-export function DraggableTextBlock({ box, containerW, containerH, onChange, onDelete }: Props) {
+export function DraggableTextBlock({ box, containerW, containerH, onChange, onDelete, fontFamily = "Inter, sans-serif" }: Props) {
   const [local, setLocal] = useState(box);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -282,7 +283,7 @@ export function DraggableTextBlock({ box, containerW, containerH, onChange, onDe
           }}
           style={{
             margin: 0,
-            fontFamily: "Inter, sans-serif",
+            fontFamily: fontFamily,
             fontSize: `${fs}px`,
             fontWeight: local.bold ? 700 : 400,
             color: local.color,
@@ -297,7 +298,7 @@ export function DraggableTextBlock({ box, containerW, containerH, onChange, onDe
       ) : (
         <p style={{
           margin: 0,
-          fontFamily: "Inter, sans-serif",
+          fontFamily: fontFamily,
           fontSize: `${fs}px`,
           fontWeight: local.bold ? 700 : 400,
           color: local.color,
