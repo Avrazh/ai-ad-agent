@@ -55,9 +55,19 @@ async function fileToBase64(file: File): Promise<string> {
 }
 
 // Convert image URL → compressed base64
+// Uses fetch() → blob URL so cross-origin images (e.g. Vercel Blob CDN) don't taint
+// the canvas and break toDataURL(). Works for same-origin URLs too.
 async function urlToBase64(url: string): Promise<string> {
-  const img = await loadImage(url);
-  return compressToBase64(img);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const img = await loadImage(objectUrl);
+    return compressToBase64(img);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 export default function AIComposeEditor({ queueThumbs, onSave, onClose }: Props) {

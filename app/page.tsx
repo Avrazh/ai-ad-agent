@@ -511,6 +511,7 @@ setQueue((prev) => prev.map((item) =>
 
   // ── File handling ───────────────────────────────────────
   const [limitApplied, setLimitApplied] = useState(false);
+  const [centerDragOver, setCenterDragOver] = useState(false);
 
   const handleFiles = useCallback((files: FileList) => {
     const allImageFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -1977,15 +1978,25 @@ setQueue((prev) => prev.map((item) =>
       {/* ════ RIGHT PANEL — Stage Bar Design ══════════════ */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {!selectedItem ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="mx-auto mb-4 h-16 w-16 rounded-2xl border border-white/[0.06] bg-white/[0.02] flex items-center justify-center">
-                <svg className="h-7 w-7 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 18h16.5M3.75 12V6.75A2.25 2.25 0 016 4.5h12A2.25 2.25 0 0120.25 6.75V12" />
+          <div
+            className={"flex-1 flex items-center justify-center transition-colors " + (centerDragOver ? "bg-indigo-500/[0.04]" : "")}
+            onDrop={(e) => { e.preventDefault(); setCenterDragOver(false); handleFiles(e.dataTransfer.files); }}
+            onDragOver={(e) => { e.preventDefault(); setCenterDragOver(true); }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setCenterDragOver(false); }}
+            onClick={() => folderInputRef.current?.click()}
+            style={{ cursor: "pointer" }}
+          >
+            <div className={"text-center border-2 border-dashed rounded-2xl px-16 py-20 transition-all " + (centerDragOver ? "border-indigo-500/70 bg-indigo-500/[0.06] scale-[1.02]" : "border-white/[0.10] hover:border-indigo-500/30")}>
+              <div className="mx-auto mb-5 h-16 w-16 rounded-2xl border border-white/[0.08] bg-white/[0.03] flex items-center justify-center">
+                <svg className={"h-8 w-8 transition-colors " + (centerDragOver ? "text-indigo-400" : "text-gray-600")} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                 </svg>
               </div>
-              <p className="text-sm text-gray-600">Select an image from the queue to preview</p>
-              <p className="text-[11px] text-gray-700 mt-1">Generate ads first, then click any row</p>
+              <p className={"text-sm font-medium mb-1 transition-colors " + (centerDragOver ? "text-indigo-300" : "text-gray-400")}>Drop images or a folder here</p>
+              <p className="text-xs text-gray-600">or click to browse</p>
+              {queue.length > 0 && (
+                <p className="text-[11px] text-gray-700 mt-4">or select an item from the queue on the left</p>
+              )}
             </div>
           </div>
         ) : (
