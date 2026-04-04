@@ -1343,7 +1343,7 @@ setQueue((prev) => prev.map((item) =>
         return !dedupeKeys.has(`${q.translationSourceId}:${q.lang ?? ""}`);
       });
       const additions = allResults.flatMap((t) => {
-        const source = currentQueue.find((q) => q.result?.id === t.sourceResultId);
+        const source = currentQueue.find((q) => q.result?.id === t.sourceResultId || q.approvedResult?.id === t.sourceResultId);
         if (!source) return [];
         const result: RenderResultItem = {
           id: t.id, adSpecId: t.adSpecId, imageId: t.imageId,
